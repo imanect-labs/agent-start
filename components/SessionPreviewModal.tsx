@@ -1,8 +1,7 @@
 "use client";
 
-import { Button, Spinner } from "@heroui/react";
-import { useEffect, useState } from "react";
-import { Sheet, SheetBody, SheetFooter, SheetHeader } from "./Sheet";
+import { useEffect } from "react";
+import { Terminal } from "./Terminal";
 
 type Props = {
   sessionName: string | null;
@@ -11,76 +10,62 @@ type Props = {
 };
 
 export function SessionPreviewModal({ sessionName, isOpen, onClose }: Props) {
-  const [output, setOutput] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
   useEffect(() => {
-    if (!isOpen || !sessionName) return;
-    let alive = true;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const tick = async () => {
-      try {
-        setLoading(true);
-        const res = await fetch(
-          `/api/sessions/${encodeURIComponent(sessionName)}/output`,
-          { cache: "no-store" },
-        );
-        const data = await res.json();
-        if (!alive) return;
-        if (!res.ok) {
-          setErr(data.error || `HTTP ${res.status}`);
-        } else {
-          setOutput(data.output ?? "");
-          setErr(null);
-        }
-      } catch (e) {
-        if (alive) setErr((e as Error).message);
-      } finally {
-        if (alive) {
-          setLoading(false);
-          timer = setTimeout(tick, 3000);
-        }
-      }
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
     };
-
-    tick();
+    document.addEventListener("keydown", onKey);
     return () => {
-      alive = false;
-      if (timer) clearTimeout(timer);
+      document.body.style.overflow = prev;
+      document.removeEventListener("keydown", onKey);
     };
-  }, [isOpen, sessionName]);
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !sessionName) return null;
 
   return (
-    <Sheet open={isOpen} onClose={onClose} maxWidth="3xl">
-      <SheetHeader
-        title={
-          <span className="font-mono text-sm break-all">{sessionName}</span>
-        }
-        subtitle={loading ? "更新中..." : undefined}
-        onClose={onClose}
-      />
-      <SheetBody>
-        {err && (
-          <div className="text-red-600 text-sm bg-red-50 border border-red-200 rounded p-2">
-            エラー: {err}
+    <div
+      className="fixed inset-0 z-[100] bg-zinc-50 flex flex-col"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="safe-top shrink-0 bg-white border-b border-zinc-200">
+        <div className="px-3 py-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="-ml-1 w-10 h-10 inline-flex items-center justify-center rounded-md text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 active:bg-zinc-200 transition-colors"
+            aria-label="戻る"
+          >
+            <svg
+              viewBox="0 0 20 20"
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12.5 4 6.5 10l6 6" />
+            </svg>
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium leading-none">
+              terminal
+            </div>
+            <div className="font-mono text-sm break-all truncate text-zinc-900 mt-0.5">
+              {sessionName}
+            </div>
           </div>
-        )}
-        <pre className="text-xs font-mono whitespace-pre-wrap break-all bg-zinc-50 text-zinc-800 p-3 rounded-md min-h-[50vh] border border-zinc-200">
-          {output || (loading ? "読み込み中..." : "(出力なし)")}
-        </pre>
-      </SheetBody>
-      <SheetFooter>
-        <Button
-          variant="bordered"
-          onPress={onClose}
-          className="min-h-12 w-full border-zinc-300 text-zinc-700"
-          disableRipple
-        >
-          閉じる
-        </Button>
-      </SheetFooter>
-    </Sheet>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 px-3 pt-3 pb-3 safe-bottom">
+        <Terminal sessionName={sessionName} />
+      </div>
+    </div>
   );
 }

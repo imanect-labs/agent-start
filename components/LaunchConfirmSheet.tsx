@@ -1,10 +1,10 @@
 "use client";
 
-import { Button, Input, Spinner } from "@heroui/react";
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { Sheet, SheetBody, SheetFooter, SheetHeader } from "./Sheet";
 import { Toggle } from "./Toggle";
+import { Button, Input, Spinner } from "@/components/ui";
 
 type Preferences = {
   cli: string;
@@ -69,7 +69,6 @@ export function LaunchConfirmSheet({
     }
   }, [prefData]);
 
-  // git リポでない場合は強制 OFF
   useEffect(() => {
     if (!isGit) setCreateWt(false);
     else if (isOpen) setCreateWt(true);
@@ -91,13 +90,12 @@ export function LaunchConfirmSheet({
       />
       <SheetBody>
         {prefLoading ? (
-          <div className="flex justify-center py-6">
-            <Spinner size="sm" />
+          <div className="flex justify-center py-8">
+            <Spinner size="md" />
           </div>
         ) : (
           <>
-            <div>
-              <div className="text-sm font-semibold text-zinc-700 mb-2">CLI</div>
+            <Section title="CLI">
               <div className="grid grid-cols-2 gap-2">
                 {clis.map((c) => {
                   const active = cli === c.key;
@@ -106,64 +104,67 @@ export function LaunchConfirmSheet({
                       key={c.key}
                       type="button"
                       onClick={() => setCli(c.key)}
-                      className={`min-h-12 px-3 py-2 rounded-lg border text-left ${
+                      className={[
+                        "h-auto min-h-[3.25rem] px-3 py-2 rounded-md border text-left transition-colors",
                         active
-                          ? "border-blue-500 bg-blue-50 text-blue-900"
-                          : "border-zinc-200 bg-white text-zinc-700"
-                      }`}
+                          ? "border-zinc-900 bg-zinc-900 text-white"
+                          : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50",
+                      ].join(" ")}
                     >
-                      <div className="font-semibold text-sm">{c.label}</div>
-                      <div className="text-xs text-zinc-500 font-mono truncate">
-                        {c.command}
+                      <div className="text-sm font-medium">{c.label}</div>
+                      <div
+                        className={[
+                          "text-[11px] font-mono truncate mt-0.5",
+                          active ? "text-zinc-300" : "text-zinc-500",
+                        ].join(" ")}
+                      >
+                        {c.command || "default-shell"}
                       </div>
                     </button>
                   );
                 })}
               </div>
-            </div>
+            </Section>
 
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex-1">
-                <div className="font-semibold text-sm text-zinc-700">
-                  権限プロンプトをスキップ
-                </div>
-                <div className="text-xs text-zinc-400 font-mono break-all">
-                  {selectedCli?.hasSkipFlag
-                    ? selectedCli.skipFlag
-                    : "(この CLI は未対応)"}
-                </div>
-              </div>
+            <Row
+              title="権限プロンプトをスキップ"
+              hint={
+                selectedCli?.hasSkipFlag ? selectedCli.skipFlag : "(この CLI は未対応)"
+              }
+              mono
+            >
               <Toggle
                 checked={skip}
                 onChange={setSkip}
                 disabled={!selectedCli?.hasSkipFlag}
               />
-            </div>
+            </Row>
 
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex-1">
-                <div className="font-semibold text-sm text-zinc-700">
-                  worktree を作って起動
-                </div>
-                <div className="text-xs text-zinc-400">
-                  {isGit
-                    ? "本体に影響を与えず別ブランチで作業"
-                    : "git リポジトリではないため使用不可"}
-                </div>
-              </div>
-              <Toggle
-                checked={createWt}
-                onChange={setCreateWt}
-                disabled={!isGit}
-              />
-            </div>
+            <Row
+              title="worktree を作って起動"
+              hint={
+                isGit
+                  ? "本体に影響を与えず別ブランチで作業"
+                  : "git リポジトリではないため使用不可"
+              }
+            >
+              <Toggle checked={createWt} onChange={setCreateWt} disabled={!isGit} />
+            </Row>
 
             <button
               type="button"
               onClick={() => setShowAdv((s) => !s)}
-              className="text-xs text-zinc-500 underline self-start"
+              className="text-xs text-zinc-500 hover:text-zinc-800 transition-colors self-start inline-flex items-center gap-1"
             >
-              {showAdv ? "詳細を閉じる" : "詳細オプション"}
+              <span
+                className={[
+                  "inline-block transition-transform",
+                  showAdv ? "rotate-90" : "",
+                ].join(" ")}
+              >
+                ›
+              </span>
+              詳細オプション
             </button>
 
             {showAdv && (
@@ -172,12 +173,7 @@ export function LaunchConfirmSheet({
                 placeholder="(なし)"
                 value={extra}
                 onValueChange={setExtra}
-                size="sm"
-                variant="bordered"
-                classNames={{
-                  inputWrapper:
-                    "border-zinc-300 data-[hover=true]:border-zinc-400 data-[focus=true]:border-blue-500",
-                }}
+                description="英数字・空白・- _ . / = のみ"
               />
             )}
           </>
@@ -185,20 +181,20 @@ export function LaunchConfirmSheet({
       </SheetBody>
       <SheetFooter>
         <Button
-          variant="bordered"
-          onPress={onClose}
-          className="flex-1 min-h-12 border-zinc-300 text-zinc-700"
-          disableRipple
-          isDisabled={launching}
+          variant="secondary"
+          size="lg"
+          onClick={onClose}
+          disabled={launching}
+          className="flex-1"
         >
           キャンセル
         </Button>
         <Button
-          color="primary"
-          isLoading={launching}
-          className="flex-1 min-h-12 font-bold"
-          disableRipple
-          onPress={() =>
+          variant="primary"
+          size="lg"
+          loading={launching}
+          className="flex-1"
+          onClick={() =>
             onLaunch({
               cli,
               skipPermissions: skip,
@@ -211,5 +207,51 @@ export function LaunchConfirmSheet({
         </Button>
       </SheetFooter>
     </Sheet>
+  );
+}
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="text-xs font-medium text-zinc-700 mb-2">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function Row({
+  title,
+  hint,
+  mono,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  mono?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-zinc-800">{title}</div>
+        {hint && (
+          <div
+            className={[
+              "text-xs text-zinc-500 mt-0.5 break-all",
+              mono ? "font-mono" : "",
+            ].join(" ")}
+          >
+            {hint}
+          </div>
+        )}
+      </div>
+      {children}
+    </div>
   );
 }

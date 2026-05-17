@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@heroui/react";
+import { Badge, Button } from "@/components/ui";
 import { formatRelative } from "@/lib/format";
 
 export type SessionCardProps = {
@@ -18,6 +18,7 @@ export type SessionCardProps = {
 const CLI_LABEL: Record<string, string> = {
   claude: "Claude",
   codex: "Codex",
+  shell: "Terminal",
 };
 
 export function SessionCard({
@@ -37,61 +38,36 @@ export function SessionCard({
     : path.split("/").pop();
 
   return (
-    <div className="bg-white border border-zinc-200 rounded-xl p-4">
+    <div className="bg-white border border-zinc-200 rounded-lg p-3.5">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-zinc-900 truncate">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-sm font-medium text-zinc-900 truncate">
               {displayName}
             </span>
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-700 border border-zinc-200">
-              {CLI_LABEL[cli] || cli || "claude"}
-            </span>
-            {hasWorktree && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-                worktree
-              </span>
-            )}
-            {attached && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                接続中
-              </span>
-            )}
+            <Badge tone="violet">{CLI_LABEL[cli] || cli || "claude"}</Badge>
+            {hasWorktree && <Badge tone="amber">worktree</Badge>}
+            {attached && <Badge tone="blue">接続中</Badge>}
           </div>
           <div className="text-xs text-zinc-500 font-mono truncate mt-1">
             {name}
           </div>
-          <div className="text-xs text-zinc-400 mt-0.5">
+          <div className="text-[11px] text-zinc-400 mt-0.5">
             起動 {formatRelative(createdAt)}
           </div>
           {hasWorktree && origPath && (
-            <div className="text-xs text-zinc-400 truncate mt-0.5">
-              元 {origPath}
+            <div className="text-[11px] text-zinc-400 truncate mt-0.5">
+              元 <span className="font-mono">{origPath}</span>
             </div>
           )}
         </div>
       </div>
 
       <div className="flex gap-2 mt-3">
-        <Button
-          size="md"
-          variant="bordered"
-          radius="md"
-          disableRipple
-          className="flex-1 min-h-11 border-zinc-300"
-          onPress={onPreview}
-        >
-          プレビュー
+        <Button variant="secondary" size="md" onClick={onPreview} className="flex-1">
+          ターミナル
         </Button>
-        <Button
-          size="md"
-          color="danger"
-          variant="bordered"
-          radius="md"
-          disableRipple
-          className="flex-1 min-h-11"
-          onPress={onStop}
-        >
+        <Button variant="dangerOutline" size="md" onClick={onStop} className="flex-1">
           停止
         </Button>
       </div>

@@ -96,22 +96,18 @@ export async function createSession(opts: {
   name: string;
   cwd: string;
   shell: string;
-  command: string;
+  command?: string;
 }): Promise<void> {
   if (!isValidSessionName(opts.name)) {
     throw new Error(`invalid session name: ${opts.name}`);
   }
-  await execFileP("tmux", [
-    "new-session",
-    "-d",
-    "-s",
-    opts.name,
-    "-c",
-    opts.cwd,
-    opts.shell,
-    "-lc",
-    opts.command,
-  ]);
+  const args = ["new-session", "-d", "-s", opts.name, "-c", opts.cwd];
+  if (opts.command) {
+    // Run via `bash -lc <cmd>` so PATH/.bashrc are sourced.
+    args.push(opts.shell, "-lc", opts.command);
+  }
+  // If no command, tmux uses its default-shell — an interactive shell only.
+  await execFileP("tmux", args);
 }
 
 export async function setSessionOption(

@@ -1,9 +1,9 @@
 "use client";
 
-import { Button } from "@heroui/react";
 import { useEffect, useState } from "react";
 import { Sheet, SheetBody, SheetFooter, SheetHeader } from "./Sheet";
 import { Toggle } from "./Toggle";
+import { Button } from "@/components/ui";
 
 export type DeleteTarget = {
   name: string;
@@ -18,12 +18,7 @@ type Props = {
   busy: boolean;
 };
 
-export function DeleteConfirmSheet({
-  target,
-  onClose,
-  onConfirm,
-  busy,
-}: Props) {
+export function DeleteConfirmSheet({ target, onClose, onConfirm, busy }: Props) {
   const [deleteWt, setDeleteWt] = useState(true);
 
   useEffect(() => {
@@ -41,41 +36,41 @@ export function DeleteConfirmSheet({
           <span className="font-mono text-xs break-all bg-zinc-50 px-2 py-1 rounded border border-zinc-200">
             {target?.name}
           </span>
-          <span className="ml-2">を停止する。</span>
+          <span className="ml-2">を停止する</span>
         </div>
         {hasWt && (
-          <div className="flex items-start justify-between gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="flex-1">
-              <div className="font-semibold text-sm text-zinc-900">
-                worktree も削除
+          <div className="flex items-start justify-between gap-3 p-3.5 bg-amber-50/60 border border-amber-200 rounded-lg">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-zinc-900">
+                worktree も削除する
               </div>
-              <div className="text-xs text-zinc-500 break-all mt-0.5 font-mono">
+              <div className="text-xs text-zinc-600 break-all mt-1 font-mono">
                 {target?.worktreePath}
               </div>
-              <div className="text-xs text-zinc-500 mt-0.5">
-                ccstart/* ブランチも削除
+              <div className="text-xs text-zinc-500 mt-1">
+                <code className="font-mono">ccstart/*</code> ブランチも削除
               </div>
             </div>
-            <Toggle checked={deleteWt} onChange={setDeleteWt} color="red" />
+            <Toggle checked={deleteWt} onChange={setDeleteWt} tone="danger" />
           </div>
         )}
       </SheetBody>
       <SheetFooter>
         <Button
-          variant="bordered"
-          onPress={onClose}
-          isDisabled={busy}
-          className="flex-1 min-h-12 border-zinc-300 text-zinc-700"
-          disableRipple
+          variant="secondary"
+          size="lg"
+          onClick={onClose}
+          disabled={busy}
+          className="flex-1"
         >
           キャンセル
         </Button>
         <Button
-          color="danger"
-          isLoading={busy}
-          onPress={() => onConfirm(hasWt && deleteWt)}
-          className="flex-1 min-h-12 font-bold"
-          disableRipple
+          variant="danger"
+          size="lg"
+          loading={busy}
+          onClick={() => onConfirm(hasWt && deleteWt)}
+          className="flex-1"
         >
           停止
         </Button>

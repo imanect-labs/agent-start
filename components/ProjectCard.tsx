@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@heroui/react";
+import { Badge, Button } from "@/components/ui";
 import { formatRelative } from "@/lib/format";
 
 export type ProjectCardProps = {
@@ -20,29 +20,22 @@ export function ProjectCard({
   onSelect,
 }: ProjectCardProps) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3 bg-white border border-zinc-200 rounded-xl">
+    <div className="group flex items-center gap-3 px-3.5 py-3 bg-white border border-zinc-200 rounded-lg hover:border-zinc-300 transition-colors">
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-zinc-900 truncate">{name}</span>
-          {isGit && (
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-              git
-            </span>
-          )}
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-medium text-zinc-900 truncate">
+            {name}
+          </span>
+          {isGit && <Badge tone="emerald">git</Badge>}
         </div>
-        <div className="text-xs text-zinc-500 truncate mt-0.5">{path}</div>
-        <div className="text-xs text-zinc-400 mt-0.5">
+        <div className="text-xs text-zinc-500 font-mono truncate mt-0.5">
+          {path}
+        </div>
+        <div className="text-[11px] text-zinc-400 mt-0.5">
           {formatRelative(mtimeMs)}
         </div>
       </div>
-      <Button
-        color="primary"
-        size="md"
-        radius="md"
-        disableRipple
-        onPress={onSelect}
-        className="shrink-0 min-h-11 px-4 font-semibold"
-      >
+      <Button variant="primary" size="md" onClick={onSelect} className="shrink-0">
         起動
       </Button>
     </div>

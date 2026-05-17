@@ -1,11 +1,11 @@
 "use client";
 
-import { Button, Input, Spinner } from "@heroui/react";
 import { useEffect, useState } from "react";
 import useSWR, { mutate } from "swr";
 import { Sheet, SheetBody, SheetFooter, SheetHeader } from "./Sheet";
 import { Toggle } from "./Toggle";
 import { useToast } from "./Toast";
+import { Button, Input, Spinner } from "@/components/ui";
 
 type Preferences = {
   cli: string;
@@ -86,13 +86,13 @@ export function SettingsSheet({ isOpen, onClose }: Props) {
       />
       <SheetBody>
         {prefLoading ? (
-          <div className="flex justify-center py-6">
-            <Spinner size="sm" />
+          <div className="flex justify-center py-8">
+            <Spinner size="md" />
           </div>
         ) : (
           <>
             <div>
-              <div className="text-sm font-semibold text-zinc-700 mb-2">
+              <div className="text-xs font-medium text-zinc-700 mb-2">
                 既定の CLI
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -103,15 +103,21 @@ export function SettingsSheet({ isOpen, onClose }: Props) {
                       key={c.key}
                       type="button"
                       onClick={() => setCli(c.key)}
-                      className={`min-h-12 px-3 py-2 rounded-lg border text-left ${
+                      className={[
+                        "h-auto min-h-[3.25rem] px-3 py-2 rounded-md border text-left transition-colors",
                         active
-                          ? "border-blue-500 bg-blue-50 text-blue-900"
-                          : "border-zinc-200 bg-white text-zinc-700"
-                      }`}
+                          ? "border-zinc-900 bg-zinc-900 text-white"
+                          : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50",
+                      ].join(" ")}
                     >
-                      <div className="font-semibold text-sm">{c.label}</div>
-                      <div className="text-xs text-zinc-500 font-mono truncate">
-                        {c.command}
+                      <div className="text-sm font-medium">{c.label}</div>
+                      <div
+                        className={[
+                          "text-[11px] font-mono truncate mt-0.5",
+                          active ? "text-zinc-300" : "text-zinc-500",
+                        ].join(" ")}
+                      >
+                        {c.command || "default-shell"}
                       </div>
                     </button>
                   );
@@ -120,14 +126,12 @@ export function SettingsSheet({ isOpen, onClose }: Props) {
             </div>
 
             <div className="flex items-center justify-between gap-3">
-              <div className="flex-1">
-                <div className="font-semibold text-sm text-zinc-700">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-zinc-800">
                   権限プロンプトをスキップ
                 </div>
-                <div className="text-xs text-zinc-400 font-mono break-all">
-                  {selectedCli?.hasSkipFlag
-                    ? selectedCli.skipFlag
-                    : "(未対応)"}
+                <div className="text-xs text-zinc-500 font-mono break-all mt-0.5">
+                  {selectedCli?.hasSkipFlag ? selectedCli.skipFlag : "(未対応)"}
                 </div>
               </div>
               <Toggle
@@ -142,32 +146,26 @@ export function SettingsSheet({ isOpen, onClose }: Props) {
               placeholder="例: --model claude-opus-4-7"
               value={extra}
               onValueChange={setExtra}
-              description="CLI コマンドに追記。英数字・空白・- _ . / = のみ。"
-              variant="bordered"
-              size="sm"
-              classNames={{
-                inputWrapper:
-                  "border-zinc-300 data-[hover=true]:border-zinc-400 data-[focus=true]:border-blue-500",
-              }}
+              description="CLI コマンドに追記。英数字・空白・- _ . / = のみ"
             />
           </>
         )}
       </SheetBody>
       <SheetFooter>
         <Button
-          variant="bordered"
-          onPress={onClose}
-          className="flex-1 min-h-12 border-zinc-300 text-zinc-700"
-          disableRipple
+          variant="secondary"
+          size="lg"
+          onClick={onClose}
+          className="flex-1"
         >
           キャンセル
         </Button>
         <Button
-          color="primary"
-          onPress={save}
-          isLoading={saving}
-          className="flex-1 min-h-12 font-bold"
-          disableRipple
+          variant="primary"
+          size="lg"
+          loading={saving}
+          onClick={save}
+          className="flex-1"
         >
           保存
         </Button>

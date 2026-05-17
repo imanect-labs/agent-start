@@ -35,6 +35,11 @@ const DEFAULT_CONFIG: Config = {
       skipPermissionsFlag: "--full-auto",
       label: "Codex CLI",
     },
+    shell: {
+      // empty command → start an interactive login shell only (no CLI auto-run)
+      command: "",
+      label: "Terminal",
+    },
   },
   defaultCli: "claude",
 };

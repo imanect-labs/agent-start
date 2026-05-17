@@ -1,9 +1,9 @@
 "use client";
 
-import { Input, Button, Spinner } from "@heroui/react";
-import { useToast } from "@/components/Toast";
 import useSWR, { mutate } from "swr";
 import { useMemo, useState } from "react";
+import { useToast } from "@/components/Toast";
+import { Button, Input, Spinner } from "@/components/ui";
 import { ProjectCard } from "@/components/ProjectCard";
 import { SessionCard } from "@/components/SessionCard";
 import { SessionPreviewModal } from "@/components/SessionPreviewModal";
@@ -138,42 +138,41 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-zinc-50 text-zinc-900 flex flex-col">
-      <header className="safe-top sticky top-0 z-10 bg-white border-b border-zinc-200">
-        <div className="px-4 py-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xl font-bold tracking-tight">ccstart</span>
-            <span className="text-xs text-zinc-500">claude / codex launcher</span>
+      <header className="safe-top sticky top-0 z-10 bg-white/85 backdrop-blur border-b border-zinc-200">
+        <div className="px-4 py-3 flex items-center justify-between gap-2 max-w-2xl mx-auto w-full">
+          <div className="flex items-baseline gap-2">
+            <span className="text-base font-semibold tracking-tight">
+              ccstart
+            </span>
+            <span className="text-[11px] text-zinc-400">launcher</span>
           </div>
           <Button
+            variant="secondary"
             size="sm"
-            variant="bordered"
-            onPress={() => setSettingsOpen(true)}
-            className="min-h-9 border-zinc-300 text-zinc-700"
-            disableRipple
+            onClick={() => setSettingsOpen(true)}
           >
             設定
           </Button>
         </div>
       </header>
 
-      <section className="flex-1 px-4 py-4 safe-bottom space-y-6 max-w-2xl w-full mx-auto">
-        <div>
-          <div className="flex items-baseline justify-between mb-2">
-            <h2 className="text-base font-bold text-zinc-900">
-              起動中のセッション
-            </h2>
-            <span className="text-xs text-zinc-500">{sessions.length} 件</span>
-          </div>
+      <section className="flex-1 px-4 py-5 safe-bottom space-y-6 max-w-2xl w-full mx-auto">
+        <SectionBlock
+          title="セッション"
+          right={
+            <span className="text-[11px] text-zinc-400 tabular-nums">
+              {sessions.length}
+            </span>
+          }
+        >
           {sessLoading ? (
-            <div className="flex justify-center py-6">
-              <Spinner size="sm" />
-            </div>
+            <CenterSpinner />
           ) : sessions.length === 0 ? (
-            <div className="text-center text-sm text-zinc-500 bg-white border border-dashed border-zinc-200 rounded-xl py-6">
+            <EmptyState>
               起動中のセッションはありません。
               <br />
-              下のプロジェクトから「起動」をタップ。
-            </div>
+              下のプロジェクトから起動してください。
+            </EmptyState>
           ) : (
             <div className="space-y-2">
               {sessions.map((s) => (
@@ -192,39 +191,39 @@ export default function HomePage() {
               ))}
             </div>
           )}
-        </div>
+        </SectionBlock>
 
-        <div>
-          <div className="flex items-baseline justify-between mb-2">
-            <h2 className="text-base font-bold text-zinc-900">プロジェクト</h2>
-            <span className="text-xs text-zinc-500">
-              {filteredProjects.length} 件
+        <SectionBlock
+          title="プロジェクト"
+          right={
+            <span className="text-[11px] text-zinc-400 tabular-nums">
+              {filteredProjects.length}
             </span>
-          </div>
+          }
+        >
           <Input
             type="search"
-            placeholder="プロジェクト名で検索"
+            placeholder="プロジェクト名・パスで検索"
             value={query}
             onValueChange={setQuery}
-            variant="bordered"
-            size="md"
-            isClearable
-            onClear={() => setQuery("")}
-            classNames={{
-              inputWrapper:
-                "border-zinc-300 bg-white data-[hover=true]:border-zinc-400 data-[focus=true]:border-blue-500",
-            }}
+            clearable
+            leftSlot={
+              <svg
+                viewBox="0 0 20 20"
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <circle cx="9" cy="9" r="6" />
+                <path d="m17 17-3.5-3.5" strokeLinecap="round" />
+              </svg>
+            }
           />
           <div className="space-y-2 mt-3">
-            {projLoading && (
-              <div className="flex justify-center py-6">
-                <Spinner size="sm" />
-              </div>
-            )}
+            {projLoading && <CenterSpinner />}
             {!projLoading && filteredProjects.length === 0 && (
-              <div className="text-center text-sm text-zinc-500 bg-white border border-dashed border-zinc-200 rounded-xl py-6">
-                プロジェクトが見つかりません
-              </div>
+              <EmptyState>プロジェクトが見つかりません</EmptyState>
             )}
             {filteredProjects.map((p) => (
               <ProjectCard
@@ -234,7 +233,7 @@ export default function HomePage() {
               />
             ))}
           </div>
-        </div>
+        </SectionBlock>
       </section>
 
       <SettingsSheet
@@ -265,5 +264,43 @@ export default function HomePage() {
         onClose={() => setPreviewName(null)}
       />
     </main>
+  );
+}
+
+function SectionBlock({
+  title,
+  right,
+  children,
+}: {
+  title: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-2">
+        <h2 className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium">
+          {title}
+        </h2>
+        {right}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function CenterSpinner() {
+  return (
+    <div className="flex justify-center py-8">
+      <Spinner size="sm" />
+    </div>
+  );
+}
+
+function EmptyState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-center text-sm text-zinc-500 bg-white border border-dashed border-zinc-200 rounded-lg py-7 px-4">
+      {children}
+    </div>
   );
 }

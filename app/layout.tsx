@@ -11,7 +11,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#ffffff",
+  themeColor: "#fafafa",
 };
 
 export default function RootLayout({
@@ -20,8 +20,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ja" className="light">
-      <body className="min-h-screen bg-white text-zinc-900 antialiased">
+    <html lang="ja">
+      <body className="min-h-screen bg-zinc-50 text-zinc-900">
         <Providers>{children}</Providers>
       </body>
     </html>

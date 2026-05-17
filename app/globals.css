@@ -7,8 +7,14 @@ body {
   height: 100%;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: contain;
-  background: #ffffff;
+  background: #fafafa;
   color-scheme: light;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01";
 }
 
 button,
@@ -20,14 +26,9 @@ textarea {
   touch-action: manipulation;
 }
 
-button:active,
+button:active:not(:disabled),
 [role="button"]:active {
-  opacity: 0.85;
-}
-
-body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, "Noto Sans JP", sans-serif;
+  transform: translateY(0.5px);
 }
 
 .safe-top {
@@ -35,4 +36,8 @@ body {
 }
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+::selection {
+  background: rgb(24 24 27 / 0.12);
 }

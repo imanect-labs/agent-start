@@ -70,6 +70,8 @@ export function buildLaunchCommand(
   cli: CliConfig,
   opts: { skipPermissions: boolean; extraArgs: string },
 ): string {
+  // Empty command = raw shell: ignore all flags/args, tmux will spawn default-shell.
+  if (!cli.command) return "";
   const parts: string[] = [cli.command];
   if (opts.skipPermissions && cli.skipPermissionsFlag) {
     parts.push(cli.skipPermissionsFlag);
