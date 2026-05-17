@@ -37,7 +37,7 @@ export async function markClaudeTrusted(dir: string): Promise<void> {
   };
   cfg.projects = projects;
   // write atomically
-  const tmp = `${CLAUDE_JSON}.ccstart.tmp.${process.pid}`;
+  const tmp = `${CLAUDE_JSON}.agent-start.tmp.${process.pid}`;
   await fs.writeFile(tmp, JSON.stringify(cfg, null, 2), { mode: 0o600 });
   await fs.rename(tmp, CLAUDE_JSON);
 }

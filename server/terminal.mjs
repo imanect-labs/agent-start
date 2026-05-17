@@ -9,9 +9,9 @@ import { promisify } from "node:util";
 const execFileP = promisify(execFile);
 
 function configPath() {
-  if (process.env.CCSTART_CONFIG) return process.env.CCSTART_CONFIG;
+  if (process.env.AGENT_START_CONFIG) return process.env.AGENT_START_CONFIG;
   const xdg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-  return path.join(xdg, "ccstart", "config.json");
+  return path.join(xdg, "agent-start", "config.json");
 }
 
 function loadSessionPrefix() {

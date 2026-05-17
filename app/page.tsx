@@ -142,7 +142,7 @@ export default function HomePage() {
         <div className="px-4 py-3 flex items-center justify-between gap-2 max-w-2xl mx-auto w-full">
           <div className="flex items-baseline gap-2">
             <span className="text-base font-semibold tracking-tight">
-              ccstart
+              agent-start
             </span>
             <span className="text-[11px] text-zinc-400">launcher</span>
           </div>

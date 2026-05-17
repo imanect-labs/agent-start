@@ -52,7 +52,7 @@ export async function createWorktree(opts: {
   await fs.mkdir(path.dirname(wtPath), { recursive: true });
 
   const base = await defaultBranch(origPath);
-  const branch = `ccstart/${sessionName}`;
+  const branch = `agent-start/${sessionName}`;
   await execFileP("git", [
     "-C",
     origPath,
@@ -125,7 +125,7 @@ export async function removeWorktree(opts: {
     // ignore
   }
 
-  if (origPath && branch && branch.startsWith("ccstart/")) {
+  if (origPath && branch && branch.startsWith("agent-start/")) {
     try {
       await execFileP("git", ["-C", origPath, "branch", "-D", branch]);
     } catch {

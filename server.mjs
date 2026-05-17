@@ -29,5 +29,5 @@ server.on("upgrade", async (req, socket, head) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`ccstart server: http://${host}:${port} (dev=${dev})`);
+  console.log(`agent-start server: http://${host}:${port} (dev=${dev})`);
 });
