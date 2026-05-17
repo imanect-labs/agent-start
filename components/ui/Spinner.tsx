@@ -21,7 +21,7 @@ export function Spinner({
       role="status"
       className={[
         "inline-block rounded-full border-current border-r-transparent animate-spin",
-        "text-zinc-400",
+        "text-fg-faint",
         SIZE[size],
         className,
       ].join(" ")}

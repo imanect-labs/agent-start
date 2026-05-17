@@ -1,14 +1,43 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { Button } from "@/components/ui";
+import { useTheme } from "@/components/ThemeProvider";
 
 type Props = {
   sessionName: string;
+  /** tmux window index to attach to. Defaults to 0 (first window). */
+  windowId?: number;
+  /** show the on-screen Ctrl/Esc/arrows row. Defaults to "auto" (touch only). */
+  virtualKeys?: "auto" | "always" | "never";
 };
 
-const TERM_THEME = {
+const LIGHT_TERM_THEME = {
+  background: "#fafafa",
+  foreground: "#18181b",
+  cursor: "#18181b",
+  cursorAccent: "#fafafa",
+  selectionBackground: "#d4d4d8",
+  black: "#27272a",
+  red: "#dc2626",
+  green: "#16a34a",
+  yellow: "#ca8a04",
+  blue: "#2563eb",
+  magenta: "#9333ea",
+  cyan: "#0891b2",
+  white: "#71717a",
+  brightBlack: "#52525b",
+  brightRed: "#ef4444",
+  brightGreen: "#22c55e",
+  brightYellow: "#eab308",
+  brightBlue: "#3b82f6",
+  brightMagenta: "#a855f7",
+  brightCyan: "#06b6d4",
+  brightWhite: "#18181b",
+};
+
+const DARK_TERM_THEME = {
   background: "#09090b",
   foreground: "#fafafa",
   cursor: "#fafafa",
@@ -34,7 +63,12 @@ const TERM_THEME = {
 
 type Status = "connecting" | "open" | "closed";
 
-export function Terminal({ sessionName }: Props) {
+export function Terminal({
+  sessionName,
+  windowId = 0,
+  virtualKeys = "auto",
+}: Props) {
+  const { resolved } = useTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const termRef = useRef<any>(null);
@@ -45,6 +79,22 @@ export function Terminal({ sessionName }: Props) {
   const [attempt, setAttempt] = useState(0);
   const ctrlPendingRef = useRef(false);
   const [ctrlActive, setCtrlActive] = useState(false);
+
+  const theme = useMemo(
+    () => (resolved === "dark" ? DARK_TERM_THEME : LIGHT_TERM_THEME),
+    [resolved],
+  );
+
+  // Update xterm theme live when the resolved theme changes.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    try {
+      term.options.theme = theme;
+    } catch {
+      // ignore
+    }
+  }, [theme]);
 
   // Single effect: bootstrap xterm + open WS, tear both down together.
   useEffect(() => {
@@ -71,7 +121,7 @@ export function Terminal({ sessionName }: Props) {
           'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
         fontSize: 13,
         lineHeight: 1.2,
-        theme: TERM_THEME,
+        theme,
         scrollback: 5000,
         allowProposedApi: true,
         convertEol: false,
@@ -89,7 +139,6 @@ export function Terminal({ sessionName }: Props) {
       fitRef.current = fit;
 
       term.onData((data: string) => {
-        // sticky Ctrl: convert next ASCII letter to control byte
         if (ctrlPendingRef.current && data.length === 1) {
           const c = data.charCodeAt(0);
           let ctrlByte: number | null = null;
@@ -141,28 +190,41 @@ export function Terminal({ sessionName }: Props) {
         const lines = Math.trunc(accum / ROW_PX);
         if (lines !== 0) {
           accum -= lines * ROW_PX;
-          // finger down (positive dy) → reveal content above → scroll up (-lines)
-          dispatchScroll(term, ws, -lines);
+          dispatchScroll(ws, -lines);
           e.preventDefault();
         }
       };
       const onTouchEnd = () => {
         touchY = null;
       };
-      containerRef.current.addEventListener("touchstart", onTouchStart, { passive: true });
-      containerRef.current.addEventListener("touchmove", onTouchMove, { passive: false });
-      containerRef.current.addEventListener("touchend", onTouchEnd, { passive: true });
-      containerRef.current.addEventListener("touchcancel", onTouchEnd, { passive: true });
-      (containerRef.current as HTMLDivElement & { __touchCleanup?: () => void }).__touchCleanup = () => {
+      containerRef.current.addEventListener("touchstart", onTouchStart, {
+        passive: true,
+      });
+      containerRef.current.addEventListener("touchmove", onTouchMove, {
+        passive: false,
+      });
+      containerRef.current.addEventListener("touchend", onTouchEnd, {
+        passive: true,
+      });
+      containerRef.current.addEventListener("touchcancel", onTouchEnd, {
+        passive: true,
+      });
+      (
+        containerRef.current as HTMLDivElement & {
+          __touchCleanup?: () => void;
+        }
+      ).__touchCleanup = () => {
         containerRef.current?.removeEventListener("touchstart", onTouchStart);
         containerRef.current?.removeEventListener("touchmove", onTouchMove);
         containerRef.current?.removeEventListener("touchend", onTouchEnd);
         containerRef.current?.removeEventListener("touchcancel", onTouchEnd);
       };
 
-      // Open WebSocket now that xterm is ready
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const url = `${proto}//${window.location.host}/ws/terminal?session=${encodeURIComponent(sessionName)}`;
+      const url =
+        `${proto}//${window.location.host}/ws/terminal` +
+        `?session=${encodeURIComponent(sessionName)}` +
+        `&window=${encodeURIComponent(String(windowId))}`;
       ws = new WebSocket(url);
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
@@ -227,7 +289,10 @@ export function Terminal({ sessionName }: Props) {
       fitRef.current = null;
       wsRef.current = null;
     };
-  }, [sessionName, attempt]);
+    // theme intentionally excluded: live-updated by the dedicated effect above
+    // so we don't tear down the whole terminal on a color change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionName, windowId, attempt]);
 
   const focusTerm = () => {
     termRef.current?.focus();
@@ -248,10 +313,17 @@ export function Terminal({ sessionName }: Props) {
     const term = termRef.current;
     if (!term) return;
     const visible = term.rows ?? 10;
-    // ~one screen worth of lines per button tap
     const lines = direction * Math.max(5, visible - 2);
-    dispatchScroll(term, wsRef.current, lines);
+    dispatchScroll(wsRef.current, lines);
   };
+
+  const vkClass =
+    virtualKeys === "always"
+      ? "flex"
+      : virtualKeys === "never"
+        ? "hidden"
+        : // auto: show only on coarse pointer (touch)
+          "hidden [@media(pointer:coarse)]:flex";
 
   return (
     <div className="flex flex-col gap-2 h-full min-h-0">
@@ -261,13 +333,13 @@ export function Terminal({ sessionName }: Props) {
             className={[
               "inline-block w-1.5 h-1.5 rounded-full",
               status === "open"
-                ? "bg-emerald-500"
+                ? "bg-success"
                 : status === "connecting"
-                  ? "bg-amber-500"
-                  : "bg-red-500",
+                  ? "bg-warn"
+                  : "bg-danger",
             ].join(" ")}
           />
-          <span className="text-zinc-500">
+          <span className="text-fg-subtle">
             {status === "open"
               ? "接続中"
               : status === "connecting"
@@ -289,15 +361,20 @@ export function Terminal({ sessionName }: Props) {
       <div
         ref={containerRef}
         onClick={focusTerm}
-        className="rounded-md bg-zinc-950 border border-zinc-200 p-2 overflow-hidden flex-1 min-h-0"
-        style={{ touchAction: "none" }}
+        className="rounded-md border border-line p-2 overflow-hidden flex-1 min-h-0"
+        style={{
+          touchAction: "none",
+          background: theme.background,
+        }}
       />
 
-      <VirtualKeys
-        onKey={handleVirtualKey}
-        onScroll={handleScroll}
-        ctrlActive={ctrlActive}
-      />
+      <div className={`${vkClass} gap-1.5 overflow-x-auto -mx-1 px-1 pb-1`}>
+        <VirtualKeys
+          onKey={handleVirtualKey}
+          onScroll={handleScroll}
+          ctrlActive={ctrlActive}
+        />
+      </div>
     </div>
   );
 }
@@ -308,16 +385,7 @@ function sendInputViaWs(ws: WebSocket | null, data: string) {
   }
 }
 
-// Scroll uses tmux copy-mode on the server side so it works for any pane
-// (claude/TUI included), and does not collide with the running app's
-// keybindings (e.g. bash readline history-search on PgUp/PgDn).
-// Direction: negative = up (older), positive = down (newer).
-function dispatchScroll(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _term: any,
-  ws: WebSocket | null,
-  lines: number,
-) {
+function dispatchScroll(ws: WebSocket | null, lines: number) {
   if (!ws || ws.readyState !== WebSocket.OPEN || lines === 0) return;
   ws.send(
     JSON.stringify({
@@ -355,10 +423,9 @@ function VirtualKeys({
     { kind: "send", label: "Enter", data: "\r" },
   ];
   return (
-    <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-1">
+    <>
       {keys.map((k, i) => {
         const active = k.kind === "toggle" && k.active;
-        const isScroll = k.kind === "scroll";
         return (
           <button
             key={i}
@@ -374,17 +441,14 @@ function VirtualKeys({
               "border transition-colors",
               "select-none touch-manipulation",
               active
-                ? "bg-zinc-900 text-white border-zinc-900"
-                : isScroll
-                  ? "bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100"
-                  : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50",
-              isScroll ? "min-w-9" : "",
+                ? "bg-accent text-accent-fg border-accent"
+                : "bg-surface text-fg-muted border-line hover:bg-surface-muted",
             ].join(" ")}
           >
             {k.label}
           </button>
         );
       })}
-    </div>
+    </>
   );
 }

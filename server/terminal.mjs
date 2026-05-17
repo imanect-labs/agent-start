@@ -44,15 +44,25 @@ async function tmuxHasSession(name) {
   }
 }
 
-async function tmuxScroll(name, direction, count) {
+async function tmuxHasWindow(name, windowId) {
+  try {
+    await execFileP("tmux", ["display-message", "-p", "-t", `${name}:${windowId}`, "#{window_id}"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function tmuxScroll(name, windowId, direction, count) {
   const dirCmd = direction < 0 ? "scroll-up" : "scroll-down";
   const n = Math.max(1, Math.min(1000, Number(count) || 1));
+  const target = `${name}:${windowId}`;
   try {
-    await execFileP("tmux", ["copy-mode", "-t", name]);
+    await execFileP("tmux", ["copy-mode", "-t", target]);
     await execFileP("tmux", [
       "send-keys",
       "-t",
-      name,
+      target,
       "-N",
       String(n),
       "-X",
@@ -63,7 +73,24 @@ async function tmuxScroll(name, direction, count) {
   }
 }
 
-function handleConnection(ws, name) {
+async function handleConnection(ws, name, windowId) {
+  const target = `${name}:${windowId}`;
+
+  // Prep: select the desired window (so the attached client lands on it) and
+  // defensively exit any leftover copy-mode in that pane. Without this step,
+  // a pane that was left in vi-style copy-mode by a previous client makes the
+  // next user's keystrokes (e.g. `f` → "jump forward") look like garbage.
+  try {
+    await execFileP("tmux", ["select-window", "-t", target]);
+  } catch (err) {
+    ws.send(JSON.stringify({ type: "error", message: `select-window failed: ${err.message ?? err}` }));
+    try { ws.close(1011); } catch {}
+    return;
+  }
+  await execFileP("tmux", ["send-keys", "-t", target, "-X", "cancel"]).catch(
+    () => {},
+  );
+
   const term = pty.spawn(
     "tmux",
     ["attach-session", "-d", "-t", name],
@@ -115,7 +142,7 @@ function handleConnection(ws, name) {
               await execFileP("tmux", [
                 "send-keys",
                 "-t",
-                name,
+                target,
                 "-X",
                 "cancel",
               ]);
@@ -146,7 +173,7 @@ function handleConnection(ws, name) {
     ) {
       chain = chain
         .then(async () => {
-          await tmuxScroll(name, msg.direction, msg.count);
+          await tmuxScroll(name, windowId, msg.direction, msg.count);
           inCopyMode = true;
         })
         .catch(() => {});
@@ -193,7 +220,22 @@ export function attachTerminalWs(httpServer) {
       socket.destroy();
       return true;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => handleConnection(ws, name));
+    // Window index defaults to 0 for backwards compatibility / single-tab use.
+    const rawWindow = url.searchParams.get("window");
+    const windowId = rawWindow == null ? 0 : Number(rawWindow);
+    if (!Number.isInteger(windowId) || windowId < 0 || windowId > 9999) {
+      socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return true;
+    }
+    if (!(await tmuxHasWindow(name, windowId))) {
+      socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return true;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) =>
+      handleConnection(ws, name, windowId),
+    );
     return true;
   };
 }

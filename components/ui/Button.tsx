@@ -7,15 +7,15 @@ type Size = "sm" | "md" | "lg";
 
 const VARIANT: Record<Variant, string> = {
   primary:
-    "bg-zinc-900 text-white border border-zinc-900 hover:bg-zinc-800 hover:border-zinc-800",
+    "bg-accent text-accent-fg border border-accent hover:bg-accent-hover hover:border-accent-hover",
   secondary:
-    "bg-white text-zinc-800 border border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300",
+    "bg-surface text-fg border border-line hover:bg-surface-muted hover:border-line-strong",
   ghost:
-    "bg-transparent text-zinc-600 border border-transparent hover:bg-zinc-100 hover:text-zinc-900",
+    "bg-transparent text-fg-muted border border-transparent hover:bg-surface-muted hover:text-fg",
   danger:
-    "bg-red-600 text-white border border-red-600 hover:bg-red-700 hover:border-red-700",
+    "bg-danger text-danger-fg border border-danger hover:opacity-90",
   dangerOutline:
-    "bg-white text-red-600 border border-red-200 hover:bg-red-50 hover:border-red-300",
+    "bg-surface text-danger border border-danger/30 hover:bg-danger/5 hover:border-danger/50",
 };
 
 const SIZE: Record<Size, string> = {
@@ -54,7 +54,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
       className={[
         "inline-flex items-center justify-center whitespace-nowrap font-medium",
         "transition-colors duration-150",
-        "outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/15 focus-visible:ring-offset-1 focus-visible:ring-offset-white",
+        "outline-none focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1 focus-visible:ring-offset-surface",
         "disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none",
         "select-none",
         VARIANT[variant],
