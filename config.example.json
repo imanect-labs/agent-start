@@ -1,0 +1,20 @@
+{
+  "roots": ["/home/shuya/dev"],
+  "sessionPrefix": "cc-",
+  "shell": "/bin/bash",
+  "showHidden": false,
+  "gitOnly": false,
+  "defaultCli": "claude",
+  "clis": {
+    "claude": {
+      "command": "claude",
+      "skipPermissionsFlag": "--dangerously-skip-permissions",
+      "label": "Claude Code"
+    },
+    "codex": {
+      "command": "codex",
+      "skipPermissionsFlag": "--full-auto",
+      "label": "Codex CLI"
+    }
+  }
+}
