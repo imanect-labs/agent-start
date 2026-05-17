@@ -48,7 +48,7 @@ export function DeleteConfirmSheet({ target, onClose, onConfirm, busy }: Props) 
                 {target?.worktreePath}
               </div>
               <div className="text-xs text-zinc-500 mt-1">
-                <code className="font-mono">ccstart/*</code> ブランチも削除
+                <code className="font-mono">agent-start/*</code> ブランチも削除
               </div>
             </div>
             <Toggle checked={deleteWt} onChange={setDeleteWt} tone="danger" />

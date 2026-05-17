@@ -3,7 +3,7 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ccstart",
+  title: "agent-start",
   description: "claude code / codex launcher",
 };
 

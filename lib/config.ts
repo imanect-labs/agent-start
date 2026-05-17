@@ -45,21 +45,21 @@ const DEFAULT_CONFIG: Config = {
 };
 
 function configPath(): string {
-  if (process.env.CCSTART_CONFIG) return process.env.CCSTART_CONFIG;
+  if (process.env.AGENT_START_CONFIG) return process.env.AGENT_START_CONFIG;
   const xdg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-  return path.join(xdg, "ccstart", "config.json");
+  return path.join(xdg, "agent-start", "config.json");
 }
 
 export function preferencesPath(): string {
-  if (process.env.CCSTART_PREFS) return process.env.CCSTART_PREFS;
+  if (process.env.AGENT_START_PREFS) return process.env.AGENT_START_PREFS;
   const xdg = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-  return path.join(xdg, "ccstart", "preferences.json");
+  return path.join(xdg, "agent-start", "preferences.json");
 }
 
 export function worktreeRoot(): string {
-  if (process.env.CCSTART_WORKTREE_ROOT) return process.env.CCSTART_WORKTREE_ROOT;
+  if (process.env.AGENT_START_WORKTREE_ROOT) return process.env.AGENT_START_WORKTREE_ROOT;
   const xdg = process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache");
-  return path.join(xdg, "ccstart", "worktrees");
+  return path.join(xdg, "agent-start", "worktrees");
 }
 
 let cached: Config | null = null;
