@@ -145,3 +145,89 @@ export async function capturePane(name: string, lines = 200): Promise<string> {
   ]);
   return stdout;
 }
+
+export type TmuxWindow = {
+  index: number;
+  name: string;
+  active: boolean;
+  panes: number;
+};
+
+export async function listWindows(name: string): Promise<TmuxWindow[]> {
+  if (!isValidSessionName(name)) {
+    throw new Error(`invalid session name: ${name}`);
+  }
+  try {
+    const { stdout } = await execFileP("tmux", [
+      "list-windows",
+      "-t",
+      name,
+      "-F",
+      "#{window_index}\t#{window_name}\t#{window_active}\t#{window_panes}",
+    ]);
+    return stdout
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [index, n, active, panes] = line.split("\t");
+        return {
+          index: Number(index),
+          name: n ?? "",
+          active: active === "1",
+          panes: Number(panes) || 1,
+        };
+      })
+      .sort((a, b) => a.index - b.index);
+  } catch (err) {
+    const stderr = (err as { stderr?: string }).stderr ?? "";
+    if (/no server running/i.test(stderr) || /can't find session/i.test(stderr)) {
+      return [];
+    }
+    throw err;
+  }
+}
+
+export async function newWindow(opts: {
+  session: string;
+  cwd?: string;
+  shell?: string;
+  command?: string;
+  windowName?: string;
+}): Promise<number> {
+  if (!isValidSessionName(opts.session)) {
+    throw new Error(`invalid session name: ${opts.session}`);
+  }
+  const args = [
+    "new-window",
+    "-d",
+    "-P",
+    "-F",
+    "#{window_index}",
+    "-t",
+    `${opts.session}:`,
+  ];
+  if (opts.cwd) args.push("-c", opts.cwd);
+  if (opts.windowName) args.push("-n", opts.windowName);
+  if (opts.command && opts.shell) {
+    args.push(opts.shell, "-lc", opts.command);
+  }
+  const { stdout } = await execFileP("tmux", args);
+  const idx = Number(stdout.trim());
+  if (!Number.isFinite(idx)) {
+    throw new Error(`new-window returned unexpected output: ${stdout}`);
+  }
+  return idx;
+}
+
+export async function killWindow(
+  name: string,
+  windowIndex: number,
+): Promise<void> {
+  if (!isValidSessionName(name)) {
+    throw new Error(`invalid session name: ${name}`);
+  }
+  if (!Number.isInteger(windowIndex) || windowIndex < 0) {
+    throw new Error(`invalid window index: ${windowIndex}`);
+  }
+  await execFileP("tmux", ["kill-window", "-t", `${name}:${windowIndex}`]);
+}

@@ -10,6 +10,7 @@ type Preferences = {
   cli: string;
   skipPermissions: boolean;
   extraArgs: string;
+  createWorktree: boolean;
 };
 type CliInfo = {
   key: string;
@@ -61,18 +62,20 @@ export function LaunchConfirmSheet({
   const [createWt, setCreateWt] = useState(true);
   const [showAdv, setShowAdv] = useState(false);
 
+  // Hydrate form fields from preferences each time the dialog opens.
   useEffect(() => {
-    if (prefData?.preferences) {
-      setCli(prefData.preferences.cli);
-      setSkip(prefData.preferences.skipPermissions);
-      setExtra(prefData.preferences.extraArgs);
-    }
-  }, [prefData]);
+    if (!isOpen || !prefData?.preferences) return;
+    const p = prefData.preferences;
+    setCli(p.cli);
+    setSkip(p.skipPermissions);
+    setExtra(p.extraArgs);
+    // Worktree default = preference, but force off when not a git repo.
+    setCreateWt(isGit ? (p.createWorktree ?? true) : false);
+  }, [isOpen, prefData, isGit]);
 
   useEffect(() => {
     if (!isGit) setCreateWt(false);
-    else if (isOpen) setCreateWt(true);
-  }, [isGit, isOpen]);
+  }, [isGit]);
 
   useEffect(() => {
     if (!isOpen) setShowAdv(false);
@@ -82,7 +85,7 @@ export function LaunchConfirmSheet({
   const clis = cfgData?.clis ?? [];
 
   return (
-    <Sheet open={isOpen} onClose={onClose} maxWidth="md">
+    <Sheet open={isOpen} onClose={onClose} maxWidth="lg">
       <SheetHeader
         title={projectName}
         subtitle={projectPath}
@@ -96,7 +99,7 @@ export function LaunchConfirmSheet({
         ) : (
           <>
             <Section title="CLI">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {clis.map((c) => {
                   const active = cli === c.key;
                   return (
@@ -107,15 +110,15 @@ export function LaunchConfirmSheet({
                       className={[
                         "h-auto min-h-[3.25rem] px-3 py-2 rounded-md border text-left transition-colors",
                         active
-                          ? "border-zinc-900 bg-zinc-900 text-white"
-                          : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50",
+                          ? "border-accent bg-accent text-accent-fg"
+                          : "border-line bg-surface text-fg hover:bg-surface-muted",
                       ].join(" ")}
                     >
                       <div className="text-sm font-medium">{c.label}</div>
                       <div
                         className={[
                           "text-[11px] font-mono truncate mt-0.5",
-                          active ? "text-zinc-300" : "text-zinc-500",
+                          active ? "opacity-70" : "text-fg-subtle",
                         ].join(" ")}
                       >
                         {c.command || "default-shell"}
@@ -129,7 +132,9 @@ export function LaunchConfirmSheet({
             <Row
               title="権限プロンプトをスキップ"
               hint={
-                selectedCli?.hasSkipFlag ? selectedCli.skipFlag : "(この CLI は未対応)"
+                selectedCli?.hasSkipFlag
+                  ? selectedCli.skipFlag
+                  : "(この CLI は未対応)"
               }
               mono
             >
@@ -148,13 +153,17 @@ export function LaunchConfirmSheet({
                   : "git リポジトリではないため使用不可"
               }
             >
-              <Toggle checked={createWt} onChange={setCreateWt} disabled={!isGit} />
+              <Toggle
+                checked={createWt}
+                onChange={setCreateWt}
+                disabled={!isGit}
+              />
             </Row>
 
             <button
               type="button"
               onClick={() => setShowAdv((s) => !s)}
-              className="text-xs text-zinc-500 hover:text-zinc-800 transition-colors self-start inline-flex items-center gap-1"
+              className="text-xs text-fg-subtle hover:text-fg transition-colors self-start inline-flex items-center gap-1"
             >
               <span
                 className={[
@@ -219,7 +228,7 @@ function Section({
 }) {
   return (
     <div>
-      <div className="text-xs font-medium text-zinc-700 mb-2">{title}</div>
+      <div className="text-xs font-medium text-fg-muted mb-2">{title}</div>
       {children}
     </div>
   );
@@ -239,11 +248,11 @@ function Row({
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-zinc-800">{title}</div>
+        <div className="text-sm font-medium text-fg">{title}</div>
         {hint && (
           <div
             className={[
-              "text-xs text-zinc-500 mt-0.5 break-all",
+              "text-xs text-fg-subtle mt-0.5 break-all",
               mono ? "font-mono" : "",
             ].join(" ")}
           >

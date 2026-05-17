@@ -2,7 +2,12 @@
 
 import { ReactNode } from "react";
 import { ToastHost } from "@/components/Toast";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 export function Providers({ children }: { children: ReactNode }) {
-  return <ToastHost>{children}</ToastHost>;
+  return (
+    <ThemeProvider>
+      <ToastHost>{children}</ToastHost>
+    </ThemeProvider>
+  );
 }

@@ -51,6 +51,9 @@ export async function PUT(req: Request) {
     if (typeof body.extraArgs === "string") {
       next.extraArgs = sanitizeExtraArgs(body.extraArgs);
     }
+    if (typeof body.createWorktree === "boolean") {
+      next.createWorktree = body.createWorktree;
+    }
     await savePreferences(next);
     return NextResponse.json({ preferences: next });
   } catch (err) {

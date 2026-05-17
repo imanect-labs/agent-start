@@ -6,12 +6,14 @@ export type Preferences = {
   cli: string;
   skipPermissions: boolean;
   extraArgs: string;
+  createWorktree: boolean;
 };
 
 export const DEFAULT_PREFERENCES: Preferences = {
   cli: "claude",
   skipPermissions: true,
   extraArgs: "",
+  createWorktree: true,
 };
 
 function migrate(raw: Record<string, unknown>): Partial<Preferences> {

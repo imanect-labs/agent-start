@@ -1,13 +1,12 @@
 "use client";
 
 import useSWR, { mutate } from "swr";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/Toast";
-import { Button, Input, Spinner } from "@/components/ui";
-import { ProjectCard } from "@/components/ProjectCard";
-import { SessionCard } from "@/components/SessionCard";
-import { SessionPreviewModal } from "@/components/SessionPreviewModal";
-import { SettingsSheet } from "@/components/SettingsSheet";
+import { Sidebar, type Project, type TmuxSession } from "@/components/Sidebar";
+import { MainPane } from "@/components/MainPane";
+import { RightPane } from "@/components/RightPane";
+import { SettingsDialog } from "@/components/SettingsDialog";
 import {
   LaunchConfirmSheet,
   type LaunchOverrides,
@@ -16,38 +15,76 @@ import {
   DeleteConfirmSheet,
   type DeleteTarget,
 } from "@/components/DeleteConfirmSheet";
-
-type Project = {
-  name: string;
-  path: string;
-  root: string;
-  mtimeMs: number;
-  isGit: boolean;
-};
-type TmuxSession = {
-  name: string;
-  path: string;
-  createdAt: number;
-  attached: boolean;
-  cli: string;
-  worktreePath: string;
-  origPath: string;
-};
+import {
+  makeTabId,
+  type SessionTabs,
+  type Tab,
+} from "@/components/tab-types";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+const STORAGE_KEY = "agent-start:tabs:v1";
+
+type StoredTabs = {
+  perSession: Record<string, SessionTabs>;
+  activeSession: string | null;
+  rightPaneOpen: boolean;
+};
+
+function loadStored(): StoredTabs {
+  if (typeof window === "undefined")
+    return { perSession: {}, activeSession: null, rightPaneOpen: true };
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) throw new Error("missing");
+    const parsed = JSON.parse(raw) as StoredTabs;
+    return {
+      perSession: parsed.perSession ?? {},
+      activeSession: parsed.activeSession ?? null,
+      rightPaneOpen: parsed.rightPaneOpen ?? true,
+    };
+  } catch {
+    return { perSession: {}, activeSession: null, rightPaneOpen: true };
+  }
+}
+
+function persistStored(s: StoredTabs) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  } catch {
+    // ignore
+  }
+}
+
 export default function HomePage() {
   const toast = useToast();
-  const [query, setQuery] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [launchTarget, setLaunchTarget] = useState<Project | null>(null);
   const [launching, setLaunching] = useState(false);
-
-  const [previewName, setPreviewName] = useState<string | null>(null);
-
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Per-session tab state. `perSession[sessionName]` is undefined until the
+  // user has opened the session for the first time.
+  const [perSession, setPerSession] = useState<Record<string, SessionTabs>>(
+    {},
+  );
+  const [activeSession, setActiveSession] = useState<string | null>(null);
+  const [rightPaneOpen, setRightPaneOpen] = useState(true);
+  // Hydrate from localStorage on first mount.
+  useEffect(() => {
+    const s = loadStored();
+    setPerSession(s.perSession);
+    setActiveSession(s.activeSession);
+    setRightPaneOpen(s.rightPaneOpen);
+  }, []);
+
+  // Persist on every change.
+  useEffect(() => {
+    persistStored({ perSession, activeSession, rightPaneOpen });
+  }, [perSession, activeSession, rightPaneOpen]);
 
   const { data: projData, isLoading: projLoading } = useSWR<{
     projects: Project[];
@@ -57,17 +94,151 @@ export default function HomePage() {
     sessions: TmuxSession[];
   }>("/api/sessions", fetcher, { refreshInterval: 5000 });
 
-  const filteredProjects = useMemo(() => {
-    const all = projData?.projects ?? [];
-    if (!query.trim()) return all;
-    const q = query.toLowerCase();
-    return all.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q),
-    );
-  }, [projData, query]);
-
+  const projects = projData?.projects ?? [];
   const sessions = sessData?.sessions ?? [];
+
+  // Prune sessions that no longer exist server-side.
+  useEffect(() => {
+    if (!sessData) return;
+    const live = new Set(sessions.map((s) => s.name));
+    setPerSession((prev) => {
+      const next: Record<string, SessionTabs> = {};
+      let changed = false;
+      for (const [k, v] of Object.entries(prev)) {
+        if (live.has(k)) next[k] = v;
+        else changed = true;
+      }
+      if (!changed) return prev;
+      return next;
+    });
+    setActiveSession((cur) => (cur && live.has(cur) ? cur : null));
+  }, [sessData, sessions]);
+
+  const openSession = useCallback((name: string) => {
+    setActiveSession(name);
+    setPerSession((prev) => {
+      if (prev[name]) return prev;
+      // First open: create default terminal tab pointed at window 0.
+      const id = makeTabId();
+      const tab: Tab = { id, kind: "terminal", windowId: 0 };
+      return { ...prev, [name]: { tabs: [tab], activeTabId: id } };
+    });
+  }, []);
+
+  const selectTab = useCallback(
+    (tabId: string) => {
+      if (!activeSession) return;
+      setPerSession((prev) => {
+        const cur = prev[activeSession];
+        if (!cur) return prev;
+        if (cur.activeTabId === tabId) return prev;
+        return { ...prev, [activeSession]: { ...cur, activeTabId: tabId } };
+      });
+    },
+    [activeSession],
+  );
+
+  const addTerminalTab = useCallback(async () => {
+    if (!activeSession) return;
+    try {
+      const res = await fetch(
+        `/api/sessions/${encodeURIComponent(activeSession)}/windows`,
+        { method: "POST" },
+      );
+      const json = await res.json();
+      if (!res.ok)
+        throw new Error(json.error ?? `HTTP ${res.status}`);
+      const id = makeTabId();
+      setPerSession((prev) => {
+        const cur = prev[activeSession];
+        if (!cur) return prev;
+        const tab: Tab = { id, kind: "terminal", windowId: json.index };
+        return {
+          ...prev,
+          [activeSession]: {
+            tabs: [...cur.tabs, tab],
+            activeTabId: id,
+          },
+        };
+      });
+    } catch (e) {
+      toast({
+        title: "ターミナルタブ追加失敗",
+        description: (e as Error).message,
+        color: "danger",
+      });
+    }
+  }, [activeSession, toast]);
+
+  const addFilesTab = useCallback(() => {
+    if (!activeSession) return;
+    const id = makeTabId();
+    setPerSession((prev) => {
+      const cur = prev[activeSession];
+      if (!cur) return prev;
+      // If a files tab already exists, just focus it (single instance).
+      const existing = cur.tabs.find((t) => t.kind === "files");
+      if (existing) {
+        return {
+          ...prev,
+          [activeSession]: { ...cur, activeTabId: existing.id },
+        };
+      }
+      const tab: Tab = { id, kind: "files" };
+      return {
+        ...prev,
+        [activeSession]: { tabs: [...cur.tabs, tab], activeTabId: id },
+      };
+    });
+  }, [activeSession]);
+
+  const closeTab = useCallback(
+    async (tabId: string) => {
+      if (!activeSession) return;
+      const cur = perSession[activeSession];
+      if (!cur) return;
+      const tab = cur.tabs.find((t) => t.id === tabId);
+      if (!tab) return;
+      // If terminal tab on window > 0, also kill the tmux window. Window 0 is
+      // tied to the session itself — closing that tab just removes it from
+      // the UI but keeps the session running.
+      if (tab.kind === "terminal" && tab.windowId > 0) {
+        try {
+          await fetch(
+            `/api/sessions/${encodeURIComponent(
+              activeSession,
+            )}/windows/${tab.windowId}`,
+            { method: "DELETE" },
+          );
+        } catch {
+          // non-fatal
+        }
+      }
+      setPerSession((prev) => {
+        const c = prev[activeSession];
+        if (!c) return prev;
+        const idx = c.tabs.findIndex((t) => t.id === tabId);
+        if (idx === -1) return prev;
+        const nextTabs = c.tabs.filter((t) => t.id !== tabId);
+        if (nextTabs.length === 0) {
+          // No tabs left — remove session entry entirely; user can reopen it
+          // from the sidebar to get a fresh terminal tab.
+          const next = { ...prev };
+          delete next[activeSession];
+          return next;
+        }
+        const wasActive = c.activeTabId === tabId;
+        const nextActive = wasActive
+          ? nextTabs[Math.min(idx, nextTabs.length - 1)].id
+          : c.activeTabId;
+        return {
+          ...prev,
+          [activeSession]: { tabs: nextTabs, activeTabId: nextActive },
+        };
+      });
+    },
+    [activeSession, perSession],
+  );
 
   const handleLaunch = async (o: LaunchOverrides) => {
     if (!launchTarget) return;
@@ -92,7 +263,8 @@ export default function HomePage() {
         color: "success",
       });
       setLaunchTarget(null);
-      mutate("/api/sessions");
+      await mutate("/api/sessions");
+      if (typeof json.name === "string") openSession(json.name);
     } catch (e) {
       toast({
         title: "起動失敗",
@@ -123,6 +295,14 @@ export default function HomePage() {
       } else {
         toast({ title: "停止しました", color: "success" });
       }
+      // Remove tab state for this session
+      setPerSession((prev) => {
+        if (!prev[deleteTarget.name]) return prev;
+        const next = { ...prev };
+        delete next[deleteTarget.name];
+        return next;
+      });
+      setActiveSession((cur) => (cur === deleteTarget.name ? null : cur));
       setDeleteTarget(null);
       mutate("/api/sessions");
     } catch (e) {
@@ -136,107 +316,69 @@ export default function HomePage() {
     }
   };
 
+  const refresh = () => {
+    mutate("/api/sessions");
+    mutate("/api/projects");
+  };
+
+  const activeSessionObj = useMemo(
+    () => sessions.find((s) => s.name === activeSession) ?? null,
+    [sessions, activeSession],
+  );
+  const activeTabs = activeSession ? perSession[activeSession] : null;
+  const activeCwd =
+    activeSessionObj?.worktreePath ||
+    activeSessionObj?.path ||
+    activeSessionObj?.origPath ||
+    "";
+
   return (
-    <main className="min-h-screen bg-zinc-50 text-zinc-900 flex flex-col">
-      <header className="safe-top sticky top-0 z-10 bg-white/85 backdrop-blur border-b border-zinc-200">
-        <div className="px-4 py-3 flex items-center justify-between gap-2 max-w-2xl mx-auto w-full">
-          <div className="flex items-baseline gap-2">
-            <span className="text-base font-semibold tracking-tight">
-              agent-start
-            </span>
-            <span className="text-[11px] text-zinc-400">launcher</span>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setSettingsOpen(true)}
-          >
-            設定
-          </Button>
-        </div>
-      </header>
+    <main className="h-[100dvh] flex bg-app text-fg overflow-hidden">
+      <Sidebar
+        projects={projects}
+        sessions={sessions}
+        loadingProjects={projLoading}
+        loadingSessions={sessLoading}
+        activeSession={activeSession}
+        onLaunchProject={setLaunchTarget}
+        onOpenSession={openSession}
+        onStopSession={(s) =>
+          setDeleteTarget({
+            name: s.name,
+            worktreePath: s.worktreePath,
+            origPath: s.origPath,
+          })
+        }
+        onOpenSettings={() => setSettingsOpen(true)}
+        onRefresh={refresh}
+      />
 
-      <section className="flex-1 px-4 py-5 safe-bottom space-y-6 max-w-2xl w-full mx-auto">
-        <SectionBlock
-          title="セッション"
-          right={
-            <span className="text-[11px] text-zinc-400 tabular-nums">
-              {sessions.length}
-            </span>
-          }
-        >
-          {sessLoading ? (
-            <CenterSpinner />
-          ) : sessions.length === 0 ? (
-            <EmptyState>
-              起動中のセッションはありません。
-              <br />
-              下のプロジェクトから起動してください。
-            </EmptyState>
-          ) : (
-            <div className="space-y-2">
-              {sessions.map((s) => (
-                <SessionCard
-                  key={s.name}
-                  {...s}
-                  onPreview={() => setPreviewName(s.name)}
-                  onStop={() =>
-                    setDeleteTarget({
-                      name: s.name,
-                      worktreePath: s.worktreePath,
-                      origPath: s.origPath,
-                    })
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </SectionBlock>
+      <MainPane
+        session={activeSessionObj}
+        tabs={activeTabs ?? null}
+        onSelectTab={selectTab}
+        onCloseTab={closeTab}
+        onAddTerminal={addTerminalTab}
+        onAddFiles={addFilesTab}
+        onStopSession={(s) =>
+          setDeleteTarget({
+            name: s.name,
+            worktreePath: s.worktreePath,
+            origPath: s.origPath,
+          })
+        }
+        rightPaneOpen={rightPaneOpen}
+        onToggleRightPane={() => setRightPaneOpen((v) => !v)}
+      />
 
-        <SectionBlock
-          title="プロジェクト"
-          right={
-            <span className="text-[11px] text-zinc-400 tabular-nums">
-              {filteredProjects.length}
-            </span>
-          }
-        >
-          <Input
-            type="search"
-            placeholder="プロジェクト名・パスで検索"
-            value={query}
-            onValueChange={setQuery}
-            clearable
-            leftSlot={
-              <svg
-                viewBox="0 0 20 20"
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <circle cx="9" cy="9" r="6" />
-                <path d="m17 17-3.5-3.5" strokeLinecap="round" />
-              </svg>
-            }
-          />
-          <div className="space-y-2 mt-3">
-            {projLoading && <CenterSpinner />}
-            {!projLoading && filteredProjects.length === 0 && (
-              <EmptyState>プロジェクトが見つかりません</EmptyState>
-            )}
-            {filteredProjects.map((p) => (
-              <ProjectCard
-                key={p.path}
-                {...p}
-                onSelect={() => setLaunchTarget(p)}
-              />
-            ))}
-          </div>
-        </SectionBlock>
-      </section>
+      {rightPaneOpen && activeSessionObj && (
+        <RightPane
+          cwd={activeCwd}
+          onClose={() => setRightPaneOpen(false)}
+        />
+      )}
 
-      <SettingsSheet
+      <SettingsDialog
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
       />
@@ -257,50 +399,6 @@ export default function HomePage() {
         onConfirm={handleStopConfirm}
         busy={deleting}
       />
-
-      <SessionPreviewModal
-        sessionName={previewName}
-        isOpen={!!previewName}
-        onClose={() => setPreviewName(null)}
-      />
     </main>
-  );
-}
-
-function SectionBlock({
-  title,
-  right,
-  children,
-}: {
-  title: string;
-  right?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div className="flex items-baseline justify-between mb-2">
-        <h2 className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium">
-          {title}
-        </h2>
-        {right}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function CenterSpinner() {
-  return (
-    <div className="flex justify-center py-8">
-      <Spinner size="sm" />
-    </div>
-  );
-}
-
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-center text-sm text-zinc-500 bg-white border border-dashed border-zinc-200 rounded-lg py-7 px-4">
-      {children}
-    </div>
   );
 }

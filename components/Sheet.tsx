@@ -49,16 +49,16 @@ export function Sheet({
       aria-modal="true"
     >
       <div
-        className="absolute inset-0 bg-zinc-950/30 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
         onClick={onClose}
       />
       <div
         className={[
-          "relative bg-white text-zinc-900 w-full",
+          "relative bg-surface text-fg w-full",
           MAX_W[maxWidth],
           "rounded-t-2xl sm:rounded-xl",
-          "border-t border-zinc-200 sm:border",
-          "shadow-[0_-12px_40px_-12px_rgba(0,0,0,0.18)] sm:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.25)]",
+          "border-t border-line sm:border",
+          "shadow-[0_-12px_40px_-12px_rgba(0,0,0,0.18)] sm:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.45)]",
           "flex flex-col overflow-hidden",
           tall ? "h-[95dvh] sm:h-[92dvh]" : "max-h-[90vh]",
         ].join(" ")}
@@ -79,19 +79,21 @@ export function SheetHeader({
   onClose: () => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-2 px-5 pt-5 pb-4 border-b border-zinc-100">
+    <div className="flex items-start justify-between gap-2 px-5 pt-5 pb-4 border-b border-line">
       <div className="flex-1 min-w-0">
-        <div className="text-base font-semibold text-zinc-900 truncate tracking-tight">
+        <div className="text-base font-semibold text-fg truncate tracking-tight">
           {title}
         </div>
         {subtitle && (
-          <div className="text-xs text-zinc-500 truncate mt-0.5">{subtitle}</div>
+          <div className="text-xs text-fg-subtle truncate mt-0.5">
+            {subtitle}
+          </div>
         )}
       </div>
       <button
         type="button"
         onClick={onClose}
-        className="shrink-0 -mt-1 -mr-2 w-9 h-9 inline-flex items-center justify-center rounded-md text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
+        className="shrink-0 -mt-1 -mr-2 w-9 h-9 inline-flex items-center justify-center rounded-md text-fg-faint hover:text-fg hover:bg-surface-muted transition-colors"
         aria-label="閉じる"
       >
         <svg viewBox="0 0 20 20" className="w-4 h-4" fill="currentColor">
@@ -115,7 +117,7 @@ export function SheetBody({
       className={
         noScroll
           ? "flex-1 overflow-hidden px-5 py-4 min-h-0 flex flex-col"
-          : "flex-1 overflow-y-auto px-5 py-4 space-y-5"
+          : "flex-1 overflow-y-auto scroll-thin px-5 py-4 space-y-5"
       }
     >
       {children}
@@ -125,7 +127,7 @@ export function SheetBody({
 
 export function SheetFooter({ children }: { children: ReactNode }) {
   return (
-    <div className="flex gap-2 px-5 py-3.5 border-t border-zinc-100 safe-bottom">
+    <div className="flex gap-2 px-5 py-3.5 border-t border-line safe-bottom">
       {children}
     </div>
   );
