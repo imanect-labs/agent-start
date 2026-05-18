@@ -1,12 +1,16 @@
 use anyhow::Result;
-use axum::routing::{delete, get, put};
+use axum::http::{header, StatusCode, Uri};
+use axum::response::IntoResponse;
+use axum::routing::{any, delete, get, put};
 use axum::Router;
 use parking_lot::RwLock;
 use pty_manager::PtyManager;
 use state::Db;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 use crate::manifest;
@@ -21,7 +25,7 @@ pub struct AppState {
 
 pub type Shared = Arc<AppState>;
 
-pub async fn run(bind: String, port: u16) -> Result<()> {
+pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Result<()> {
     // Move legacy XDG files into ~/.agent-start/ on first boot of a new
     // build. No-op when the env overrides are set or files already exist
     // at the destination.
@@ -72,12 +76,11 @@ pub async fn run(bind: String, port: u16) -> Result<()> {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let router = Router::new()
+    let api_router = Router::new()
         // Versioned (Rust-native) endpoints.
         .route("/v1/health", get(crate::http::health))
         .route("/v1/version", get(crate::http::version))
-        // Legacy `/api/*` surface preserved so the existing Next.js UI can
-        // proxy through `next.config.mjs` rewrites without changes.
+        // `/api/*` surface consumed by the Vite+ SPA under `/front/`.
         .route("/api/config", get(crate::http::get_config))
         .route("/api/preferences", get(crate::http::get_preferences))
         .route("/api/preferences", put(crate::http::put_preferences))
@@ -100,9 +103,56 @@ pub async fn run(bind: String, port: u16) -> Result<()> {
         .route("/api/git/diff", get(crate::http::git_diff))
         // WebSocket — same URL the UI already uses.
         .route("/ws/terminal", get(crate::ws::ws_terminal))
-        .with_state(app_state.clone())
-        .layer(cors)
-        .layer(TraceLayer::new_for_http());
+        .with_state(app_state.clone());
+
+    // SPA wiring. API routes already registered above take precedence.
+    // For everything else:
+    //   * `/assets/*` -> ServeDir on `dist/assets` (hashed JS/CSS chunks).
+    //   * any other path -> read `dist/index.html` and return it with 200
+    //     so TanStack Router can pick up the client-side route after
+    //     hydration. We avoid `ServeDir::not_found_service` because
+    //     tower-http hard-codes the response status to 404 for that
+    //     code path, which breaks SEO / 404-rate monitors.
+    //
+    // The fallback explicitly 404s API/WS prefix typos rather than
+    // serving them HTML — otherwise `/api/typo` would return 200 with
+    // index.html and silently mask broken client integrations.
+    let router = if let Some(dist) = frontend_dist {
+        let index_path = dist.join("index.html");
+        let assets_dir = dist.join("assets");
+        tracing::info!(path = %dist.display(), "serving front-end SPA from dist");
+
+        let serve_index = any(move |uri: Uri| {
+            let index_path = index_path.clone();
+            async move {
+                let path = uri.path();
+                if path.starts_with("/api/") || path.starts_with("/v1/") || path.starts_with("/ws/")
+                {
+                    return StatusCode::NOT_FOUND.into_response();
+                }
+                match tokio::fs::read(&index_path).await {
+                    Ok(body) => (
+                        StatusCode::OK,
+                        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                        body,
+                    )
+                        .into_response(),
+                    Err(e) => {
+                        tracing::error!(error = %e, path = %index_path.display(), "failed to read index.html");
+                        StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                    }
+                }
+            }
+        });
+
+        api_router
+            .nest_service("/assets", ServeDir::new(&assets_dir))
+            .fallback_service(serve_index)
+    } else {
+        api_router
+    };
+
+    let router = router.layer(cors).layer(TraceLayer::new_for_http());
 
     let addr = format!("{bind}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;

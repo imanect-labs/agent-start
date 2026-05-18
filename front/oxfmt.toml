@@ -1,0 +1,2 @@
+# oxfmt configuration. Defaults are fine; tighten only if churn appears.
+# https://oxc.rs/docs/guide/usage/formatter

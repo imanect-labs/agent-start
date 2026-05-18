@@ -3,6 +3,7 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
 
 mod app;
@@ -24,6 +25,13 @@ struct Cli {
     /// Port to listen on. Defaults to 3030.
     #[arg(long, global = true)]
     port: Option<u16>,
+
+    /// Path to the built front-end SPA (Vite `dist/`). When set and the
+    /// directory exists, the host serves it as a fallback for unmatched
+    /// routes (with `index.html` for SPA deep links). Skip during dev —
+    /// the front is then served by `vp dev` on its own port.
+    #[arg(long, global = true)]
+    frontend_dist: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -53,12 +61,24 @@ async fn main() -> Result<()> {
         .or_else(|| std::env::var("PORT").ok().and_then(|s| s.parse().ok()))
         .unwrap_or(3030);
 
+    let frontend_dist = cli
+        .frontend_dist
+        .or_else(|| std::env::var("AGENT_START_FRONTEND_DIST").ok().map(PathBuf::from))
+        .and_then(|p| {
+            if p.is_dir() {
+                Some(p)
+            } else {
+                tracing::warn!(path = %p.display(), "frontend-dist path does not exist; static serving disabled");
+                None
+            }
+        });
+
     match cli.cmd.unwrap_or(Cmd::Start) {
         Cmd::Version => {
             println!("agent-start-host {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        Cmd::Start => app::run(bind, port).await,
+        Cmd::Start => app::run(bind, port, frontend_dist).await,
     }
 }
 

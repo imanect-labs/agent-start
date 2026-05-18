@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>agent-start</title>
+    <meta name="description" content="claude code / codex launcher" />
+    <script>
+      // Runs before paint so the correct theme class is applied on first paint.
+      (() => {
+        try {
+          var v = localStorage.getItem("agent-start:theme");
+          var dark =
+            v === "dark" ||
+            ((v === null || v === "system") &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="min-h-screen bg-app text-fg">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
