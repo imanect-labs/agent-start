@@ -154,9 +154,6 @@ function TabBar({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [menuOpen]);
 
-  const terminalCount = tabs.filter((t) => t.kind === "terminal").length;
-  let termOrdinal = 0;
-
   return (
     // The bar must always be a single horizontal strip — `min-w-0`
     // lets the flex parent in <MainPane> actually clamp our width
@@ -173,10 +170,10 @@ function TabBar({
             <IconTerminal className="w-3.5 h-3.5 shrink-0 text-fg-faint" />
           );
           if (t.kind === "terminal") {
-            termOrdinal += 1;
-            label =
-              label ??
-              (terminalCount > 1 ? `Terminal ${termOrdinal}` : "Terminal");
+            // Number from the underlying PTY window index (stable for
+            // the lifetime of the window — never reused even after
+            // siblings are closed). Window 0 displays as "Terminal 1".
+            label = label ?? `Terminal ${t.windowId + 1}`;
           } else {
             label = label ?? "Files";
             icon = (
