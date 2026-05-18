@@ -11,6 +11,7 @@ pub async fn get_preferences() -> Response {
                 cli: p.cli,
                 skip_permissions: p.skip_permissions,
                 extra_args: p.extra_args,
+                create_worktree: p.create_worktree,
             },
         })
         .into_response(),
@@ -42,6 +43,9 @@ pub async fn put_preferences(Json(body): Json<PreferencesPatch>) -> Response {
             Err(e) => return err(StatusCode::BAD_REQUEST, e.to_string()),
         }
     }
+    if let Some(cw) = body.create_worktree {
+        current.create_worktree = cw;
+    }
     if let Err(e) = config_loader::save_preferences(&current) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
     }
@@ -50,6 +54,7 @@ pub async fn put_preferences(Json(body): Json<PreferencesPatch>) -> Response {
             cli: current.cli,
             skip_permissions: current.skip_permissions,
             extra_args: current.extra_args,
+            create_worktree: current.create_worktree,
         },
     })
     .into_response()

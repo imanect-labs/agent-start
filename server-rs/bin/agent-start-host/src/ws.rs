@@ -1,9 +1,10 @@
-//! WebSocket handler for `/ws/terminal?session=<name>`.
+//! WebSocket handler for `/ws/terminal?session=<name>&window=<n>`.
 //!
 //! Wire-compatible with the old Node implementation: clients send
 //! `{type:"input"|"resize"|"scroll", ...}` JSON frames, server pushes
 //! raw PTY bytes as binary frames. On connect we replay the entire ring
-//! buffer so reconnects are seamless.
+//! buffer so reconnects are seamless. `window` defaults to 0 (the
+//! session's primary PTY).
 
 use agent_start_api::ClientMessage;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -18,6 +19,8 @@ use crate::app::Shared;
 #[derive(Debug, Deserialize)]
 pub struct TermQuery {
     pub session: Option<String>,
+    /// Defaults to 0 — the session's primary PTY.
+    pub window: Option<u32>,
 }
 
 pub async fn ws_terminal(
@@ -35,7 +38,8 @@ pub async fn ws_terminal(
     if !workspace_manager::is_valid_session_name(&name) {
         return (StatusCode::BAD_REQUEST, "invalid session name").into_response();
     }
-    let Some(session) = app.pty.get(&name) else {
+    let window = q.window.unwrap_or(0);
+    let Some(session) = app.pty.get(&name, window) else {
         return (StatusCode::NOT_FOUND, "session not found").into_response();
     };
     ws.on_upgrade(move |socket| handle(socket, session, app))

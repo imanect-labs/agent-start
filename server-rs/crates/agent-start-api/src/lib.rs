@@ -55,6 +55,8 @@ pub struct Preferences {
     pub skip_permissions: bool,
     #[serde(rename = "extraArgs")]
     pub extra_args: String,
+    #[serde(rename = "createWorktree", default)]
+    pub create_worktree: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +71,8 @@ pub struct PreferencesPatch {
     pub skip_permissions: Option<bool>,
     #[serde(rename = "extraArgs")]
     pub extra_args: Option<String>,
+    #[serde(rename = "createWorktree")]
+    pub create_worktree: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +140,58 @@ pub struct DeleteSessionResponse {
     pub worktree_removed: bool,
     #[serde(rename = "worktreeError", skip_serializing_if = "Option::is_none")]
     pub worktree_error: Option<String>,
+}
+
+/// Single window (PTY) inside a session — mirrors the per-session tab
+/// model the desktop UI uses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowInfo {
+    pub index: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowsBody {
+    pub windows: Vec<WindowInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewWindowResponse {
+    pub index: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitFile {
+    pub path: String,
+    pub xy: String,
+    pub staged: bool,
+    pub unstaged: bool,
+    pub untracked: bool,
+    #[serde(rename = "origPath", skip_serializing_if = "Option::is_none")]
+    pub orig_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitStatusBody {
+    #[serde(rename = "isGit")]
+    pub is_git: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<String>,
+    #[serde(default)]
+    pub ahead: u32,
+    #[serde(default)]
+    pub behind: u32,
+    #[serde(default)]
+    pub files: Vec<GitFile>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitDiffBody {
+    pub diff: String,
+    pub truncated: bool,
+    #[serde(rename = "isUntracked")]
+    pub is_untracked: bool,
 }
 
 /// WebSocket protocol messages — JSON over `/ws/terminal?session=<name>`.

@@ -18,7 +18,12 @@ type Props = {
   busy: boolean;
 };
 
-export function DeleteConfirmSheet({ target, onClose, onConfirm, busy }: Props) {
+export function DeleteConfirmSheet({
+  target,
+  onClose,
+  onConfirm,
+  busy,
+}: Props) {
   const [deleteWt, setDeleteWt] = useState(true);
 
   useEffect(() => {
@@ -32,22 +37,22 @@ export function DeleteConfirmSheet({ target, onClose, onConfirm, busy }: Props) 
     <Sheet open={open} onClose={onClose} maxWidth="md">
       <SheetHeader title="セッションを停止" onClose={onClose} />
       <SheetBody>
-        <div className="text-sm text-zinc-700">
-          <span className="font-mono text-xs break-all bg-zinc-50 px-2 py-1 rounded border border-zinc-200">
+        <div className="text-sm text-fg-muted">
+          <span className="font-mono text-xs break-all bg-surface-muted px-2 py-1 rounded border border-line">
             {target?.name}
           </span>
           <span className="ml-2">を停止する</span>
         </div>
         {hasWt && (
-          <div className="flex items-start justify-between gap-3 p-3.5 bg-amber-50/60 border border-amber-200 rounded-lg">
+          <div className="flex items-start justify-between gap-3 p-3.5 border border-amber-500/30 bg-amber-500/5 rounded-lg">
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-zinc-900">
+              <div className="text-sm font-medium text-fg">
                 worktree も削除する
               </div>
-              <div className="text-xs text-zinc-600 break-all mt-1 font-mono">
+              <div className="text-xs text-fg-subtle break-all mt-1 font-mono">
                 {target?.worktreePath}
               </div>
-              <div className="text-xs text-zinc-500 mt-1">
+              <div className="text-xs text-fg-faint mt-1">
                 <code className="font-mono">agent-start/*</code> ブランチも削除
               </div>
             </div>

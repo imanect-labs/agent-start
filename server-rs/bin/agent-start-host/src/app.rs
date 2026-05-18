@@ -44,21 +44,28 @@ pub async fn run(bind: String, port: u16) -> Result<()> {
 
     let app_state: Shared = Arc::new(AppState { db, pty, sessions });
 
-    // When a child process exits on its own (user types `exit`, agent
-    // process finishes, etc.) drop the in-memory entry and mark the
-    // row dead in SQLite so `GET /api/sessions` stops listing it.
+    // When a child process exits on its own (user types `exit`, the
+    // agent finishes, etc.) drop the in-memory entry and mark the row
+    // dead in SQLite so `GET /api/sessions` stops listing it. Only
+    // window 0 represents the session itself; auxiliary windows just
+    // vanish from `/windows` without ending the session.
     {
         let state_for_hook = app_state.clone();
-        app_state.pty.set_exit_hook(Arc::new(move |name: &str| {
-            let state = state_for_hook.clone();
-            let name = name.to_string();
-            tokio::spawn(async move {
-                state.sessions.write().remove(&name);
-                if let Err(e) = state::mark_dead(&state.db, &name).await {
-                    tracing::warn!(error = %e, session = %name, "failed to mark dead");
+        app_state
+            .pty
+            .set_exit_hook(Arc::new(move |name: &str, window: u32| {
+                if window != 0 {
+                    return;
                 }
-            });
-        }));
+                let state = state_for_hook.clone();
+                let name = name.to_string();
+                tokio::spawn(async move {
+                    state.sessions.write().remove(&name);
+                    if let Err(e) = state::mark_dead(&state.db, &name).await {
+                        tracing::warn!(error = %e, session = %name, "failed to mark dead");
+                    }
+                });
+            }));
     }
 
     let cors = CorsLayer::new()
@@ -82,6 +89,16 @@ pub async fn run(bind: String, port: u16) -> Result<()> {
             axum::routing::post(crate::http::start_session),
         )
         .route("/api/sessions/:name", delete(crate::http::delete_session))
+        .route(
+            "/api/sessions/:name/windows",
+            get(crate::http::list_windows).post(crate::http::create_window),
+        )
+        .route(
+            "/api/sessions/:name/windows/:index",
+            delete(crate::http::delete_window),
+        )
+        .route("/api/git/status", get(crate::http::git_status))
+        .route("/api/git/diff", get(crate::http::git_diff))
         // WebSocket — same URL the UI already uses.
         .route("/ws/terminal", get(crate::ws::ws_terminal))
         .with_state(app_state.clone())

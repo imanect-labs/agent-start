@@ -771,6 +771,7 @@ name = "git-ops"
 version = "0.1.0"
 dependencies = [
  "config-loader",
+ "serde",
  "thiserror 1.0.69",
  "tracing",
 ]

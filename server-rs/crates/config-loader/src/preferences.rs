@@ -15,6 +15,14 @@ pub struct Preferences {
     pub skip_permissions: bool,
     #[serde(rename = "extraArgs")]
     pub extra_args: String,
+    /// Whether the launch sheet's "create git worktree" toggle is on
+    /// by default. Defaults to `true`.
+    #[serde(rename = "createWorktree", default = "yes")]
+    pub create_worktree: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Preferences {
@@ -27,6 +35,7 @@ impl Preferences {
             },
             skip_permissions: true,
             extra_args: String::new(),
+            create_worktree: true,
         }
     }
 }

@@ -7,8 +7,13 @@ type Props = {
   tone?: "default" | "danger";
 };
 
-export function Toggle({ checked, onChange, disabled, tone = "default" }: Props) {
-  const onBg = tone === "danger" ? "bg-red-600" : "bg-zinc-900";
+export function Toggle({
+  checked,
+  onChange,
+  disabled,
+  tone = "default",
+}: Props) {
+  const onBg = tone === "danger" ? "bg-danger" : "bg-accent";
   return (
     <button
       type="button"
@@ -18,16 +23,16 @@ export function Toggle({ checked, onChange, disabled, tone = "default" }: Props)
       onClick={() => onChange(!checked)}
       className={[
         "relative inline-flex h-6 w-10 shrink-0 rounded-full transition-colors duration-150",
-        "outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/15 focus-visible:ring-offset-1 focus-visible:ring-offset-white",
+        "outline-none focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1 focus-visible:ring-offset-surface",
         disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
-        checked ? onBg : "bg-zinc-200",
+        checked ? onBg : "bg-surface-muted border border-line",
       ].join(" ")}
     >
       <span
         className={[
-          "absolute top-0.5 inline-block h-5 w-5 rounded-full bg-white shadow-sm",
+          "absolute top-0.5 inline-block h-5 w-5 rounded-full shadow-sm",
           "transition-transform duration-150",
-          checked ? "translate-x-[1.125rem]" : "translate-x-0.5",
+          checked ? "bg-accent-fg translate-x-[1.125rem]" : "bg-surface translate-x-0.5",
         ].join(" ")}
       />
     </button>

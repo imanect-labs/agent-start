@@ -11,6 +11,7 @@ type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> & {
   onValueChange?: (value: string) => void;
   onClear?: () => void;
   clearable?: boolean;
+  inputClassName?: string;
 };
 
 export const Input = forwardRef<HTMLInputElement, Props>(function Input(
@@ -24,6 +25,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
     onClear,
     clearable,
     className = "",
+    inputClassName = "",
     value,
     ...rest
   },
@@ -31,22 +33,24 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
 ) {
   const hasValue = typeof value === "string" ? value.length > 0 : !!value;
   return (
-    <label className="block">
+    <label className={`block ${className}`}>
       {label && (
-        <div className="text-xs font-medium text-zinc-700 mb-1.5">{label}</div>
+        <div className="text-xs font-medium text-fg-muted mb-1.5">{label}</div>
       )}
       <div
         className={[
           "group flex items-center gap-2",
           "h-10 px-3 rounded-md",
-          "bg-white border border-zinc-200",
-          "focus-within:border-zinc-400 focus-within:ring-2 focus-within:ring-zinc-900/10",
+          "bg-surface border border-line",
+          "focus-within:border-line-strong focus-within:ring-2 focus-within:ring-ring/10",
           "transition-colors",
-          errorText ? "border-red-300 focus-within:border-red-400 focus-within:ring-red-500/10" : "",
+          errorText
+            ? "border-danger/40 focus-within:border-danger focus-within:ring-danger/10"
+            : "",
         ].join(" ")}
       >
         {leftSlot && (
-          <span className="shrink-0 text-zinc-400">{leftSlot}</span>
+          <span className="shrink-0 text-fg-faint">{leftSlot}</span>
         )}
         <input
           ref={ref}
@@ -54,9 +58,9 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
           onChange={(e) => onValueChange?.(e.target.value)}
           className={[
             "flex-1 min-w-0 bg-transparent outline-none",
-            "text-sm text-zinc-900 placeholder:text-zinc-400",
+            "text-sm text-fg placeholder:text-fg-faint",
             "disabled:opacity-50 disabled:cursor-not-allowed",
-            className,
+            inputClassName,
           ].join(" ")}
           {...rest}
         />
@@ -67,7 +71,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
               onValueChange?.("");
               onClear?.();
             }}
-            className="shrink-0 w-5 h-5 inline-flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100"
+            className="shrink-0 w-5 h-5 inline-flex items-center justify-center rounded-full text-fg-faint hover:text-fg hover:bg-surface-muted"
             aria-label="クリア"
           >
             <svg viewBox="0 0 20 20" className="w-3 h-3" fill="currentColor">
@@ -78,10 +82,10 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
         {rightSlot && <span className="shrink-0">{rightSlot}</span>}
       </div>
       {description && !errorText && (
-        <div className="text-xs text-zinc-500 mt-1.5">{description}</div>
+        <div className="text-xs text-fg-subtle mt-1.5">{description}</div>
       )}
       {errorText && (
-        <div className="text-xs text-red-600 mt-1.5">{errorText}</div>
+        <div className="text-xs text-danger mt-1.5">{errorText}</div>
       )}
     </label>
   );

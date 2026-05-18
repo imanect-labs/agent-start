@@ -11,8 +11,17 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#fafafa",
 };
+
+// Runs before hydration so the correct theme class is applied on first paint.
+const themeBootScript = `(() => {
+  try {
+    var v = localStorage.getItem('agent-start:theme');
+    var dark = v === 'dark' || ((v === null || v === 'system') &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches);
+    if (dark) document.documentElement.classList.add('dark');
+  } catch (e) {}
+})();`;
 
 export default function RootLayout({
   children,
@@ -20,8 +29,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ja">
-      <body className="min-h-screen bg-zinc-50 text-zinc-900">
+    <html lang="ja" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+      </head>
+      <body className="min-h-screen bg-app text-fg">
         <Providers>{children}</Providers>
       </body>
     </html>

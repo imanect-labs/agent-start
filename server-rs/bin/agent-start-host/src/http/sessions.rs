@@ -86,6 +86,7 @@ pub async fn start_session(
     let env = launch_env(&resolved, &name, &cwd);
     let spec = PtySpawnSpec {
         name: name.clone(),
+        window: 0,
         cwd: cwd.clone(),
         shell: cfg.shell.clone(),
         command: command.clone(),
@@ -169,8 +170,8 @@ pub async fn delete_session(
 
     let dir = app.sessions.read().get(&name).cloned();
 
-    if let Some(session) = app.pty.remove(&name) {
-        session.kill();
+    for window in app.pty.remove_session(&name) {
+        window.kill();
     }
     if let Err(e) = state::mark_dead(&app.db, &name).await {
         tracing::warn!(error = %e, "failed to mark session dead");

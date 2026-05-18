@@ -7,4 +7,5 @@ license.workspace = true
 [dependencies]
 thiserror = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true }
 config-loader = { workspace = true }
