@@ -1,0 +1,115 @@
+use anyhow::Result;
+use axum::routing::{delete, get, put};
+use axum::Router;
+use parking_lot::RwLock;
+use pty_manager::PtyManager;
+use state::Db;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::trace::TraceLayer;
+
+use crate::manifest;
+use crate::sessions::SessionDirectory;
+
+pub struct AppState {
+    pub db: Db,
+    pub pty: Arc<PtyManager>,
+    /// In-memory mirror of session metadata. Persisted on insert via SQLite.
+    pub sessions: Arc<RwLock<HashMap<String, SessionDirectory>>>,
+}
+
+pub type Shared = Arc<AppState>;
+
+pub async fn run(bind: String, port: u16) -> Result<()> {
+    // Move legacy XDG files into ~/.agent-start/ on first boot of a new
+    // build. No-op when the env overrides are set or files already exist
+    // at the destination.
+    if let Err(e) = config_loader::migrate_legacy_layout() {
+        tracing::warn!(error = %e, "legacy layout migration encountered an error (continuing)");
+    }
+    let db = state::open().await?;
+    let pty = Arc::new(PtyManager::new());
+    let sessions = Arc::new(RwLock::new(HashMap::new()));
+
+    // PTYs are in-process state; they cannot survive a host restart.
+    // Any rows still flagged `running` in SQLite from a previous boot
+    // are zombies — their `agent-start-host` is gone and reconnecting
+    // to them just 404s. Mark them dead so `GET /api/sessions` shows
+    // a clean slate. Worktree dirs on disk are preserved either way.
+    if let Err(e) = state::mark_all_running_dead(&db).await {
+        tracing::warn!(error = %e, "failed to mark prior running sessions dead");
+    }
+
+    let app_state: Shared = Arc::new(AppState { db, pty, sessions });
+
+    // When a child process exits on its own (user types `exit`, the
+    // agent finishes, etc.) drop the in-memory entry and mark the row
+    // dead in SQLite so `GET /api/sessions` stops listing it. Only
+    // window 0 represents the session itself; auxiliary windows just
+    // vanish from `/windows` without ending the session.
+    {
+        let state_for_hook = app_state.clone();
+        app_state
+            .pty
+            .set_exit_hook(Arc::new(move |name: &str, window: u32| {
+                if window != 0 {
+                    return;
+                }
+                let state = state_for_hook.clone();
+                let name = name.to_string();
+                tokio::spawn(async move {
+                    state.sessions.write().remove(&name);
+                    if let Err(e) = state::mark_dead(&state.db, &name).await {
+                        tracing::warn!(error = %e, session = %name, "failed to mark dead");
+                    }
+                });
+            }));
+    }
+
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    let router = Router::new()
+        // Versioned (Rust-native) endpoints.
+        .route("/v1/health", get(crate::http::health))
+        .route("/v1/version", get(crate::http::version))
+        // Legacy `/api/*` surface preserved so the existing Next.js UI can
+        // proxy through `next.config.mjs` rewrites without changes.
+        .route("/api/config", get(crate::http::get_config))
+        .route("/api/preferences", get(crate::http::get_preferences))
+        .route("/api/preferences", put(crate::http::put_preferences))
+        .route("/api/projects", get(crate::http::list_projects))
+        .route("/api/sessions", get(crate::http::list_sessions))
+        .route(
+            "/api/sessions",
+            axum::routing::post(crate::http::start_session),
+        )
+        .route("/api/sessions/:name", delete(crate::http::delete_session))
+        .route(
+            "/api/sessions/:name/windows",
+            get(crate::http::list_windows).post(crate::http::create_window),
+        )
+        .route(
+            "/api/sessions/:name/windows/:index",
+            delete(crate::http::delete_window),
+        )
+        .route("/api/git/status", get(crate::http::git_status))
+        .route("/api/git/diff", get(crate::http::git_diff))
+        // WebSocket — same URL the UI already uses.
+        .route("/ws/terminal", get(crate::ws::ws_terminal))
+        .with_state(app_state.clone())
+        .layer(cors)
+        .layer(TraceLayer::new_for_http());
+
+    let addr = format!("{bind}:{port}");
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    tracing::info!("agent-start-host listening on http://{addr}");
+
+    manifest::write(&addr).ok();
+
+    axum::serve(listener, router.into_make_service()).await?;
+    Ok(())
+}
