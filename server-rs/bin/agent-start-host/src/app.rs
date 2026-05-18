@@ -32,14 +32,13 @@ pub async fn run(bind: String, port: u16) -> Result<()> {
     let pty = Arc::new(PtyManager::new());
     let sessions = Arc::new(RwLock::new(HashMap::new()));
 
-    // Hydrate in-memory directory from the DB so existing sessions show up
-    // even after the host restarts (their PTYs are gone, but the metadata
-    // remains for display until the user clears them).
-    if let Ok(rows) = state::list_sessions(&db, "").await {
-        let mut map = sessions.write();
-        for row in rows {
-            map.insert(row.name.clone(), SessionDirectory::from_row(&row));
-        }
+    // PTYs are in-process state; they cannot survive a host restart.
+    // Any rows still flagged `running` in SQLite from a previous boot
+    // are zombies — their `agent-start-host` is gone and reconnecting
+    // to them just 404s. Mark them dead so `GET /api/sessions` shows
+    // a clean slate. Worktree dirs on disk are preserved either way.
+    if let Err(e) = state::mark_all_running_dead(&db).await {
+        tracing::warn!(error = %e, "failed to mark prior running sessions dead");
     }
 
     let app_state: Shared = Arc::new(AppState { db, pty, sessions });

@@ -1,0 +1,13 @@
+# cargo-audit configuration.
+#
+# The `sqlx` MySQL backend's `rsa` 0.9.x dependency is flagged for
+# RUSTSEC-2023-0071 (the Marvin timing side-channel attack). The
+# advisory has no upstream fix and the affected code is only reached
+# when sqlx talks to a MySQL server. agent-start uses sqlx with
+# SQLite only — `sqlx-mysql` is compiled in via the sqlx `macros`
+# feature for query-macro support but never executed at runtime.
+# We ignore the advisory here rather than dropping the `macros`
+# feature (which would force us to also abandon `sqlx::migrate!`).
+
+[advisories]
+ignore = ["RUSTSEC-2023-0071"]

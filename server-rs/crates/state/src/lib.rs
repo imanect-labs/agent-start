@@ -1,13 +1,13 @@
 //! SQLite-backed persistence for the host: session metadata and PTY
 //! scrollback flushed from the in-memory ring buffer.
 //!
-//! Stored under `$XDG_DATA_HOME/agent-start/host.db`
-//! (default `~/.local/share/agent-start/host.db`).
+//! Stored at `~/.agent-start/host.db` (override the base directory
+//! with `AGENT_START_HOME`).
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{Pool, Sqlite};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions, SqliteRow};
+use sqlx::{Pool, Row, Sqlite};
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -23,7 +23,7 @@ pub enum StateError {
     Migrate(#[from] sqlx::migrate::MigrateError),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionRow {
     pub name: String,
     pub created_at_ms: i64,
@@ -34,6 +34,22 @@ pub struct SessionRow {
     pub orig_path: String,
     pub pid: Option<i64>,
     pub status: String,
+}
+
+impl SessionRow {
+    fn from_row(row: SqliteRow) -> Self {
+        Self {
+            name: row.get("name"),
+            created_at_ms: row.get("created_at_ms"),
+            cli: row.get("cli"),
+            cwd: row.get("cwd"),
+            command: row.get("command"),
+            worktree_path: row.get("worktree_path"),
+            orig_path: row.get("orig_path"),
+            pid: row.try_get("pid").ok(),
+            status: row.get("status"),
+        }
+    }
 }
 
 impl From<&SessionRow> for agent_start_api::Session {
@@ -106,7 +122,7 @@ pub async fn insert_session(db: &Db, s: NewSession<'_>) -> Result<(), StateError
 
 pub async fn list_sessions(db: &Db, prefix: &str) -> Result<Vec<SessionRow>, StateError> {
     let like = format!("{prefix}%");
-    let rows = sqlx::query_as::<_, SessionRow>(
+    let rows = sqlx::query(
         "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status \
          FROM sessions \
          WHERE status = 'running' AND name LIKE ? \
@@ -115,23 +131,34 @@ pub async fn list_sessions(db: &Db, prefix: &str) -> Result<Vec<SessionRow>, Sta
     .bind(like)
     .fetch_all(db)
     .await?;
-    Ok(rows)
+    Ok(rows.into_iter().map(SessionRow::from_row).collect())
 }
 
 pub async fn get_session(db: &Db, name: &str) -> Result<Option<SessionRow>, StateError> {
-    let row = sqlx::query_as::<_, SessionRow>(
+    let row = sqlx::query(
         "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status \
          FROM sessions WHERE name = ?",
     )
     .bind(name)
     .fetch_optional(db)
     .await?;
-    Ok(row)
+    Ok(row.map(SessionRow::from_row))
 }
 
 pub async fn mark_dead(db: &Db, name: &str) -> Result<(), StateError> {
     sqlx::query("UPDATE sessions SET status = 'dead' WHERE name = ?")
         .bind(name)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// Sweep on startup: anything still marked `running` in the DB
+/// belongs to a previous boot of `agent-start-host` whose PTYs are
+/// gone. Mark them all dead so they stop showing up in
+/// `GET /api/sessions` and clients don't try to reconnect to a 404.
+pub async fn mark_all_running_dead(db: &Db) -> Result<(), StateError> {
+    sqlx::query("UPDATE sessions SET status = 'dead' WHERE status = 'running'")
         .execute(db)
         .await?;
     Ok(())
@@ -156,13 +183,13 @@ pub async fn append_history(db: &Db, name: &str, seq: i64, chunk: &[u8]) -> Resu
 }
 
 pub async fn load_history(db: &Db, name: &str) -> Result<Vec<u8>, StateError> {
-    let rows: Vec<(Vec<u8>,)> =
-        sqlx::query_as("SELECT chunk FROM pty_history WHERE session_name = ? ORDER BY seq ASC")
-            .bind(name)
-            .fetch_all(db)
-            .await?;
+    let rows = sqlx::query("SELECT chunk FROM pty_history WHERE session_name = ? ORDER BY seq ASC")
+        .bind(name)
+        .fetch_all(db)
+        .await?;
     let mut out = Vec::new();
-    for (chunk,) in rows {
+    for row in rows {
+        let chunk: Vec<u8> = row.get("chunk");
         out.extend_from_slice(&chunk);
     }
     Ok(out)
