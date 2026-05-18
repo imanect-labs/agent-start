@@ -38,6 +38,23 @@ pub async fn run(bind: String, port: u16) -> Result<()> {
 
     let app_state: Shared = Arc::new(AppState { db, pty, sessions });
 
+    // When a child process exits on its own (user types `exit`, agent
+    // process finishes, etc.) drop the in-memory entry and mark the
+    // row dead in SQLite so `GET /api/sessions` stops listing it.
+    {
+        let state_for_hook = app_state.clone();
+        app_state.pty.set_exit_hook(Arc::new(move |name: &str| {
+            let state = state_for_hook.clone();
+            let name = name.to_string();
+            tokio::spawn(async move {
+                state.sessions.write().remove(&name);
+                if let Err(e) = state::mark_dead(&state.db, &name).await {
+                    tracing::warn!(error = %e, session = %name, "failed to mark dead");
+                }
+            });
+        }));
+    }
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)

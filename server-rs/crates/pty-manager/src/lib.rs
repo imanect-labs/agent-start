@@ -12,8 +12,9 @@
 use parking_lot::Mutex;
 use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use thiserror::Error;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -76,6 +77,13 @@ impl RingBuffer {
 pub struct PtySession {
     name: String,
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
+    /// Long-lived PTY writer.
+    ///
+    /// `MasterPty::take_writer()` may only be called once for the
+    /// lifetime of the master, and dropping the returned `Write` sends
+    /// EOF to the slave. We therefore take it exactly here at spawn
+    /// time and hold it for the life of the session.
+    writer: Mutex<Box<dyn Write + Send>>,
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
     ring: Arc<Mutex<RingBuffer>>,
     tx: broadcast::Sender<Vec<u8>>,
@@ -95,12 +103,7 @@ impl PtySession {
         (snap, self.tx.subscribe())
     }
     pub fn write(&self, data: &[u8]) -> Result<(), PtyError> {
-        let mut writer = self
-            .master
-            .lock()
-            .take_writer()
-            .map_err(|e| PtyError::Pty(e.to_string()))?;
-        use std::io::Write;
+        let mut writer = self.writer.lock();
         writer.write_all(data)?;
         writer.flush()?;
         Ok(())
@@ -129,14 +132,27 @@ impl PtySession {
     }
 }
 
+/// Hook invoked when a child process exits on its own. The host uses
+/// this to mark the session dead in SQLite and drop the in-memory
+/// directory entry.
+pub type ExitHook = Arc<dyn Fn(&str) + Send + Sync>;
+
 #[derive(Default)]
 pub struct PtyManager {
     sessions: Mutex<HashMap<String, Arc<PtySession>>>,
+    on_exit: Mutex<Option<ExitHook>>,
 }
 
 impl PtyManager {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Register a callback invoked exactly once per session when its
+    /// child process exits (whether by user `exit`, signal, or being
+    /// killed by `remove`). Replaces any previously-registered hook.
+    pub fn set_exit_hook(&self, hook: ExitHook) {
+        *self.on_exit.lock() = Some(hook);
     }
 
     pub fn list(&self) -> Vec<String> {
@@ -163,7 +179,7 @@ impl PtyManager {
             .unwrap_or(0)
     }
 
-    pub fn spawn(&self, spec: PtySpawnSpec) -> Result<Arc<PtySession>, PtyError> {
+    pub fn spawn(self: &Arc<Self>, spec: PtySpawnSpec) -> Result<Arc<PtySession>, PtyError> {
         let PtySpawnSpec {
             name,
             cwd,
@@ -206,6 +222,10 @@ impl PtyManager {
             .master
             .try_clone_reader()
             .map_err(|e| PtyError::Pty(e.to_string()))?;
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| PtyError::Pty(e.to_string()))?;
 
         let (tx, _rx) = broadcast::channel::<Vec<u8>>(BROADCAST_CAP);
         let ring = Arc::new(Mutex::new(RingBuffer::new(RING_BUFFER_BYTES)));
@@ -213,6 +233,9 @@ impl PtyManager {
         let tx_clone = tx.clone();
         let ring_clone = ring.clone();
         let name_clone = name.clone();
+        let manager_weak: Weak<PtyManager> = Arc::downgrade(self);
+        let child_arc = Arc::new(Mutex::new(child));
+        let child_for_exit = child_arc.clone();
         let reader_task = tokio::task::spawn_blocking(move || {
             let mut buf = [0u8; 8192];
             loop {
@@ -229,12 +252,24 @@ impl PtyManager {
                     }
                 }
             }
+            // Reader EOF / error means the slave has been closed —
+            // either the child exited or we were killed. Reap the
+            // child to surface its status and trigger cleanup.
+            let _ = child_for_exit.lock().wait();
+            if let Some(mgr) = manager_weak.upgrade() {
+                mgr.sessions.lock().remove(&name_clone);
+                let hook = mgr.on_exit.lock().clone();
+                if let Some(hook) = hook {
+                    hook(&name_clone);
+                }
+            }
         });
 
         let session = Arc::new(PtySession {
             name: name.clone(),
             master: Arc::new(Mutex::new(pair.master)),
-            child: Arc::new(Mutex::new(child)),
+            writer: Mutex::new(writer),
+            child: child_arc,
             ring,
             tx,
             pid,
