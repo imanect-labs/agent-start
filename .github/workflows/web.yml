@@ -1,0 +1,25 @@
+name: web
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "server-rs/**"
+      - ".github/workflows/rust.yml"
+  pull_request:
+    paths-ignore:
+      - "server-rs/**"
+      - ".github/workflows/rust.yml"
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
