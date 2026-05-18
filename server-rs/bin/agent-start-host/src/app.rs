@@ -126,9 +126,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
             let index_path = index_path.clone();
             async move {
                 let path = uri.path();
-                if path.starts_with("/api/")
-                    || path.starts_with("/v1/")
-                    || path.starts_with("/ws/")
+                if path.starts_with("/api/") || path.starts_with("/v1/") || path.starts_with("/ws/")
                 {
                     return StatusCode::NOT_FOUND.into_response();
                 }
