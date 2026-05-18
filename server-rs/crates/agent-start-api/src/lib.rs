@@ -40,12 +40,27 @@ pub struct CliInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigPaths {
+    pub config: String,
+    pub preferences: String,
+    #[serde(rename = "worktreeRoot")]
+    pub worktree_root: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigBody {
     pub clis: Vec<CliInfo>,
     #[serde(rename = "defaultCli")]
     pub default_cli: String,
     #[serde(rename = "sessionPrefix")]
     pub session_prefix: String,
+    pub roots: Vec<String>,
+    pub shell: String,
+    #[serde(rename = "showHidden")]
+    pub show_hidden: bool,
+    #[serde(rename = "gitOnly")]
+    pub git_only: bool,
+    pub paths: ConfigPaths,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
