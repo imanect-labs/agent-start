@@ -1,5 +1,5 @@
 use anyhow::Result;
-use axum::http::{header, StatusCode};
+use axum::http::{header, StatusCode, Uri};
 use axum::response::IntoResponse;
 use axum::routing::{any, delete, get, put};
 use axum::Router;
@@ -113,14 +113,25 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
     //     hydration. We avoid `ServeDir::not_found_service` because
     //     tower-http hard-codes the response status to 404 for that
     //     code path, which breaks SEO / 404-rate monitors.
+    //
+    // The fallback explicitly 404s API/WS prefix typos rather than
+    // serving them HTML — otherwise `/api/typo` would return 200 with
+    // index.html and silently mask broken client integrations.
     let router = if let Some(dist) = frontend_dist {
         let index_path = dist.join("index.html");
         let assets_dir = dist.join("assets");
         tracing::info!(path = %dist.display(), "serving front-end SPA from dist");
 
-        let serve_index = any(move || {
+        let serve_index = any(move |uri: Uri| {
             let index_path = index_path.clone();
             async move {
+                let path = uri.path();
+                if path.starts_with("/api/")
+                    || path.starts_with("/v1/")
+                    || path.starts_with("/ws/")
+                {
+                    return StatusCode::NOT_FOUND.into_response();
+                }
                 match tokio::fs::read(&index_path).await {
                     Ok(body) => (
                         StatusCode::OK,
