@@ -22,6 +22,12 @@ pub struct AppState {
 pub type Shared = Arc<AppState>;
 
 pub async fn run(bind: String, port: u16) -> Result<()> {
+    // Move legacy XDG files into ~/.agent-start/ on first boot of a new
+    // build. No-op when the env overrides are set or files already exist
+    // at the destination.
+    if let Err(e) = config_loader::migrate_legacy_layout() {
+        tracing::warn!(error = %e, "legacy layout migration encountered an error (continuing)");
+    }
     let db = state::open().await?;
     let pty = Arc::new(PtyManager::new());
     let sessions = Arc::new(RwLock::new(HashMap::new()));

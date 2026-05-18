@@ -45,13 +45,17 @@ npm run start    # or `npm run dev` for hot reload
 フロントの `/api/*` `/v1/*` `/ws/*` は自動的に Rust ホストに rewrite される。
 ホスト URL を差し替えたい場合は `AGENT_START_HOST_URL=http://other-host:3030` を Next.js に渡す。
 
-設定ファイルとデータ:
+設定ファイルとデータは **`~/.agent-start/`** 直下に集約されます (旧 XDG パスに残っている
+ファイルは初回起動時に自動移動)。`AGENT_START_HOME` で root を上書き可:
 
-- `~/.config/agent-start/config.json` — CLI プリセット (`config-loader` が初回生成)
-- `~/.config/agent-start/preferences.json` — UI で保存される起動フラグ
-- `~/.cache/agent-start/worktrees/<session-name>/` — git worktree 置き場 (`AGENT_START_WORKTREE_ROOT` で上書き可)
-- `~/.local/share/agent-start/host.db` — セッション + PTY 履歴 SQLite
-- `~/.local/share/agent-start/runtime/manifest.json` — 起動中ホストの URL / PID
+```
+~/.agent-start/
+├── config.json                  # CLI プリセット (初回起動時に生成)
+├── preferences.json             # UI で保存される起動フラグ
+├── host.db                      # sessions + pty_history (SQLite)
+├── runtime/manifest.json        # 起動中ホストの URL / PID
+└── worktrees/<session>/         # git worktree (AGENT_START_WORKTREE_ROOT で上書き可)
+```
 
 ## CLI
 
