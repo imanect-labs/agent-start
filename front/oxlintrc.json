@@ -1,0 +1,12 @@
+{
+  "plugins": ["typescript", "react", "react-hooks"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "env": {
+    "browser": true,
+    "es2022": true
+  }
+}

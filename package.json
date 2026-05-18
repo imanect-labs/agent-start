@@ -2,32 +2,16 @@
   "name": "agent-start",
   "version": "0.1.0",
   "private": true,
+  "description": "Root package: thin script proxy. Real front-end lives in ./front/ and is driven by Vite+ (vp CLI). Rust host lives in ./server-rs/.",
   "scripts": {
-    "dev": "next dev -H 0.0.0.0 -p 3000",
-    "build": "next build",
-    "start": "next start -p 3000",
+    "dev:front": "cd front && vp dev",
+    "dev:host": "cd server-rs && cargo run --quiet -p agent-start-host -- --port 3030",
+    "build": "cd front && vp build",
+    "preview": "cd front && vp run preview",
+    "typecheck": "cd front && vp check",
+    "lint": "cd front && vp run oxlint",
+    "fmt": "cd front && vp run oxfmt",
     "host": "cd server-rs && cargo run --quiet -p agent-start-host -- --port 3030",
-    "host:build": "cd server-rs && cargo build --release",
-    "typecheck": "tsc --noEmit",
-    "lint": "next lint"
-  },
-  "dependencies": {
-    "@xterm/addon-fit": "^0.11.0",
-    "@xterm/xterm": "^6.0.0",
-    "next": "15.5.18",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "swr": "^2.3.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.10.5",
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
-    "autoprefixer": "^10.4.20",
-    "eslint": "^9.18.0",
-    "eslint-config-next": "15.5.18",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.3"
+    "host:build": "cd server-rs && cargo build --release"
   }
 }

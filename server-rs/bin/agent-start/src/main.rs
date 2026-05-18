@@ -29,6 +29,9 @@ enum Cmd {
         bind: Option<String>,
         #[arg(long)]
         port: Option<u16>,
+        /// Path to the front-end SPA `dist/`. Passed through to the host.
+        #[arg(long)]
+        frontend_dist: Option<std::path::PathBuf>,
     },
     /// Stop the running host process (best-effort via PID from manifest).
     Stop,
@@ -50,7 +53,11 @@ async fn main() -> Result<()> {
             println!("agent-start {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        Cmd::Start { bind, port } => start_host(bind, port).await,
+        Cmd::Start {
+            bind,
+            port,
+            frontend_dist,
+        } => start_host(bind, port, frontend_dist).await,
         Cmd::Stop => stop_host(),
         Cmd::Status => status(&resolve_url(cli.url.as_deref())?, cli.json).await,
         Cmd::Projects => projects(&resolve_url(cli.url.as_deref())?, cli.json).await,
@@ -84,13 +91,20 @@ fn read_manifest_url() -> Option<String> {
         .map(|s| s.trim_end_matches('/').to_string())
 }
 
-async fn start_host(bind: Option<String>, port: Option<u16>) -> Result<()> {
+async fn start_host(
+    bind: Option<String>,
+    port: Option<u16>,
+    frontend_dist: Option<std::path::PathBuf>,
+) -> Result<()> {
     let mut cmd = std::process::Command::new("agent-start-host");
     if let Some(b) = bind {
         cmd.args(["--bind", &b]);
     }
     if let Some(p) = port {
         cmd.args(["--port", &p.to_string()]);
+    }
+    if let Some(d) = frontend_dist {
+        cmd.arg("--frontend-dist").arg(d);
     }
     let status = cmd.status()?;
     if !status.success() {

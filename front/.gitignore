@@ -1,7 +1,5 @@
 node_modules
-front/node_modules
-front/dist
-.env*.local
+dist
 *.log
 .DS_Store
 .vite

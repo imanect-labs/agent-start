@@ -12,14 +12,23 @@ on:
       - ".github/workflows/rust.yml"
 
 jobs:
-  typecheck:
+  build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
+      - name: Install Vite+ (vp)
+        run: |
+          curl -fsSL https://vite.plus | bash
+          # The installer drops the binary somewhere under $HOME; surface it on PATH.
+          if [ -d "$HOME/.vite-plus/bin" ]; then
+            echo "$HOME/.vite-plus/bin" >> "$GITHUB_PATH"
+          elif [ -d "$HOME/.local/bin" ]; then
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+          # vp install pulls the toolchain (node, vite, oxlint, oxfmt, tsgo).
+      - run: vp install
+      - run: vp check
+      - run: vp build

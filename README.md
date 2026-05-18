@@ -12,38 +12,77 @@
 ## アーキテクチャ
 
 ```
-ブラウザ ── tailnet ── Next.js (フロント, :3000)
-                          │  rewrites /api/*, /v1/*, /ws/*
-                          ▼
-                     agent-start-host (Rust, :3030)
+ブラウザ ── tailnet ── agent-start-host (Rust, :3030)
+                          │  /api/*, /v1/*, /ws/*  + 静的 SPA (/front/dist/)
                           │  axum + tokio + portable-pty + sqlx
                           ▼
                      bash -lc 'claude ...' / 'codex --full-auto' / ...
 ```
 
-`agent-start-host` は単一バイナリで、HTTP/WebSocket・PTY 多重化・SQLite 永続化を担う。
-tmux への外部依存はない。
+`agent-start-host` は単一バイナリで、HTTP/WebSocket・PTY 多重化・SQLite 永続化に加え、
+ビルド済みの `front/dist/` を `tower-http::ServeDir` で配信する。
+
+フロントは `/front/` 配下の Vite+ + React + TanStack Router SPA。dev 時のみ
+`vp dev` (:5173) を別プロセスで立て、Vite+ のプロキシ経由で `:3030` の host を叩く。
+本番では host バイナリ単体で完結する。
 
 ## セットアップ
 
-ホスト (Rust バックエンド) とフロント (Next.js SPA) は別プロセスで動く。
+開発時は host (Rust) と front (Vite+) を別プロセスで動かす。本番では host が
+SPA を配信するので 1 バイナリで完結する。
+
+### ツールチェイン
+
+`vp` (Vite+ CLI) を一度だけインストール:
+
+```bash
+# macOS / Linux
+curl -fsSL https://vite.plus | bash
+
+# Windows (PowerShell)
+# irm https://vite.plus/ps1 | iex
+
+vp env    # インストール確認
+```
+
+Vite+ は vite / vitest / oxlint / oxfmt / tsgo / node ランタイムをまとめて管理する
+ので、フロント側に追加で `node` / `npm` を入れる必要はない。
+
+### 開発モード (二つのターミナルで)
 
 ```bash
 git clone <repo>
 cd agent-start
-npm install
 
-# 1. Rust ホストをビルドして起動 (デフォルト 127.0.0.1:3030)
-(cd server-rs && cargo build --release)
-./server-rs/target/release/agent-start-host --bind 0.0.0.0 --port 3030 &
+# Terminal A: Rust host (:3030)
+npm run dev:host
+# = cd server-rs && cargo run -p agent-start-host -- --port 3030
 
-# 2. Next.js フロントを起動 (デフォルト :3000)
-npm run start    # or `npm run dev` for hot reload
+# Terminal B: Vite+ SPA (:5173, hot reload)
+(cd front && vp install)   # 初回のみ
+npm run dev:front
+# = cd front && vp dev
 ```
 
-スマホからは `http://<server>:3000` を tailnet 経由で開く。
-フロントの `/api/*` `/v1/*` `/ws/*` は自動的に Rust ホストに rewrite される。
-ホスト URL を差し替えたい場合は `AGENT_START_HOST_URL=http://other-host:3030` を Next.js に渡す。
+ブラウザで http://localhost:5173 を開く。Vite+ の `proxy` 設定で
+`/api/*` `/v1/*` `/ws/*` は自動で `:3030` の host に転送される。
+
+### 本番モード (single binary)
+
+```bash
+# 1. フロントをビルド
+(cd front && vp build)              # -> front/dist/
+
+# 2. host を起動して dist/ も配信させる
+(cd server-rs && cargo build --release)
+./server-rs/target/release/agent-start-host \
+    --bind 0.0.0.0 --port 3030 \
+    --frontend-dist ./front/dist
+```
+
+スマホからは `http://<server>:3030` を tailnet 経由で開く。`--frontend-dist` は
+`AGENT_START_FRONTEND_DIST` でも上書き可能。指定パスが存在しないと host は
+警告だけ出して static 配信をスキップする (= API のみのモード)。
 
 設定ファイルとデータは **`~/.agent-start/`** 直下に集約されます (旧 XDG パスに残っている
 ファイルは初回起動時に自動移動)。`AGENT_START_HOME` で root を上書き可:
