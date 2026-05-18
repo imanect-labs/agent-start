@@ -1,10 +1,7 @@
 import useSWR from "swr";
 import { useEffect, useMemo, useState } from "react";
 import { Button, Spinner } from "@/components/ui";
-import {
-  IconBranch,
-  IconRefresh,
-} from "@/components/icons";
+import { IconBranch, IconRefresh } from "@/components/icons";
 
 type GitFile = {
   path: string;
@@ -46,13 +43,7 @@ function fileStatusLabel(f: GitFile): { label: string; tone: string } {
   return { label: f.xy.trim() || "?", tone: "text-fg-faint" };
 }
 
-export function FilesView({
-  cwd,
-  fullWidth = false,
-}: {
-  cwd: string;
-  fullWidth?: boolean;
-}) {
+export function FilesView({ cwd, fullWidth = false }: { cwd: string; fullWidth?: boolean }) {
   const key = cwd ? `/api/git/status?path=${encodeURIComponent(cwd)}` : null;
   const { data, error, isLoading, mutate } = useSWR<GitStatus>(key, fetcher, {
     refreshInterval: 8000,
@@ -72,19 +63,13 @@ export function FilesView({
   useEffect(() => {
     if (!selected || !data?.files) return;
     const exists = data.files.some(
-      (f) =>
-        f.path === selected.file ||
-        (f.origPath && f.origPath === selected.file),
+      (f) => f.path === selected.file || (f.origPath && f.origPath === selected.file),
     );
     if (!exists) setSelected(null);
   }, [data, selected]);
 
   if (!cwd) {
-    return (
-      <Empty>
-        セッションの作業ディレクトリが特定できません
-      </Empty>
-    );
+    return <Empty>セッションの作業ディレクトリが特定できません</Empty>;
   }
   if (isLoading && !data) {
     return (
@@ -110,9 +95,7 @@ export function FilesView({
             <IconBranch className="w-3.5 h-3.5 text-fg-faint shrink-0" />
             <span className="font-mono truncate">{data.branch ?? "(detached)"}</span>
             {data.upstream && (
-              <span className="text-fg-faint text-[11px] truncate">
-                ↑ {data.upstream}
-              </span>
+              <span className="text-fg-faint text-[11px] truncate">↑ {data.upstream}</span>
             )}
           </div>
           <div className="text-[11px] text-fg-faint mt-0.5 flex gap-2">
@@ -183,13 +166,31 @@ function FileList({
   return (
     <div className="space-y-3">
       {grouped.staged.length > 0 && (
-        <FileGroup title="staged" mode="staged" files={grouped.staged} selected={selected} onSelect={onSelect} />
+        <FileGroup
+          title="staged"
+          mode="staged"
+          files={grouped.staged}
+          selected={selected}
+          onSelect={onSelect}
+        />
       )}
       {grouped.unstaged.length > 0 && (
-        <FileGroup title="changes" mode="worktree" files={grouped.unstaged} selected={selected} onSelect={onSelect} />
+        <FileGroup
+          title="changes"
+          mode="worktree"
+          files={grouped.unstaged}
+          selected={selected}
+          onSelect={onSelect}
+        />
       )}
       {grouped.untracked.length > 0 && (
-        <FileGroup title="untracked" mode="worktree" files={grouped.untracked} selected={selected} onSelect={onSelect} />
+        <FileGroup
+          title="untracked"
+          mode="worktree"
+          files={grouped.untracked}
+          selected={selected}
+          onSelect={onSelect}
+        />
       )}
     </div>
   );
@@ -231,9 +232,7 @@ function FileGroup({
                     : "bg-surface hover:bg-surface-muted text-fg-muted",
                 ].join(" ")}
               >
-                <span
-                  className={`shrink-0 font-mono text-[10px] w-4 text-center ${status.tone}`}
-                >
+                <span className={`shrink-0 font-mono text-[10px] w-4 text-center ${status.tone}`}>
                   {status.label}
                 </span>
                 <span className="font-mono text-[12px] truncate flex-1 min-w-0">
@@ -278,12 +277,8 @@ function DiffPanel({
   return (
     <div className="rounded-md border border-line overflow-hidden">
       <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-line bg-surface-muted">
-        <div className="font-mono text-[11px] text-fg truncate flex-1 min-w-0">
-          {file}
-        </div>
-        <span className="text-[10px] text-fg-faint uppercase tracking-wider">
-          {mode}
-        </span>
+        <div className="font-mono text-[11px] text-fg truncate flex-1 min-w-0">{file}</div>
+        <span className="text-[10px] text-fg-faint uppercase tracking-wider">{mode}</span>
         <button
           type="button"
           onClick={onClose}
@@ -334,9 +329,5 @@ function DiffBody({ text }: { text: string }) {
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-center text-xs text-fg-subtle py-6 px-4">
-      {children}
-    </div>
-  );
+  return <div className="text-center text-xs text-fg-subtle py-6 px-4">{children}</div>;
 }

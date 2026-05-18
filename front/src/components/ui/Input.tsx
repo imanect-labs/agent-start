@@ -32,9 +32,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
   const hasValue = typeof value === "string" ? value.length > 0 : !!value;
   return (
     <label className={`block ${className}`}>
-      {label && (
-        <div className="text-xs font-medium text-fg-muted mb-1.5">{label}</div>
-      )}
+      {label && <div className="text-xs font-medium text-fg-muted mb-1.5">{label}</div>}
       <div
         className={[
           "group flex items-center gap-2",
@@ -47,9 +45,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
             : "",
         ].join(" ")}
       >
-        {leftSlot && (
-          <span className="shrink-0 text-fg-faint">{leftSlot}</span>
-        )}
+        {leftSlot && <span className="shrink-0 text-fg-faint">{leftSlot}</span>}
         <input
           ref={ref}
           value={value}
@@ -82,9 +78,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
       {description && !errorText && (
         <div className="text-xs text-fg-subtle mt-1.5">{description}</div>
       )}
-      {errorText && (
-        <div className="text-xs text-danger mt-1.5">{errorText}</div>
-      )}
+      {errorText && <div className="text-xs text-danger mt-1.5">{errorText}</div>}
     </label>
   );
 });

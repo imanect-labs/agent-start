@@ -61,11 +61,7 @@ const DARK_TERM_THEME = {
 
 type Status = "connecting" | "open" | "closed";
 
-export function Terminal({
-  sessionName,
-  windowId = 0,
-  virtualKeys = "auto",
-}: Props) {
+export function Terminal({ sessionName, windowId = 0, virtualKeys = "auto" }: Props) {
   const { resolved } = useTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -268,9 +264,7 @@ export function Terminal({
       disposed = true;
       if (resizeObs) resizeObs.disconnect();
       const cleanup = (
-        containerRef.current as
-          | (HTMLDivElement & { __touchCleanup?: () => void })
-          | null
+        containerRef.current as (HTMLDivElement & { __touchCleanup?: () => void }) | null
       )?.__touchCleanup;
       if (cleanup) cleanup();
       try {
@@ -330,27 +324,15 @@ export function Terminal({
           <span
             className={[
               "inline-block w-1.5 h-1.5 rounded-full",
-              status === "open"
-                ? "bg-success"
-                : status === "connecting"
-                  ? "bg-warn"
-                  : "bg-danger",
+              status === "open" ? "bg-success" : status === "connecting" ? "bg-warn" : "bg-danger",
             ].join(" ")}
           />
           <span className="text-fg-subtle">
-            {status === "open"
-              ? "接続中"
-              : status === "connecting"
-                ? "接続中…"
-                : "切断されました"}
+            {status === "open" ? "接続中" : status === "connecting" ? "接続中…" : "切断されました"}
           </span>
         </div>
         {status === "closed" && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setAttempt((n) => n + 1)}
-          >
+          <Button variant="secondary" size="sm" onClick={() => setAttempt((n) => n + 1)}>
             再接続
           </Button>
         )}
@@ -367,11 +349,7 @@ export function Terminal({
       />
 
       <div className={`${vkClass} gap-1.5 overflow-x-auto -mx-1 px-1 pb-1`}>
-        <VirtualKeys
-          onKey={handleVirtualKey}
-          onScroll={handleScroll}
-          ctrlActive={ctrlActive}
-        />
+        <VirtualKeys onKey={handleVirtualKey} onScroll={handleScroll} ctrlActive={ctrlActive} />
       </div>
     </div>
   );

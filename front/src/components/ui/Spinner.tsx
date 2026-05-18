@@ -6,13 +6,7 @@ const SIZE: Record<Size, string> = {
   md: "h-6 w-6 border-[3px]",
 };
 
-export function Spinner({
-  size = "sm",
-  className = "",
-}: {
-  size?: Size;
-  className?: string;
-}) {
+export function Spinner({ size = "sm", className = "" }: { size?: Size; className?: string }) {
   return (
     <span
       aria-label="読み込み中"

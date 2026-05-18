@@ -1,9 +1,9 @@
 {
   "name": "agent-start-front",
-  "private": true,
   "version": "0.1.0",
-  "type": "module",
+  "private": true,
   "description": "agent-start SPA (Vite+ / React / TanStack Router). vp (Vite+ CLI) drives the toolchain; install via https://viteplus.dev. `vite` itself is still a project devDep so vite.config.ts can import defineConfig.",
+  "type": "module",
   "scripts": {
     "dev": "vp dev",
     "build": "vp build",

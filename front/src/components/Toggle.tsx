@@ -5,12 +5,7 @@ type Props = {
   tone?: "default" | "danger";
 };
 
-export function Toggle({
-  checked,
-  onChange,
-  disabled,
-  tone = "default",
-}: Props) {
+export function Toggle({ checked, onChange, disabled, tone = "default" }: Props) {
   const onBg = tone === "danger" ? "bg-danger" : "bg-accent";
   return (
     <button

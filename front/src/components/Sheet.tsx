@@ -17,13 +17,7 @@ const MAX_W: Record<NonNullable<Props["maxWidth"]>, string> = {
   "3xl": "sm:max-w-3xl",
 };
 
-export function Sheet({
-  open,
-  onClose,
-  children,
-  maxWidth = "md",
-  tall = false,
-}: Props) {
+export function Sheet({ open, onClose, children, maxWidth = "md", tall = false }: Props) {
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -46,10 +40,7 @@ export function Sheet({
       role="dialog"
       aria-modal="true"
     >
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
       <div
         className={[
           "relative bg-surface text-fg w-full",
@@ -79,14 +70,8 @@ export function SheetHeader({
   return (
     <div className="flex items-start justify-between gap-2 px-5 pt-5 pb-4 border-b border-line">
       <div className="flex-1 min-w-0">
-        <div className="text-base font-semibold text-fg truncate tracking-tight">
-          {title}
-        </div>
-        {subtitle && (
-          <div className="text-xs text-fg-subtle truncate mt-0.5">
-            {subtitle}
-          </div>
-        )}
+        <div className="text-base font-semibold text-fg truncate tracking-tight">{title}</div>
+        {subtitle && <div className="text-xs text-fg-subtle truncate mt-0.5">{subtitle}</div>}
       </div>
       <button
         type="button"
@@ -124,9 +109,5 @@ export function SheetBody({
 }
 
 export function SheetFooter({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex gap-2 px-5 py-3.5 border-t border-line safe-bottom">
-      {children}
-    </div>
-  );
+  return <div className="flex gap-2 px-5 py-3.5 border-t border-line safe-bottom">{children}</div>;
 }

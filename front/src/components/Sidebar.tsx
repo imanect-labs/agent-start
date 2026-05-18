@@ -90,8 +90,7 @@ export function Sidebar({
       else orphan.sessions.push(s);
     }
     // Sort sessions within each group by createdAt desc
-    for (const g of byPath.values())
-      g.sessions.sort((a, b) => b.createdAt - a.createdAt);
+    for (const g of byPath.values()) g.sessions.sort((a, b) => b.createdAt - a.createdAt);
     orphan.sessions.sort((a, b) => b.createdAt - a.createdAt);
 
     // Sort projects: those with running sessions first, then by mtimeMs desc
@@ -115,11 +114,8 @@ export function Sidebar({
       .map((g) => {
         const projHit =
           g.project &&
-          (g.project.name.toLowerCase().includes(q) ||
-            g.project.path.toLowerCase().includes(q));
-        const matchSessions = g.sessions.filter((s) =>
-          s.name.toLowerCase().includes(q),
-        );
+          (g.project.name.toLowerCase().includes(q) || g.project.path.toLowerCase().includes(q));
+        const matchSessions = g.sessions.filter((s) => s.name.toLowerCase().includes(q));
         if (projHit) return g; // show whole group with all sessions
         if (matchSessions.length > 0) return { ...g, sessions: matchSessions };
         return null;
@@ -145,9 +141,7 @@ export function Sidebar({
     const s = sessions.find((x) => x.name === activeSession);
     if (!s) return;
     const groupKey = sessionProjectPath(s);
-    setCollapsed((prev) =>
-      prev[groupKey] ? { ...prev, [groupKey]: false } : prev,
-    );
+    setCollapsed((prev) => (prev[groupKey] ? { ...prev, [groupKey]: false } : prev));
   }, [activeSession, sessions]);
 
   const totalSessions = sessions.length;
@@ -156,12 +150,8 @@ export function Sidebar({
     <aside className="w-72 shrink-0 h-full flex flex-col border-r border-line bg-surface">
       <div className="px-3 py-3 flex items-center gap-2 border-b border-line">
         <div className="flex items-baseline gap-2 flex-1 min-w-0">
-          <span className="text-sm font-semibold tracking-tight text-fg">
-            agent-start
-          </span>
-          <span className="text-[10px] uppercase tracking-wider text-fg-faint">
-            launcher
-          </span>
+          <span className="text-sm font-semibold tracking-tight text-fg">agent-start</span>
+          <span className="text-[10px] uppercase tracking-wider text-fg-faint">launcher</span>
         </div>
         <button
           type="button"
@@ -216,9 +206,7 @@ export function Sidebar({
                 key={g.key}
                 group={g}
                 expanded={!collapsed[g.key]}
-                onToggle={() =>
-                  setCollapsed((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
-                }
+                onToggle={() => setCollapsed((prev) => ({ ...prev, [g.key]: !prev[g.key] }))}
                 activeSession={activeSession}
                 onLaunch={g.project ? () => onLaunchProject(g.project!) : null}
                 onOpenSession={onOpenSession}
@@ -362,9 +350,7 @@ function SessionRow({
       className={[
         "group ml-4 flex items-start gap-1.5 px-1.5 py-1.5 rounded-md",
         "cursor-pointer",
-        active
-          ? "bg-accent/10 text-fg"
-          : "hover:bg-surface-muted text-fg-muted",
+        active ? "bg-accent/10 text-fg" : "hover:bg-surface-muted text-fg-muted",
       ].join(" ")}
       onClick={onOpen}
     >

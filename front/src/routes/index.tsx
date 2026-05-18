@@ -5,19 +5,9 @@ import { Sidebar, type Project, type TmuxSession } from "@/components/Sidebar";
 import { MainPane } from "@/components/MainPane";
 import { RightPane } from "@/components/RightPane";
 import { SettingsDialog } from "@/components/SettingsDialog";
-import {
-  LaunchConfirmSheet,
-  type LaunchOverrides,
-} from "@/components/LaunchConfirmSheet";
-import {
-  DeleteConfirmSheet,
-  type DeleteTarget,
-} from "@/components/DeleteConfirmSheet";
-import {
-  makeTabId,
-  type SessionTabs,
-  type Tab,
-} from "@/components/tab-types";
+import { LaunchConfirmSheet, type LaunchOverrides } from "@/components/LaunchConfirmSheet";
+import { DeleteConfirmSheet, type DeleteTarget } from "@/components/DeleteConfirmSheet";
+import { makeTabId, type SessionTabs, type Tab } from "@/components/tab-types";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -66,9 +56,7 @@ export function IndexPage() {
 
   // Per-session tab state. `perSession[sessionName]` is undefined until the
   // user has opened the session for the first time.
-  const [perSession, setPerSession] = useState<Record<string, SessionTabs>>(
-    {},
-  );
+  const [perSession, setPerSession] = useState<Record<string, SessionTabs>>({});
   const [activeSession, setActiveSession] = useState<string | null>(null);
   const [rightPaneOpen, setRightPaneOpen] = useState(true);
   // Hydrate from localStorage on first mount.
@@ -139,13 +127,11 @@ export function IndexPage() {
   const addTerminalTab = useCallback(async () => {
     if (!activeSession) return;
     try {
-      const res = await fetch(
-        `/api/sessions/${encodeURIComponent(activeSession)}/windows`,
-        { method: "POST" },
-      );
+      const res = await fetch(`/api/sessions/${encodeURIComponent(activeSession)}/windows`, {
+        method: "POST",
+      });
       const json = await res.json();
-      if (!res.ok)
-        throw new Error(json.error ?? `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       const id = makeTabId();
       setPerSession((prev) => {
         const cur = prev[activeSession];
@@ -203,9 +189,7 @@ export function IndexPage() {
       if (tab.kind === "terminal" && tab.windowId > 0) {
         try {
           await fetch(
-            `/api/sessions/${encodeURIComponent(
-              activeSession,
-            )}/windows/${tab.windowId}`,
+            `/api/sessions/${encodeURIComponent(activeSession)}/windows/${tab.windowId}`,
             { method: "DELETE" },
           );
         } catch {
@@ -325,10 +309,7 @@ export function IndexPage() {
   );
   const activeTabs = activeSession ? perSession[activeSession] : null;
   const activeCwd =
-    activeSessionObj?.worktreePath ||
-    activeSessionObj?.path ||
-    activeSessionObj?.origPath ||
-    "";
+    activeSessionObj?.worktreePath || activeSessionObj?.path || activeSessionObj?.origPath || "";
 
   return (
     <main className="h-[100dvh] flex bg-app text-fg overflow-hidden">
@@ -370,16 +351,10 @@ export function IndexPage() {
       />
 
       {rightPaneOpen && activeSessionObj && (
-        <RightPane
-          cwd={activeCwd}
-          onClose={() => setRightPaneOpen(false)}
-        />
+        <RightPane cwd={activeCwd} onClose={() => setRightPaneOpen(false)} />
       )}
 
-      <SettingsDialog
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-      />
+      <SettingsDialog isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <LaunchConfirmSheet
         isOpen={!!launchTarget}

@@ -10,8 +10,7 @@ const VARIANT: Record<Variant, string> = {
     "bg-surface text-fg border border-line hover:bg-surface-muted hover:border-line-strong",
   ghost:
     "bg-transparent text-fg-muted border border-transparent hover:bg-surface-muted hover:text-fg",
-  danger:
-    "bg-danger text-danger-fg border border-danger hover:opacity-90",
+  danger: "bg-danger text-danger-fg border border-danger hover:opacity-90",
   dangerOutline:
     "bg-surface text-danger border border-danger/30 hover:bg-danger/5 hover:border-danger/50",
 };

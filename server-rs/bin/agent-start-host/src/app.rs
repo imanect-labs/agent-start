@@ -143,9 +143,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         api_router
     };
 
-    let router = router
-        .layer(cors)
-        .layer(TraceLayer::new_for_http());
+    let router = router.layer(cors).layer(TraceLayer::new_for_http());
 
     let addr = format!("{bind}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;

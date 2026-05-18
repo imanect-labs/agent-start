@@ -58,9 +58,7 @@ export function MainPane({
       <div className="flex items-center gap-3 px-4 py-2 border-b border-line bg-surface">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-mono text-sm text-fg truncate">
-              {session.name}
-            </span>
+            <span className="font-mono text-sm text-fg truncate">{session.name}</span>
             <Badge tone="violet">{cliLabel}</Badge>
             {hasWorktree && <Badge tone="amber">worktree</Badge>}
             {session.attached && <Badge tone="blue">接続中</Badge>}
@@ -81,10 +79,9 @@ export function MainPane({
           title={rightPaneOpen ? "右ペインを隠す" : "右ペインを表示"}
         >
           <IconChevronRight
-            className={[
-              "w-3.5 h-3.5 transition-transform",
-              rightPaneOpen ? "" : "rotate-180",
-            ].join(" ")}
+            className={["w-3.5 h-3.5 transition-transform", rightPaneOpen ? "" : "rotate-180"].join(
+              " ",
+            )}
           />
           変更
         </button>
@@ -164,9 +161,7 @@ function TabBar({
         {tabs.map((t) => {
           const isActive = t.id === activeId;
           let label = t.label;
-          let icon = (
-            <IconTerminal className="w-3.5 h-3.5 shrink-0 text-fg-faint" />
-          );
+          let icon = <IconTerminal className="w-3.5 h-3.5 shrink-0 text-fg-faint" />;
           if (t.kind === "terminal") {
             // Number from the underlying PTY window index (stable for
             // the lifetime of the window — never reused even after
@@ -174,9 +169,7 @@ function TabBar({
             label = label ?? `Terminal ${t.windowId + 1}`;
           } else {
             label = label ?? "Files";
-            icon = (
-              <IconFolder className="w-3.5 h-3.5 shrink-0 text-fg-faint" />
-            );
+            icon = <IconFolder className="w-3.5 h-3.5 shrink-0 text-fg-faint" />;
           }
           return (
             <div
@@ -241,11 +234,7 @@ function TabBar({
               }}
             >
               ファイル変更
-              {!canAddFiles && (
-                <span className="ml-1 text-fg-faint text-[10px]">
-                  (cwd 不明)
-                </span>
-              )}
+              {!canAddFiles && <span className="ml-1 text-fg-faint text-[10px]">(cwd 不明)</span>}
             </MenuItem>
           </div>
         )}
@@ -272,9 +261,7 @@ function MenuItem({
       disabled={disabled}
       className={[
         "w-full text-left px-3 py-1.5 inline-flex items-center gap-2 text-xs",
-        disabled
-          ? "text-fg-faint cursor-not-allowed"
-          : "text-fg hover:bg-surface-muted",
+        disabled ? "text-fg-faint cursor-not-allowed" : "text-fg hover:bg-surface-muted",
       ].join(" ")}
     >
       <span className="text-fg-faint">{icon}</span>
@@ -283,15 +270,7 @@ function MenuItem({
   );
 }
 
-function TabContent({
-  tab,
-  sessionName,
-  cwd,
-}: {
-  tab: Tab;
-  sessionName: string;
-  cwd: string;
-}) {
+function TabContent({ tab, sessionName, cwd }: { tab: Tab; sessionName: string; cwd: string }) {
   if (tab.kind === "terminal") {
     return (
       <div className="flex-1 min-h-0 p-3">
@@ -317,12 +296,9 @@ function WelcomeBanner() {
         <div className="mx-auto w-14 h-14 rounded-xl bg-surface-muted border border-line flex items-center justify-center text-fg-subtle">
           <IconTerminal className="w-6 h-6" />
         </div>
-        <h2 className="mt-4 text-base font-semibold text-fg">
-          セッションが選択されていません
-        </h2>
+        <h2 className="mt-4 text-base font-semibold text-fg">セッションが選択されていません</h2>
         <p className="mt-1 text-sm text-fg-subtle">
-          左のサイドバーからプロジェクトを選び、{" "}
-          <span className="font-mono">＋</span>{" "}
+          左のサイドバーからプロジェクトを選び、 <span className="font-mono">＋</span>{" "}
           で新しいセッションを起動するか、稼働中のセッションをクリックしてターミナルを開きます。
         </p>
         <p className="mt-3 text-[11px] text-fg-faint inline-flex items-center gap-1">

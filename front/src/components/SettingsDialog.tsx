@@ -5,11 +5,7 @@ import { Toggle } from "./Toggle";
 import { useToast } from "./Toast";
 import { Button, Input, Spinner } from "@/components/ui";
 import { useTheme, type ThemeChoice } from "@/components/ThemeProvider";
-import {
-  IconMonitor,
-  IconMoon,
-  IconSun,
-} from "@/components/icons";
+import { IconMonitor, IconMoon, IconSun } from "@/components/icons";
 
 type Preferences = {
   cli: string;
@@ -162,18 +158,10 @@ export function SettingsDialog({ isOpen, onClose }: Props) {
 
                 <Row
                   title="権限プロンプトをスキップ"
-                  hint={
-                    selectedCli?.hasSkipFlag
-                      ? selectedCli.skipFlag
-                      : "(選択中の CLI は未対応)"
-                  }
+                  hint={selectedCli?.hasSkipFlag ? selectedCli.skipFlag : "(選択中の CLI は未対応)"}
                   mono
                 >
-                  <Toggle
-                    checked={skip}
-                    onChange={setSkip}
-                    disabled={!selectedCli?.hasSkipFlag}
-                  />
+                  <Toggle checked={skip} onChange={setSkip} disabled={!selectedCli?.hasSkipFlag} />
                 </Row>
 
                 <Row
@@ -196,10 +184,7 @@ export function SettingsDialog({ isOpen, onClose }: Props) {
             {cfgData && (
               <>
                 <Divider />
-                <Section
-                  title="システム情報"
-                  hint="config.json で編集 (要再起動)"
-                >
+                <Section title="システム情報" hint="config.json で編集 (要再起動)">
                   <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-xs">
                     <KV k="検索 roots">
                       <ul className="space-y-1">
@@ -217,29 +202,19 @@ export function SettingsDialog({ isOpen, onClose }: Props) {
                       <code className="font-mono">{cfgData.shell}</code>
                     </KV>
                     <KV k="git のみ">
-                      <code className="font-mono">
-                        {cfgData.gitOnly ? "true" : "false"}
-                      </code>
+                      <code className="font-mono">{cfgData.gitOnly ? "true" : "false"}</code>
                     </KV>
                     <KV k="隠しディレクトリ">
-                      <code className="font-mono">
-                        {cfgData.showHidden ? "表示" : "非表示"}
-                      </code>
+                      <code className="font-mono">{cfgData.showHidden ? "表示" : "非表示"}</code>
                     </KV>
                     <KV k="worktree 置き場">
-                      <code className="font-mono break-all">
-                        {cfgData.paths.worktreeRoot}
-                      </code>
+                      <code className="font-mono break-all">{cfgData.paths.worktreeRoot}</code>
                     </KV>
                     <KV k="設定ファイル">
-                      <code className="font-mono break-all">
-                        {cfgData.paths.config}
-                      </code>
+                      <code className="font-mono break-all">{cfgData.paths.config}</code>
                     </KV>
                     <KV k="preferences">
-                      <code className="font-mono break-all">
-                        {cfgData.paths.preferences}
-                      </code>
+                      <code className="font-mono break-all">{cfgData.paths.preferences}</code>
                     </KV>
                   </dl>
                 </Section>
@@ -317,9 +292,7 @@ function Section({
         <div className="text-[11px] uppercase tracking-wider text-fg-subtle font-medium">
           {title}
         </div>
-        {hint && (
-          <div className="text-[11px] text-fg-faint mt-0.5">{hint}</div>
-        )}
+        {hint && <div className="text-[11px] text-fg-faint mt-0.5">{hint}</div>}
       </div>
       {children}
     </section>
@@ -330,13 +303,7 @@ function Divider() {
   return <div className="h-px bg-line my-1" />;
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
       <div className="text-xs font-medium text-fg-muted mb-2">{label}</div>
@@ -362,10 +329,9 @@ function Row({
         <div className="text-sm font-medium text-fg">{title}</div>
         {hint && (
           <div
-            className={[
-              "text-xs text-fg-subtle mt-0.5 break-all",
-              mono ? "font-mono" : "",
-            ].join(" ")}
+            className={["text-xs text-fg-subtle mt-0.5 break-all", mono ? "font-mono" : ""].join(
+              " ",
+            )}
           >
             {hint}
           </div>
@@ -376,13 +342,7 @@ function Row({
   );
 }
 
-function KV({
-  k,
-  children,
-}: {
-  k: string;
-  children: React.ReactNode;
-}) {
+function KV({ k, children }: { k: string; children: React.ReactNode }) {
   return (
     <>
       <dt className="text-fg-subtle whitespace-nowrap">{k}</dt>

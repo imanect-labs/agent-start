@@ -1,10 +1,4 @@
-import {
-  ReactNode,
-  createContext,
-  useCallback,
-  useContext,
-  useState,
-} from "react";
+import { ReactNode, createContext, useCallback, useContext, useState } from "react";
 
 export type ToastColor = "success" | "danger" | "warning" | "info";
 
@@ -67,9 +61,7 @@ export function ToastHost({ children }: { children: ReactNode }) {
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm leading-snug">{t.title}</div>
                 {t.description && (
-                  <div className="text-xs text-fg-subtle mt-0.5 break-all">
-                    {t.description}
-                  </div>
+                  <div className="text-xs text-fg-subtle mt-0.5 break-all">{t.description}</div>
                 )}
               </div>
             </div>

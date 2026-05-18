@@ -74,16 +74,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(STORAGE_KEY, next);
     }
-    const r: ResolvedTheme =
-      next === "system" ? (systemPrefersDark() ? "dark" : "light") : next;
+    const r: ResolvedTheme = next === "system" ? (systemPrefersDark() ? "dark" : "light") : next;
     setResolved(r);
     applyClass(r);
   }, []);
 
-  const value = useMemo<Ctx>(
-    () => ({ theme, resolved, setTheme }),
-    [theme, resolved, setTheme],
-  );
+  const value = useMemo<Ctx>(() => ({ theme, resolved, setTheme }), [theme, resolved, setTheme]);
 
   return <ThemeCtx.Provider value={value}>{children}</ThemeCtx.Provider>;
 }

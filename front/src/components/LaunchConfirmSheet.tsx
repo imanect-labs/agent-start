@@ -49,10 +49,7 @@ export function LaunchConfirmSheet({
   const { data: prefData, isLoading: prefLoading } = useSWR<{
     preferences: Preferences;
   }>(isOpen ? "/api/preferences" : null, fetcher);
-  const { data: cfgData } = useSWR<{ clis: CliInfo[] }>(
-    isOpen ? "/api/config" : null,
-    fetcher,
-  );
+  const { data: cfgData } = useSWR<{ clis: CliInfo[] }>(isOpen ? "/api/config" : null, fetcher);
 
   const [cli, setCli] = useState("claude");
   const [skip, setSkip] = useState(false);
@@ -84,11 +81,7 @@ export function LaunchConfirmSheet({
 
   return (
     <Sheet open={isOpen} onClose={onClose} maxWidth="lg">
-      <SheetHeader
-        title={projectName}
-        subtitle={projectPath}
-        onClose={onClose}
-      />
+      <SheetHeader title={projectName} subtitle={projectPath} onClose={onClose} />
       <SheetBody>
         {prefLoading ? (
           <div className="flex justify-center py-8">
@@ -129,33 +122,19 @@ export function LaunchConfirmSheet({
 
             <Row
               title="権限プロンプトをスキップ"
-              hint={
-                selectedCli?.hasSkipFlag
-                  ? selectedCli.skipFlag
-                  : "(この CLI は未対応)"
-              }
+              hint={selectedCli?.hasSkipFlag ? selectedCli.skipFlag : "(この CLI は未対応)"}
               mono
             >
-              <Toggle
-                checked={skip}
-                onChange={setSkip}
-                disabled={!selectedCli?.hasSkipFlag}
-              />
+              <Toggle checked={skip} onChange={setSkip} disabled={!selectedCli?.hasSkipFlag} />
             </Row>
 
             <Row
               title="worktree を作って起動"
               hint={
-                isGit
-                  ? "本体に影響を与えず別ブランチで作業"
-                  : "git リポジトリではないため使用不可"
+                isGit ? "本体に影響を与えず別ブランチで作業" : "git リポジトリではないため使用不可"
               }
             >
-              <Toggle
-                checked={createWt}
-                onChange={setCreateWt}
-                disabled={!isGit}
-              />
+              <Toggle checked={createWt} onChange={setCreateWt} disabled={!isGit} />
             </Row>
 
             <button
@@ -164,10 +143,9 @@ export function LaunchConfirmSheet({
               className="text-xs text-fg-subtle hover:text-fg transition-colors self-start inline-flex items-center gap-1"
             >
               <span
-                className={[
-                  "inline-block transition-transform",
-                  showAdv ? "rotate-90" : "",
-                ].join(" ")}
+                className={["inline-block transition-transform", showAdv ? "rotate-90" : ""].join(
+                  " ",
+                )}
               >
                 ›
               </span>
@@ -217,13 +195,7 @@ export function LaunchConfirmSheet({
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
       <div className="text-xs font-medium text-fg-muted mb-2">{title}</div>
@@ -249,10 +221,9 @@ function Row({
         <div className="text-sm font-medium text-fg">{title}</div>
         {hint && (
           <div
-            className={[
-              "text-xs text-fg-subtle mt-0.5 break-all",
-              mono ? "font-mono" : "",
-            ].join(" ")}
+            className={["text-xs text-fg-subtle mt-0.5 break-all", mono ? "font-mono" : ""].join(
+              " ",
+            )}
           >
             {hint}
           </div>
