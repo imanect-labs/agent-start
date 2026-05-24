@@ -1,18 +1,30 @@
+import { useState } from "react";
 import { FilesView } from "@/components/FilesView";
+import { FileExplorer } from "@/components/FileExplorer";
 import { IconX } from "@/components/icons";
+import type { DiffMode } from "@/components/tab-types";
 
 type Props = {
   cwd: string;
   onClose: () => void;
+  onOpenFile?: (path: string) => void;
+  onOpenDiff?: (file: string, mode: DiffMode) => void;
 };
 
-export function RightPane({ cwd, onClose }: Props) {
+type Sub = "changes" | "files";
+
+export function RightPane({ cwd, onClose, onOpenFile, onOpenDiff }: Props) {
+  const [sub, setSub] = useState<Sub>("changes");
   return (
-    <aside className="w-80 shrink-0 h-full flex flex-col border-l border-line bg-surface">
-      <div className="px-3 py-2 flex items-center gap-2 border-b border-line">
-        <div className="text-[10px] uppercase tracking-wider text-fg-subtle font-medium flex-1">
+    <aside className="w-80 shrink-0 h-full flex-col border-l border-line bg-surface hidden lg:flex">
+      <div className="px-2 py-1.5 flex items-center gap-1 border-b border-line">
+        <SubTab active={sub === "changes"} onClick={() => setSub("changes")}>
           変更
-        </div>
+        </SubTab>
+        <SubTab active={sub === "files"} onClick={() => setSub("files")}>
+          ファイル
+        </SubTab>
+        <div className="flex-1" />
         <button
           type="button"
           onClick={onClose}
@@ -23,8 +35,35 @@ export function RightPane({ cwd, onClose }: Props) {
         </button>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scroll-thin">
-        <FilesView cwd={cwd} />
+        {sub === "changes" ? (
+          <FilesView cwd={cwd} onOpenDiff={onOpenDiff} />
+        ) : (
+          <FileExplorer cwd={cwd} onOpenFile={(p) => onOpenFile?.(p)} />
+        )}
       </div>
     </aside>
+  );
+}
+
+function SubTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "px-2.5 py-1 rounded text-[11px] uppercase tracking-wider font-medium transition-colors",
+        active ? "bg-surface-muted text-fg" : "text-fg-subtle hover:text-fg",
+      ].join(" ")}
+    >
+      {children}
+    </button>
   );
 }

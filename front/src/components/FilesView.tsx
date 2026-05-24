@@ -1,7 +1,8 @@
 import useSWR from "swr";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Button, Spinner } from "@/components/ui";
 import { IconBranch, IconRefresh } from "@/components/icons";
+import type { DiffMode } from "@/components/tab-types";
 
 type GitFile = {
   path: string;
@@ -29,8 +30,6 @@ const fetcher = (url: string) =>
     return json;
   });
 
-type DiffMode = "worktree" | "staged" | "head";
-
 function fileStatusLabel(f: GitFile): { label: string; tone: string } {
   if (f.untracked) return { label: "??", tone: "text-emerald-500" };
   const x = f.xy[0];
@@ -43,30 +42,19 @@ function fileStatusLabel(f: GitFile): { label: string; tone: string } {
   return { label: f.xy.trim() || "?", tone: "text-fg-faint" };
 }
 
-export function FilesView({ cwd, fullWidth = false }: { cwd: string; fullWidth?: boolean }) {
+export function FilesView({
+  cwd,
+  fullWidth = false,
+  onOpenDiff,
+}: {
+  cwd: string;
+  fullWidth?: boolean;
+  onOpenDiff?: (file: string, mode: DiffMode) => void;
+}) {
   const key = cwd ? `/api/git/status?path=${encodeURIComponent(cwd)}` : null;
   const { data, error, isLoading, mutate } = useSWR<GitStatus>(key, fetcher, {
     refreshInterval: 8000,
   });
-
-  const [selected, setSelected] = useState<{
-    file: string;
-    mode: DiffMode;
-  } | null>(null);
-
-  // Reset selection when cwd changes
-  useEffect(() => {
-    setSelected(null);
-  }, [cwd]);
-
-  // If selected file disappears from status, clear selection.
-  useEffect(() => {
-    if (!selected || !data?.files) return;
-    const exists = data.files.some(
-      (f) => f.path === selected.file || (f.origPath && f.origPath === selected.file),
-    );
-    if (!exists) setSelected(null);
-  }, [data, selected]);
 
   if (!cwd) {
     return <Empty>セッションの作業ディレクトリが特定できません</Empty>;
@@ -121,20 +109,7 @@ export function FilesView({ cwd, fullWidth = false }: { cwd: string; fullWidth?:
       {files.length === 0 ? (
         <Empty>変更はありません</Empty>
       ) : (
-        <FileList
-          files={files}
-          selected={selected}
-          onSelect={(file, mode) => setSelected({ file, mode })}
-        />
-      )}
-
-      {selected && (
-        <DiffPanel
-          cwd={cwd}
-          file={selected.file}
-          mode={selected.mode}
-          onClose={() => setSelected(null)}
-        />
+        <FileList files={files} onSelect={(f, m) => onOpenDiff?.(f, m)} />
       )}
     </div>
   );
@@ -142,11 +117,9 @@ export function FilesView({ cwd, fullWidth = false }: { cwd: string; fullWidth?:
 
 function FileList({
   files,
-  selected,
   onSelect,
 }: {
   files: GitFile[];
-  selected: { file: string; mode: DiffMode } | null;
   onSelect: (file: string, mode: DiffMode) => void;
 }) {
   const grouped = useMemo(() => {
@@ -166,29 +139,16 @@ function FileList({
   return (
     <div className="space-y-3">
       {grouped.staged.length > 0 && (
-        <FileGroup
-          title="staged"
-          mode="staged"
-          files={grouped.staged}
-          selected={selected}
-          onSelect={onSelect}
-        />
+        <FileGroup title="staged" mode="staged" files={grouped.staged} onSelect={onSelect} />
       )}
       {grouped.unstaged.length > 0 && (
-        <FileGroup
-          title="changes"
-          mode="worktree"
-          files={grouped.unstaged}
-          selected={selected}
-          onSelect={onSelect}
-        />
+        <FileGroup title="changes" mode="worktree" files={grouped.unstaged} onSelect={onSelect} />
       )}
       {grouped.untracked.length > 0 && (
         <FileGroup
           title="untracked"
           mode="worktree"
           files={grouped.untracked}
-          selected={selected}
           onSelect={onSelect}
         />
       )}
@@ -200,13 +160,11 @@ function FileGroup({
   title,
   mode,
   files,
-  selected,
   onSelect,
 }: {
   title: string;
   mode: DiffMode;
   files: GitFile[];
-  selected: { file: string; mode: DiffMode } | null;
   onSelect: (file: string, mode: DiffMode) => void;
 }) {
   return (
@@ -217,7 +175,6 @@ function FileGroup({
       </div>
       <ul className="border border-line rounded-md overflow-hidden">
         {files.map((f) => {
-          const isSel = selected?.file === f.path && selected.mode === mode;
           const status = fileStatusLabel(f);
           return (
             <li key={`${mode}:${f.path}`}>
@@ -227,9 +184,7 @@ function FileGroup({
                 className={[
                   "w-full text-left px-2.5 py-1.5 flex items-center gap-2",
                   "border-b border-line last:border-b-0",
-                  isSel
-                    ? "bg-accent/10 text-fg"
-                    : "bg-surface hover:bg-surface-muted text-fg-muted",
+                  "bg-surface hover:bg-surface-muted text-fg-muted",
                 ].join(" ")}
               >
                 <span className={`shrink-0 font-mono text-[10px] w-4 text-center ${status.tone}`}>
@@ -251,80 +206,6 @@ function FileGroup({
         })}
       </ul>
     </div>
-  );
-}
-
-function DiffPanel({
-  cwd,
-  file,
-  mode,
-  onClose,
-}: {
-  cwd: string;
-  file: string;
-  mode: DiffMode;
-  onClose: () => void;
-}) {
-  const url =
-    `/api/git/diff?path=${encodeURIComponent(cwd)}` +
-    `&file=${encodeURIComponent(file)}&mode=${mode}`;
-  const { data, error, isLoading } = useSWR<{
-    diff: string;
-    truncated: boolean;
-    isUntracked: boolean;
-  }>(url, fetcher);
-
-  return (
-    <div className="rounded-md border border-line overflow-hidden">
-      <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-line bg-surface-muted">
-        <div className="font-mono text-[11px] text-fg truncate flex-1 min-w-0">{file}</div>
-        <span className="text-[10px] text-fg-faint uppercase tracking-wider">{mode}</span>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="閉じる"
-          className="w-5 h-5 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev"
-        >
-          ×
-        </button>
-      </div>
-      <div className="max-h-[60vh] overflow-auto scroll-thin">
-        {isLoading ? (
-          <div className="flex justify-center py-6">
-            <Spinner size="sm" />
-          </div>
-        ) : error ? (
-          <Empty>取得に失敗: {(error as Error).message}</Empty>
-        ) : (
-          <DiffBody text={data?.diff ?? ""} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function DiffBody({ text }: { text: string }) {
-  if (!text) {
-    return <Empty>(no diff)</Empty>;
-  }
-  // Tokenize line-by-line for hunk coloring.
-  const lines = text.split("\n");
-  return (
-    <pre className="text-[11.5px] leading-snug font-mono whitespace-pre">
-      {lines.map((l, i) => {
-        let cls = "text-fg-muted";
-        if (l.startsWith("+++") || l.startsWith("---")) cls = "text-fg-faint";
-        else if (l.startsWith("@@")) cls = "text-violet-500";
-        else if (l.startsWith("+")) cls = "text-emerald-500";
-        else if (l.startsWith("-")) cls = "text-red-500";
-        else if (l.startsWith("diff ") || l.startsWith("index ")) cls = "text-fg-faint";
-        return (
-          <div key={i} className={cls}>
-            {l || " "}
-          </div>
-        );
-      })}
-    </pre>
   );
 }
 

@@ -1,13 +1,14 @@
 import useSWR, { mutate } from "swr";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/Toast";
-import { Sidebar, type Project, type TmuxSession } from "@/components/Sidebar";
+import { Sidebar, type PendingProject, type Project, type TmuxSession } from "@/components/Sidebar";
 import { MainPane } from "@/components/MainPane";
 import { RightPane } from "@/components/RightPane";
-import { SettingsDialog } from "@/components/SettingsDialog";
 import { LaunchConfirmSheet, type LaunchOverrides } from "@/components/LaunchConfirmSheet";
 import { DeleteConfirmSheet, type DeleteTarget } from "@/components/DeleteConfirmSheet";
-import { makeTabId, type SessionTabs, type Tab } from "@/components/tab-types";
+import { AddProjectModal } from "@/components/AddProjectModal";
+import { DeleteProjectConfirm } from "@/components/DeleteProjectConfirm";
+import { makeTabId, type DiffMode, type SessionTabs, type Tab } from "@/components/tab-types";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -48,17 +49,19 @@ function persistStored(s: StoredTabs) {
 export function IndexPage() {
   const toast = useToast();
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [launchTarget, setLaunchTarget] = useState<Project | null>(null);
   const [launching, setLaunching] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
 
   // Per-session tab state. `perSession[sessionName]` is undefined until the
   // user has opened the session for the first time.
   const [perSession, setPerSession] = useState<Record<string, SessionTabs>>({});
   const [activeSession, setActiveSession] = useState<string | null>(null);
   const [rightPaneOpen, setRightPaneOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   // Hydrate from localStorage on first mount.
   useEffect(() => {
     const s = loadStored();
@@ -74,13 +77,17 @@ export function IndexPage() {
 
   const { data: projData, isLoading: projLoading } = useSWR<{
     projects: Project[];
-  }>("/api/projects", fetcher);
+    pending?: PendingProject[];
+  }>("/api/projects", fetcher, {
+    refreshInterval: (data) => ((data?.pending?.length ?? 0) > 0 ? 2000 : 0),
+  });
 
   const { data: sessData, isLoading: sessLoading } = useSWR<{
     sessions: TmuxSession[];
   }>("/api/sessions", fetcher, { refreshInterval: 5000 });
 
   const projects = projData?.projects ?? [];
+  const pendingProjects = projData?.pending ?? [];
   const sessions = sessData?.sessions ?? [];
 
   // Prune sessions that no longer exist server-side.
@@ -153,6 +160,63 @@ export function IndexPage() {
       });
     }
   }, [activeSession, toast]);
+
+  const updateTab = useCallback(
+    (tabId: string, patch: Partial<Tab>) => {
+      if (!activeSession) return;
+      setPerSession((prev) => {
+        const cur = prev[activeSession];
+        if (!cur) return prev;
+        const nextTabs = cur.tabs.map((t) => (t.id === tabId ? ({ ...t, ...patch } as Tab) : t));
+        return { ...prev, [activeSession]: { ...cur, tabs: nextTabs } };
+      });
+    },
+    [activeSession],
+  );
+
+  const openEditorTab = useCallback(
+    (path: string) => {
+      if (!activeSession) return;
+      setPerSession((prev) => {
+        const cur = prev[activeSession];
+        if (!cur) return prev;
+        const existing = cur.tabs.find((t) => t.kind === "editor" && t.path === path);
+        if (existing) {
+          return { ...prev, [activeSession]: { ...cur, activeTabId: existing.id } };
+        }
+        const id = makeTabId();
+        const tab: Tab = { id, kind: "editor", path, view: "edit" };
+        return {
+          ...prev,
+          [activeSession]: { tabs: [...cur.tabs, tab], activeTabId: id },
+        };
+      });
+    },
+    [activeSession],
+  );
+
+  const openDiffTab = useCallback(
+    (cwd: string, file: string, mode: DiffMode) => {
+      if (!activeSession) return;
+      setPerSession((prev) => {
+        const cur = prev[activeSession];
+        if (!cur) return prev;
+        const existing = cur.tabs.find(
+          (t) => t.kind === "diff" && t.file === file && t.mode === mode && t.cwd === cwd,
+        );
+        if (existing) {
+          return { ...prev, [activeSession]: { ...cur, activeTabId: existing.id } };
+        }
+        const id = makeTabId();
+        const tab: Tab = { id, kind: "diff", cwd, file, mode };
+        return {
+          ...prev,
+          [activeSession]: { tabs: [...cur.tabs, tab], activeTabId: id },
+        };
+      });
+    },
+    [activeSession],
+  );
 
   const addFilesTab = useCallback(() => {
     if (!activeSession) return;
@@ -315,12 +379,21 @@ export function IndexPage() {
     <main className="h-[100dvh] flex bg-app text-fg overflow-hidden">
       <Sidebar
         projects={projects}
+        pending={pendingProjects}
+        onAddProject={() => setAddOpen(true)}
+        onDeleteProject={(name) => setProjectToDelete(name)}
         sessions={sessions}
         loadingProjects={projLoading}
         loadingSessions={sessLoading}
         activeSession={activeSession}
-        onLaunchProject={setLaunchTarget}
-        onOpenSession={openSession}
+        onLaunchProject={(p) => {
+          setSidebarOpen(false);
+          setLaunchTarget(p);
+        }}
+        onOpenSession={(n) => {
+          setSidebarOpen(false);
+          openSession(n);
+        }}
         onStopSession={(s) =>
           setDeleteTarget({
             name: s.name,
@@ -328,8 +401,9 @@ export function IndexPage() {
             origPath: s.origPath,
           })
         }
-        onOpenSettings={() => setSettingsOpen(true)}
         onRefresh={refresh}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       <MainPane
@@ -348,13 +422,19 @@ export function IndexPage() {
         }
         rightPaneOpen={rightPaneOpen}
         onToggleRightPane={() => setRightPaneOpen((v) => !v)}
+        onUpdateTab={updateTab}
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        onOpenDiff={(file, mode) => openDiffTab(activeCwd, file, mode)}
       />
 
       {rightPaneOpen && activeSessionObj && (
-        <RightPane cwd={activeCwd} onClose={() => setRightPaneOpen(false)} />
+        <RightPane
+          cwd={activeCwd}
+          onClose={() => setRightPaneOpen(false)}
+          onOpenFile={openEditorTab}
+          onOpenDiff={(file, mode) => openDiffTab(activeCwd, file, mode)}
+        />
       )}
-
-      <SettingsDialog isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <LaunchConfirmSheet
         isOpen={!!launchTarget}
@@ -371,6 +451,13 @@ export function IndexPage() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleStopConfirm}
         busy={deleting}
+      />
+
+      <AddProjectModal open={addOpen} onClose={() => setAddOpen(false)} />
+      <DeleteProjectConfirm
+        open={!!projectToDelete}
+        name={projectToDelete ?? ""}
+        onClose={() => setProjectToDelete(null)}
       />
     </main>
   );

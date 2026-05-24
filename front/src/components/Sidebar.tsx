@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { Badge, Input, Spinner } from "@/components/ui";
 import {
   IconBranch,
@@ -20,6 +21,13 @@ export type Project = {
   root: string;
   mtimeMs: number;
   isGit: boolean;
+};
+
+export type PendingProject = {
+  name: string;
+  path: string;
+  kind: string;
+  error?: string;
 };
 
 export type TmuxSession = {
@@ -51,6 +59,7 @@ function sessionProjectPath(s: TmuxSession): string {
 
 export function Sidebar({
   projects,
+  pending = [],
   sessions,
   loadingProjects,
   loadingSessions,
@@ -58,10 +67,14 @@ export function Sidebar({
   onLaunchProject,
   onOpenSession,
   onStopSession,
-  onOpenSettings,
   onRefresh,
+  onAddProject,
+  onDeleteProject,
+  open = true,
+  onClose,
 }: {
   projects: Project[];
+  pending?: PendingProject[];
   sessions: TmuxSession[];
   loadingProjects: boolean;
   loadingSessions: boolean;
@@ -69,8 +82,12 @@ export function Sidebar({
   onLaunchProject: (p: Project) => void;
   onOpenSession: (name: string) => void;
   onStopSession: (s: TmuxSession) => void;
-  onOpenSettings: () => void;
   onRefresh: () => void;
+  onAddProject?: () => void;
+  onDeleteProject?: (name: string) => void;
+  /** Mobile drawer visibility. Always true on md+. */
+  open?: boolean;
+  onClose?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -147,76 +164,143 @@ export function Sidebar({
   const totalSessions = sessions.length;
 
   return (
-    <aside className="w-72 shrink-0 h-full flex flex-col border-r border-line bg-surface">
-      <div className="px-3 py-3 flex items-center gap-2 border-b border-line">
-        <div className="flex items-baseline gap-2 flex-1 min-w-0">
-          <span className="text-sm font-semibold tracking-tight text-fg">agent-start</span>
-          <span className="text-[10px] uppercase tracking-wider text-fg-faint">launcher</span>
-        </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          aria-label="再読み込み"
-          className="w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
-        >
-          <IconRefresh className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          aria-label="設定"
-          className="w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
-        >
-          <IconGear className="w-4 h-4" />
-        </button>
-      </div>
-
-      <div className="px-3 py-3 border-b border-line">
-        <Input
-          type="search"
-          placeholder="検索"
-          value={query}
-          onValueChange={setQuery}
-          clearable
-          leftSlot={<IconSearch className="w-4 h-4" />}
-        />
-        <div className="mt-2 flex items-center gap-2 text-[11px] text-fg-subtle">
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-success" />
-            {totalSessions} セッション
-          </span>
-          <span className="text-fg-faint">·</span>
-          <span>{projects.length} プロジェクト</span>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto scroll-thin">
-        {(loadingProjects || loadingSessions) && groups.length === 0 ? (
-          <div className="flex justify-center py-8">
-            <Spinner size="sm" />
+    <>
+      {open && onClose && (
+        <div className="md:hidden fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden />
+      )}
+      <aside
+        className={[
+          "w-72 shrink-0 h-full flex flex-col border-r border-line bg-surface",
+          "md:static md:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 transition-transform",
+          open ? "translate-x-0" : "-translate-x-full",
+        ].join(" ")}
+      >
+        <div className="px-3 py-3 flex items-center gap-2 border-b border-line">
+          <div className="flex items-baseline gap-2 flex-1 min-w-0">
+            <span className="text-sm font-semibold tracking-tight text-fg">agent-start</span>
+            <span className="text-[10px] uppercase tracking-wider text-fg-faint">launcher</span>
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="px-4 py-8 text-center text-xs text-fg-subtle">
-            {query ? "一致する項目がありません" : "プロジェクトがありません"}
+          <button
+            type="button"
+            onClick={onRefresh}
+            aria-label="再読み込み"
+            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
+          >
+            <IconRefresh className="w-4 h-4" />
+          </button>
+          <Link
+            to="/settings"
+            aria-label="設定"
+            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
+          >
+            <IconGear className="w-4 h-4" />
+          </Link>
+        </div>
+
+        <div className="px-3 py-3 border-b border-line">
+          <Input
+            type="search"
+            placeholder="検索"
+            value={query}
+            onValueChange={setQuery}
+            clearable
+            leftSlot={<IconSearch className="w-4 h-4" />}
+          />
+          <div className="mt-2 flex items-center gap-2 text-[11px] text-fg-subtle">
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-success" />
+              {totalSessions} セッション
+            </span>
+            <span className="text-fg-faint">·</span>
+            <span>{projects.length} プロジェクト</span>
           </div>
-        ) : (
-          <ul className="py-1.5">
-            {filtered.map((g) => (
-              <GroupRow
-                key={g.key}
-                group={g}
-                expanded={!collapsed[g.key]}
-                onToggle={() => setCollapsed((prev) => ({ ...prev, [g.key]: !prev[g.key] }))}
-                activeSession={activeSession}
-                onLaunch={g.project ? () => onLaunchProject(g.project!) : null}
-                onOpenSession={onOpenSession}
-                onStopSession={onStopSession}
-              />
-            ))}
-          </ul>
+        </div>
+
+        <div className="flex-1 overflow-y-auto scroll-thin">
+          {pending.length > 0 && (
+            <ul className="py-1.5 border-b border-line">
+              {pending.map((p) => (
+                <PendingRow
+                  key={p.name + p.kind}
+                  pending={p}
+                  onCancel={() => onDeleteProject?.(p.name)}
+                />
+              ))}
+            </ul>
+          )}
+          {(loadingProjects || loadingSessions) && groups.length === 0 ? (
+            <div className="flex justify-center py-8">
+              <Spinner size="sm" />
+            </div>
+          ) : filtered.length === 0 && pending.length === 0 ? (
+            <div className="px-4 py-8 text-center text-xs text-fg-subtle">
+              {query ? "一致する項目がありません" : "プロジェクトがありません"}
+            </div>
+          ) : (
+            <ul className="py-1.5">
+              {filtered.map((g) => (
+                <GroupRow
+                  key={g.key}
+                  group={g}
+                  expanded={!collapsed[g.key]}
+                  onToggle={() => setCollapsed((prev) => ({ ...prev, [g.key]: !prev[g.key] }))}
+                  activeSession={activeSession}
+                  onLaunch={g.project ? () => onLaunchProject(g.project!) : null}
+                  onOpenSession={onOpenSession}
+                  onStopSession={onStopSession}
+                  onDeleteProject={onDeleteProject}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {onAddProject && (
+          <div className="border-t border-line p-2">
+            <button
+              type="button"
+              onClick={onAddProject}
+              className="w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-md border border-line bg-surface hover:bg-surface-muted text-sm text-fg"
+            >
+              <IconPlus className="w-3.5 h-3.5" /> プロジェクトを追加
+            </button>
+          </div>
         )}
+      </aside>
+    </>
+  );
+}
+
+function PendingRow({ pending, onCancel }: { pending: PendingProject; onCancel: () => void }) {
+  const isError = !!pending.error;
+  return (
+    <li className="px-1.5">
+      <div className="group flex items-center gap-2 px-1.5 py-1.5 rounded-md">
+        <span className="w-5 h-5 inline-flex items-center justify-center text-fg-faint shrink-0">
+          {isError ? (
+            <span className="text-danger text-xs font-bold">!</span>
+          ) : (
+            <Spinner size="xs" />
+          )}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm text-fg truncate">{pending.name}</div>
+          <div className="text-[10px] font-mono text-fg-faint truncate">
+            {isError ? pending.error : `${pending.kind}…`}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          aria-label="削除"
+          title={isError ? "削除" : "キャンセル"}
+          className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-fg-faint hover:text-danger hover:bg-danger/10"
+        >
+          <IconX className="w-3 h-3" />
+        </button>
       </div>
-    </aside>
+    </li>
   );
 }
 
@@ -228,6 +312,7 @@ function GroupRow({
   onLaunch,
   onOpenSession,
   onStopSession,
+  onDeleteProject,
 }: {
   group: Group;
   expanded: boolean;
@@ -236,19 +321,26 @@ function GroupRow({
   onLaunch: (() => void) | null;
   onOpenSession: (name: string) => void;
   onStopSession: (s: TmuxSession) => void;
+  onDeleteProject?: (name: string) => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const name = group.project?.name ?? "未紐付け";
   const path = group.project?.path ?? "";
   const isGit = group.project?.isGit ?? false;
   const sessions = group.sessions;
 
   return (
-    <li className="px-1.5">
+    <li className="px-1.5 relative">
       <div
         className={[
           "group flex items-center gap-1 px-1.5 py-1.5 rounded-md",
           "hover:bg-surface-muted",
         ].join(" ")}
+        onContextMenu={(e) => {
+          if (!group.project || !onDeleteProject) return;
+          e.preventDefault();
+          setMenuOpen((v) => !v);
+        }}
       >
         <button
           type="button"
@@ -284,6 +376,20 @@ function GroupRow({
             </Badge>
           )}
         </button>
+        {group.project && onDeleteProject && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((v) => !v);
+            }}
+            aria-label="プロジェクト操作"
+            title="…"
+            className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <span className="text-xs">⋯</span>
+          </button>
+        )}
         {onLaunch && (
           <button
             type="button"
@@ -296,6 +402,23 @@ function GroupRow({
           </button>
         )}
       </div>
+      {menuOpen && group.project && onDeleteProject && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} aria-hidden />
+          <div className="absolute right-2 top-8 z-30 w-44 bg-surface-elev border border-line rounded-md shadow-lg py-1">
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false);
+                onDeleteProject(group.project!.name);
+              }}
+              className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-danger/5"
+            >
+              プロジェクトを削除
+            </button>
+          </div>
+        </>
+      )}
       {expanded && (
         <>
           {path && (

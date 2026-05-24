@@ -43,3 +43,19 @@ pub(crate) fn run_raw(repo: &Path, args: &[&str]) -> Result<Vec<u8>, GitError> {
 pub fn is_git_repo(p: &Path) -> bool {
     run(p, &["rev-parse", "--git-dir"]).is_ok()
 }
+
+/// Run `git clone <url> <dest>` from the current working directory.
+/// Blocks until the clone completes; callers should `tokio::task::spawn_blocking`.
+pub fn clone(url: &str, dest: &Path) -> Result<(), GitError> {
+    let mut cmd = Command::new("git");
+    cmd.arg("clone").arg(url).arg(dest);
+    let output = cmd.output()?;
+    if !output.status.success() {
+        return Err(GitError::Failed {
+            cmd: format!("git clone {} {}", url, dest.display()),
+            code: output.status.code(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(())
+}

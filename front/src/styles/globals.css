@@ -142,3 +142,209 @@ button:active:not(:disabled),
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--border-strong)) transparent;
 }
+
+/* ---------- Markdown preview ---------- *
+ * Tailwind's preflight strips default heading/list/code styles, so the
+ * ReactMarkdown output collapses to plain text. Re-introduce the bare
+ * minimum here scoped to .md-preview so nothing leaks elsewhere.
+ */
+.md-preview {
+  color: rgb(var(--fg));
+  line-height: 1.65;
+  word-break: break-word;
+}
+.md-preview > * + * {
+  margin-top: 0.85em;
+}
+.md-preview h1,
+.md-preview h2,
+.md-preview h3,
+.md-preview h4,
+.md-preview h5,
+.md-preview h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 1.6em;
+  margin-bottom: 0.4em;
+  color: rgb(var(--fg));
+}
+.md-preview h1 {
+  font-size: 1.875em;
+  border-bottom: 1px solid rgb(var(--border));
+  padding-bottom: 0.3em;
+}
+.md-preview h2 {
+  font-size: 1.5em;
+  border-bottom: 1px solid rgb(var(--border));
+  padding-bottom: 0.25em;
+}
+.md-preview h3 {
+  font-size: 1.25em;
+}
+.md-preview h4 {
+  font-size: 1.05em;
+}
+.md-preview h5,
+.md-preview h6 {
+  font-size: 0.95em;
+  color: rgb(var(--fg-muted));
+}
+.md-preview p {
+  margin: 0;
+}
+.md-preview a {
+  color: rgb(var(--accent));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.md-preview strong {
+  font-weight: 600;
+}
+.md-preview em {
+  font-style: italic;
+}
+.md-preview ul,
+.md-preview ol {
+  padding-left: 1.6em;
+}
+.md-preview ul {
+  list-style: disc;
+}
+.md-preview ol {
+  list-style: decimal;
+}
+.md-preview ul ul {
+  list-style: circle;
+}
+.md-preview li {
+  margin-top: 0.25em;
+}
+.md-preview li > p {
+  margin-top: 0.25em;
+}
+.md-preview blockquote {
+  border-left: 3px solid rgb(var(--border-strong));
+  padding-left: 1em;
+  color: rgb(var(--fg-muted));
+  font-style: italic;
+}
+.md-preview code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  background: rgb(var(--surface-muted));
+  border: 1px solid rgb(var(--border));
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.md-preview pre {
+  background: rgb(var(--surface-muted));
+  border: 1px solid rgb(var(--border));
+  border-radius: 6px;
+  padding: 0.85em 1em;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+.md-preview pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 0.85em;
+}
+.md-preview hr {
+  border: 0;
+  border-top: 1px solid rgb(var(--border));
+  margin: 1.5em 0;
+}
+.md-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9em;
+}
+.md-preview th,
+.md-preview td {
+  border: 1px solid rgb(var(--border));
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+.md-preview th {
+  background: rgb(var(--surface-muted));
+  font-weight: 600;
+}
+.md-preview img {
+  max-width: 100%;
+  height: auto;
+}
+.md-preview input[type="checkbox"] {
+  margin-right: 0.4em;
+}
+
+/* ---------- react-diff-view theming ---------- *
+ * Override the library CSS variables so the diff blends into our theme.
+ * Light: GitHub-style pale red/green; Dark: shifted to deeper tints.
+ */
+.diff-wrap {
+  --diff-background-color: transparent;
+  --diff-text-color: rgb(var(--fg));
+  --diff-font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --diff-selection-background-color: rgb(var(--accent) / 0.18);
+  --diff-selection-text-color: rgb(var(--fg));
+  --diff-gutter-insert-background-color: #ccffd8;
+  --diff-gutter-insert-text-color: #1a7f37;
+  --diff-gutter-delete-background-color: #ffd7d5;
+  --diff-gutter-delete-text-color: #b35900;
+  --diff-gutter-selected-background-color: rgb(var(--accent) / 0.12);
+  --diff-gutter-selected-text-color: rgb(var(--fg));
+  --diff-code-insert-background-color: #e6ffec;
+  --diff-code-insert-text-color: rgb(var(--fg));
+  --diff-code-delete-background-color: #ffebe9;
+  --diff-code-delete-text-color: rgb(var(--fg));
+  --diff-code-insert-edit-background-color: #abf2bc;
+  --diff-code-insert-edit-text-color: rgb(var(--fg));
+  --diff-code-delete-edit-background-color: #ffc1bd;
+  --diff-code-delete-edit-text-color: rgb(var(--fg));
+  --diff-code-selected-background-color: rgb(var(--accent) / 0.12);
+  --diff-code-selected-text-color: rgb(var(--fg));
+  --diff-omit-gutter-line-color: rgb(var(--border-strong));
+  font-size: 12px;
+}
+.dark .diff-wrap {
+  --diff-gutter-insert-background-color: rgba(46, 160, 67, 0.4);
+  --diff-gutter-insert-text-color: #7ee787;
+  --diff-gutter-delete-background-color: rgba(248, 81, 73, 0.4);
+  --diff-gutter-delete-text-color: #ffa198;
+  --diff-code-insert-background-color: rgba(46, 160, 67, 0.15);
+  --diff-code-delete-background-color: rgba(248, 81, 73, 0.15);
+  --diff-code-insert-edit-background-color: rgba(46, 160, 67, 0.4);
+  --diff-code-delete-edit-background-color: rgba(248, 81, 73, 0.4);
+}
+.diff-wrap .diff {
+  font-size: 12px;
+}
+.diff-wrap .diff-line {
+  line-height: 1.5;
+}
+.diff-wrap .diff-gutter {
+  color: rgb(var(--fg-faint));
+  background: rgb(var(--surface-sunken));
+  font-variant-numeric: tabular-nums;
+  min-width: 3em;
+}
+.diff-wrap .diff-hunk-header {
+  background: rgba(56, 139, 253, 0.1);
+  color: rgb(var(--fg-subtle));
+}
+.diff-wrap .diff-hunk-header-gutter,
+.diff-wrap .diff-hunk-header-content {
+  padding: 4px 8px;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

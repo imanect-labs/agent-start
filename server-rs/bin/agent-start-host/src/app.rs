@@ -32,6 +32,31 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
     if let Err(e) = config_loader::migrate_legacy_layout() {
         tracing::warn!(error = %e, "legacy layout migration encountered an error (continuing)");
     }
+
+    // Ensure the default projects directory exists before any config load
+    // so first-run users immediately see a valid roots entry.
+    let projects = config_loader::projects_dir();
+    if let Err(e) = std::fs::create_dir_all(&projects) {
+        tracing::warn!(error = %e, path = %projects.display(), "failed to create projects dir");
+    }
+    // If existing config has no projects-dir entry in `roots`, add it and
+    // persist. Keeps user-customized additional roots intact.
+    if let Ok(mut cfg) = config_loader::load_config() {
+        let projects_str = projects.to_string_lossy().into_owned();
+        let has = cfg.roots.iter().any(|r| {
+            let p = config_loader::expand_root(r);
+            p == projects
+                || p.to_string_lossy() == projects_str
+                || r.as_str() == projects_str
+        });
+        if !has {
+            cfg.roots.insert(0, projects_str);
+            if let Err(e) = config_loader::save_config(&cfg) {
+                tracing::warn!(error = %e, "failed to persist projects-dir root");
+            }
+        }
+    }
+
     let db = state::open().await?;
     let pty = Arc::new(PtyManager::new());
     let sessions = Arc::new(RwLock::new(HashMap::new()));
@@ -81,10 +106,25 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         .route("/v1/health", get(crate::http::health))
         .route("/v1/version", get(crate::http::version))
         // `/api/*` surface consumed by the Vite+ SPA under `/front/`.
-        .route("/api/config", get(crate::http::get_config))
+        .route(
+            "/api/config",
+            get(crate::http::get_config).put(crate::http::put_config),
+        )
         .route("/api/preferences", get(crate::http::get_preferences))
         .route("/api/preferences", put(crate::http::put_preferences))
         .route("/api/projects", get(crate::http::list_projects))
+        .route(
+            "/api/projects/clone",
+            axum::routing::post(crate::http::clone_project),
+        )
+        .route(
+            "/api/projects/import",
+            axum::routing::post(crate::http::import_project),
+        )
+        .route(
+            "/api/projects/:name",
+            delete(crate::http::delete_project),
+        )
         .route("/api/sessions", get(crate::http::list_sessions))
         .route(
             "/api/sessions",
@@ -98,6 +138,11 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         .route(
             "/api/sessions/:name/windows/:index",
             delete(crate::http::delete_window),
+        )
+        .route("/api/fs/tree", get(crate::http::fs_tree))
+        .route(
+            "/api/fs/file",
+            get(crate::http::fs_read).put(crate::http::fs_write),
         )
         .route("/api/git/status", get(crate::http::git_status))
         .route("/api/git/diff", get(crate::http::git_diff))
