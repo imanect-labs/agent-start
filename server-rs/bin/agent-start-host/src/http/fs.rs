@@ -150,8 +150,25 @@ pub async fn fs_write(Json(req): Json<FsWriteRequest>) -> Response {
     }
 
     // Atomic write: tmp file in same dir, fsync, rename.
+    //
+    // Tmp name must be unique per request — a fixed pid-keyed name lets
+    // two concurrent saves in the same directory clobber each other's
+    // tmp content (or remove it before the peer's rename) and produce
+    // wrong file contents under normal multi-tab editor usage.
     let parent = resolved.parent().unwrap_or_else(|| Path::new("."));
-    let tmp = parent.join(format!(".agent-start.tmp.{}", std::process::id()));
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nonce = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = parent.join(format!(
+        ".agent-start.tmp.{}.{}.{}",
+        std::process::id(),
+        nanos,
+        nonce
+    ));
     if let Err(e) = std::fs::write(&tmp, req.content.as_bytes()) {
         return err(
             StatusCode::INTERNAL_SERVER_ERROR,

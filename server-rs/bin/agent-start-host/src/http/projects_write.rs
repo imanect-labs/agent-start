@@ -175,6 +175,7 @@ pub async fn import_project(Json(req): Json<ImportRequest>) -> Response {
 
     let root_clone = root.clone();
     let name_for_task = name.clone();
+    let name_for_marker = name.clone();
     let src_for_task = canon.clone();
     tokio::spawn(async move {
         let res = tokio::task::spawn_blocking(move || {
@@ -188,8 +189,12 @@ pub async fn import_project(Json(req): Json<ImportRequest>) -> Response {
         })
         .await;
         if let Ok(Err(e)) = res {
+            // Marker must be keyed on the real project name so the
+            // sidebar's `<name>.partial` row flips to `<name>.error`
+            // and the partial dir gets cleaned up. A literal "_import"
+            // would leak the partial and never surface the failure.
             let root_for_marker = config_loader::projects_dir();
-            write_error_marker(&root_for_marker, "_import", &e.to_string());
+            write_error_marker(&root_for_marker, &name_for_marker, &e.to_string());
         }
     });
 
