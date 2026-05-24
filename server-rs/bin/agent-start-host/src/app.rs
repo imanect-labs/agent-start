@@ -71,7 +71,9 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
     // Rehydrate session rows whose worktree dir is still on disk. The
     // PTY is gone, but the worktree is real work and the user should
     // still see the session in the sidebar (with a "stopped" badge) so
-    // they can delete it cleanly or relaunch later.
+    // they can delete it cleanly or relaunch later. Window-0 history,
+    // if previously snapshotted, is attached so the WS handler can
+    // replay last-known terminal state.
     if let Ok(rows) = state::list_all_sessions(&db).await {
         let mut map: HashMap<String, SessionDirectory> = HashMap::new();
         for row in rows {
@@ -81,6 +83,11 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
             if !std::path::Path::new(&row.worktree_path).exists() {
                 continue;
             }
+            let history = state::load_pty_snapshot(&db, &row.name, 0)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default();
             map.insert(
                 row.name.clone(),
                 SessionDirectory {
@@ -91,6 +98,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
                     worktree_path: row.worktree_path,
                     orig_path: row.orig_path,
                     live: false,
+                    history,
                 },
             );
         }
@@ -124,6 +132,33 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
                     }
                 });
             }));
+    }
+
+    // Periodic flusher: every 5s snapshot every live PTY's ring buffer
+    // into SQLite. On a restart `list_all_sessions` + `load_pty_snapshot`
+    // reconstructs the scrollback so users see their last terminal state
+    // instead of an empty pane.
+    {
+        let state_for_flush = app_state.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+            tick.tick().await; // skip the immediate first tick
+            loop {
+                tick.tick().await;
+                let snapshots = state_for_flush.pty.snapshot_all();
+                for (name, window, bytes) in snapshots {
+                    if bytes.is_empty() {
+                        continue;
+                    }
+                    if let Err(e) =
+                        state::save_pty_snapshot(&state_for_flush.db, &name, window as i64, &bytes)
+                            .await
+                    {
+                        tracing::debug!(error = %e, session = %name, window, "snapshot flush failed");
+                    }
+                }
+            }
+        });
     }
 
     let cors = CorsLayer::new()

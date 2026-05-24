@@ -142,6 +142,7 @@ pub async fn start_session(
             worktree_path: wt_str,
             orig_path: orig_str,
             live: true,
+            history: Vec::new(),
         },
     );
 
@@ -198,6 +199,7 @@ pub async fn delete_session(
         }
     }
     let _ = state::delete_session(&app.db, &name).await;
+    let _ = state::delete_pty_snapshots(&app.db, &name).await;
 
     Json(DeleteSessionResponse {
         ok: true,

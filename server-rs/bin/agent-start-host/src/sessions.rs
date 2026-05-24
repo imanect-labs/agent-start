@@ -21,6 +21,10 @@ pub struct SessionDirectory {
     /// (optionally removing the worktree) or relaunched into a fresh
     /// session pointed at the same orig_path.
     pub live: bool,
+    /// Persisted PTY scrollback. Populated only for rehydrated stopped
+    /// sessions so the WS handler can replay last-known terminal state
+    /// without a live PtySession.
+    pub history: Vec<u8>,
 }
 
 impl SessionDirectory {

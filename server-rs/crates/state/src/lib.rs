@@ -185,6 +185,52 @@ pub async fn delete_session(db: &Db, name: &str) -> Result<(), StateError> {
     Ok(())
 }
 
+/// Overwrite the latest snapshot for one PTY window. Used by the
+/// background flusher so the most recent scrollback survives a host
+/// restart and can be replayed to clients of stopped sessions.
+pub async fn save_pty_snapshot(
+    db: &Db,
+    name: &str,
+    window: i64,
+    chunk: &[u8],
+) -> Result<(), StateError> {
+    let now = Utc::now().timestamp_millis();
+    sqlx::query(
+        "INSERT INTO pty_snapshot (session_name, window, saved_at_ms, chunk) \
+         VALUES (?, ?, ?, ?) \
+         ON CONFLICT(session_name, window) DO UPDATE SET \
+           saved_at_ms = excluded.saved_at_ms, chunk = excluded.chunk",
+    )
+    .bind(name)
+    .bind(window)
+    .bind(now)
+    .bind(chunk)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+pub async fn load_pty_snapshot(
+    db: &Db,
+    name: &str,
+    window: i64,
+) -> Result<Option<Vec<u8>>, StateError> {
+    let row = sqlx::query("SELECT chunk FROM pty_snapshot WHERE session_name = ? AND window = ?")
+        .bind(name)
+        .bind(window)
+        .fetch_optional(db)
+        .await?;
+    Ok(row.map(|r| r.get::<Vec<u8>, _>("chunk")))
+}
+
+pub async fn delete_pty_snapshots(db: &Db, name: &str) -> Result<(), StateError> {
+    sqlx::query("DELETE FROM pty_snapshot WHERE session_name = ?")
+        .bind(name)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 pub async fn append_history(db: &Db, name: &str, seq: i64, chunk: &[u8]) -> Result<(), StateError> {
     sqlx::query("INSERT OR REPLACE INTO pty_history (session_name, seq, chunk) VALUES (?, ?, ?)")
         .bind(name)

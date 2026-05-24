@@ -107,22 +107,18 @@ export function IndexPage() {
     setActiveSession((cur) => (cur && live.has(cur) ? cur : null));
   }, [sessData, sessions]);
 
-  const openSession = useCallback(
-    (name: string) => {
-      setActiveSession(name);
-      setPerSession((prev) => {
-        if (prev[name]) return prev;
-        // Stopped sessions (rehydrated after restart) have no PTY —
-        // open them with just a Files tab so the user can still browse
-        // the worktree without a terminal-connection error.
-        const isStopped = sessions.find((s) => s.name === name)?.stopped;
-        const id = makeTabId();
-        const tab: Tab = isStopped ? { id, kind: "files" } : { id, kind: "terminal", windowId: 0 };
-        return { ...prev, [name]: { tabs: [tab], activeTabId: id } };
-      });
-    },
-    [sessions],
-  );
+  const openSession = useCallback((name: string) => {
+    setActiveSession(name);
+    setPerSession((prev) => {
+      if (prev[name]) return prev;
+      // First open: terminal tab on window 0. For stopped sessions the
+      // server replays the saved scrollback over the WS then closes —
+      // the user sees their last terminal state, just can't type.
+      const id = makeTabId();
+      const tab: Tab = { id, kind: "terminal", windowId: 0 };
+      return { ...prev, [name]: { tabs: [tab], activeTabId: id } };
+    });
+  }, []);
 
   const selectTab = useCallback(
     (tabId: string) => {

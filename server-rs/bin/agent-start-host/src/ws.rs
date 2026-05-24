@@ -39,10 +39,41 @@ pub async fn ws_terminal(
         return (StatusCode::BAD_REQUEST, "invalid session name").into_response();
     }
     let window = q.window.unwrap_or(0);
-    let Some(session) = app.pty.get(&name, window) else {
+    if let Some(session) = app.pty.get(&name, window) {
+        return ws.on_upgrade(move |socket| handle(socket, session, app));
+    }
+    // No live PTY — if we rehydrated this name from disk after a host
+    // restart, replay the snapshotted scrollback so the user can see
+    // their last terminal state. Window != 0 has no snapshot.
+    let stopped_history = if window == 0 {
+        app.sessions
+            .read()
+            .get(&name)
+            .filter(|d| !d.live)
+            .map(|d| d.history.clone())
+    } else {
+        None
+    };
+    let Some(history) = stopped_history else {
         return (StatusCode::NOT_FOUND, "session not found").into_response();
     };
-    ws.on_upgrade(move |socket| handle(socket, session, app))
+    ws.on_upgrade(move |socket| handle_stopped(socket, history))
+}
+
+async fn handle_stopped(socket: WebSocket, history: Vec<u8>) {
+    let (mut sink, _stream) = socket.split();
+    if history.is_empty() {
+        let _ = sink
+            .send(Message::Text(
+                "(no terminal history saved for this session)\r\n".into(),
+            ))
+            .await;
+    } else {
+        let _ = sink.send(Message::Binary(history)).await;
+    }
+    // Stay open so xterm.js doesn't show a noisy disconnect; client
+    // can't write anyway because no PTY exists to receive input.
+    let _ = sink.close().await;
 }
 
 async fn handle(socket: WebSocket, session: std::sync::Arc<pty_manager::PtySession>, _app: Shared) {

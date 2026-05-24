@@ -98,6 +98,16 @@ impl PtyManager {
         keys.into_iter().filter_map(|k| map.remove(&k)).collect()
     }
 
+    /// Snapshot every live (session, window)'s ring buffer. Used by the
+    /// host's periodic flusher to persist scrollback to SQLite so it
+    /// can be replayed after a restart.
+    pub fn snapshot_all(&self) -> Vec<(String, u32, Vec<u8>)> {
+        let map = self.sessions.lock();
+        map.iter()
+            .map(|((n, w), s)| (n.clone(), *w, s.subscribe().0))
+            .collect()
+    }
+
     /// Sum of WebSocket receivers across every window of the session.
     pub fn attached_count(&self, name: &str) -> usize {
         let map = self.sessions.lock();
