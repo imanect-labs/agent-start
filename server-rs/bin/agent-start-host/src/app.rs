@@ -85,11 +85,20 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
             if !std::path::Path::new(probe).exists() {
                 continue;
             }
-            let history = state::load_pty_snapshot(&db, &row.name, 0)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_default();
+            let history = match state::load_pty_snapshot(&db, &row.name, 0).await {
+                Ok(Some(h)) => {
+                    tracing::info!(session = %row.name, bytes = h.len(), "rehydrated snapshot");
+                    h
+                }
+                Ok(None) => {
+                    tracing::info!(session = %row.name, "no snapshot in db");
+                    Vec::new()
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, session = %row.name, "failed to load snapshot");
+                    Vec::new()
+                }
+            };
             map.insert(
                 row.name.clone(),
                 SessionDirectory {
@@ -196,6 +205,10 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         )
         .route("/api/sessions/:name", delete(crate::http::delete_session))
         .route(
+            "/api/sessions/:name/restart",
+            axum::routing::post(crate::http::restart_session),
+        )
+        .route(
             "/api/sessions/:name/windows",
             get(crate::http::list_windows).post(crate::http::create_window),
         )
@@ -269,31 +282,44 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
 
     manifest::write(&addr).ok();
 
+    // Spawn a Ctrl-C watcher that flushes snapshots and hard-exits.
+    // Graceful axum shutdown blocks indefinitely on live WebSocket
+    // connections (the browser holds the terminal sockets open with
+    // no FIN), so the user would otherwise have to ^Z the process —
+    // which prevents any future periodic flush from running and loses
+    // up to the last 5s of terminal output. Hard-exit is fine here
+    // because every piece of mutable state worth keeping (sessions,
+    // PTY snapshots, scrollback) is in SQLite by the time we return.
     let shutdown_state = app_state.clone();
-    axum::serve(listener, router.into_make_service())
-        .with_graceful_shutdown(async move {
-            let _ = tokio::signal::ctrl_c().await;
-            tracing::info!("shutdown signal received; flushing PTY snapshots");
-            // Final flush so the very last bytes are persisted before
-            // the process exits — otherwise a quick restart loses up to
-            // the last ~5s of output between periodic flushes.
-            let snapshots = shutdown_state.pty.snapshot_all();
-            for (name, window, bytes) in snapshots {
-                if bytes.is_empty() {
-                    continue;
-                }
-                if let Err(e) = state::save_pty_snapshot(
-                    &shutdown_state.db,
-                    &name,
-                    window as i64,
-                    &bytes,
-                )
-                .await
-                {
-                    tracing::warn!(error = %e, session = %name, window, "final snapshot flush failed");
-                }
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("shutdown signal received; flushing PTY snapshots");
+        let snapshots = shutdown_state.pty.snapshot_all();
+        tracing::info!(count = snapshots.len(), "snapshot_all collected");
+        for (name, window, bytes) in snapshots {
+            if bytes.is_empty() {
+                tracing::info!(session = %name, window, "skipping empty snapshot");
+                continue;
             }
-        })
-        .await?;
+            match state::save_pty_snapshot(&shutdown_state.db, &name, window as i64, &bytes).await {
+                Ok(()) => tracing::info!(
+                    session = %name,
+                    window,
+                    bytes = bytes.len(),
+                    "snapshot saved"
+                ),
+                Err(e) => tracing::warn!(
+                    error = %e,
+                    session = %name,
+                    window,
+                    "final snapshot flush failed"
+                ),
+            }
+        }
+        tracing::info!("flush complete; exiting");
+        std::process::exit(0);
+    });
+
+    axum::serve(listener, router.into_make_service()).await?;
     Ok(())
 }

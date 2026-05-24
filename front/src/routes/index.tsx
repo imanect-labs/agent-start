@@ -58,19 +58,24 @@ export function IndexPage() {
 
   // Per-session tab state. `perSession[sessionName]` is undefined until the
   // user has opened the session for the first time.
-  const [perSession, setPerSession] = useState<Record<string, SessionTabs>>({});
-  const [activeSession, setActiveSession] = useState<string | null>(null);
-  const [rightPaneOpen, setRightPaneOpen] = useState(true);
+  //
+  // Hydration runs via the useState initializer (not an effect) so the
+  // very first render already has the saved tabs. An effect-based
+  // hydrate races with the persist effect on the same mount: both fire
+  // in the same commit, persist writes the empty initial state, and on
+  // the next reload the saved tabs are gone — exactly the "terminal1
+  // 以外の全てのタブが消える" symptom users hit.
+  const initial = useMemo(loadStored, []);
+  const [perSession, setPerSession] = useState<Record<string, SessionTabs>>(
+    () => initial.perSession,
+  );
+  const [activeSession, setActiveSession] = useState<string | null>(() => initial.activeSession);
+  const [rightPaneOpen, setRightPaneOpen] = useState(() => initial.rightPaneOpen);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // Hydrate from localStorage on first mount.
-  useEffect(() => {
-    const s = loadStored();
-    setPerSession(s.perSession);
-    setActiveSession(s.activeSession);
-    setRightPaneOpen(s.rightPaneOpen);
-  }, []);
+  const [restarting, setRestarting] = useState<string | null>(null);
 
-  // Persist on every change.
+  // Persist on every change. Safe to fire on mount now that the
+  // initial state already equals what's in localStorage.
   useEffect(() => {
     persistStored({ perSession, activeSession, rightPaneOpen });
   }, [perSession, activeSession, rightPaneOpen]);
@@ -314,6 +319,32 @@ export function IndexPage() {
     }
   };
 
+  const handleRestartSession = useCallback(
+    async (name: string) => {
+      setRestarting(name);
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(name)}/restart`, {
+          method: "POST",
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+        toast({ title: "再開しました", description: name, color: "success" });
+        // Refresh /api/sessions so `stopped` flips to false; the Terminal
+        // tab key includes that flag and will remount onto the fresh PTY.
+        await mutate("/api/sessions");
+      } catch (e) {
+        toast({
+          title: "再開失敗",
+          description: (e as Error).message,
+          color: "danger",
+        });
+      } finally {
+        setRestarting(null);
+      }
+    },
+    [toast],
+  );
+
   const handleStopConfirm = async (deleteWorktree: boolean) => {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -412,6 +443,8 @@ export function IndexPage() {
             origPath: s.origPath,
           })
         }
+        onRestartSession={(s) => handleRestartSession(s.name)}
+        restarting={restarting === activeSession}
         rightPaneOpen={rightPaneOpen}
         onToggleRightPane={() => setRightPaneOpen((v) => !v)}
         onUpdateTab={updateTab}

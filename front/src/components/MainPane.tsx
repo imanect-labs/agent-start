@@ -30,6 +30,8 @@ type Props = {
   onAddTerminal: () => void;
   onAddFiles: () => void;
   onStopSession: (s: TmuxSession) => void;
+  onRestartSession: (s: TmuxSession) => void;
+  restarting?: boolean;
   rightPaneOpen: boolean;
   onToggleRightPane: () => void;
   /** Update an editor tab's view/dirty/etc. */
@@ -48,6 +50,8 @@ export function MainPane({
   onAddTerminal,
   onAddFiles,
   onStopSession,
+  onRestartSession,
+  restarting,
   rightPaneOpen,
   onToggleRightPane,
   onUpdateTab,
@@ -112,6 +116,16 @@ export function MainPane({
           />
           変更
         </button>
+        {session.stopped && (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!!restarting}
+            onClick={() => onRestartSession(session)}
+          >
+            {restarting ? "再開中…" : "再開"}
+          </Button>
+        )}
         <Button
           variant="dangerOutline"
           size="sm"
@@ -145,6 +159,9 @@ export function MainPane({
           <TabContent
             tab={active}
             sessionName={session.name}
+            sessionStopped={!!session.stopped}
+            restarting={!!restarting}
+            onRestartSession={() => onRestartSession(session)}
             cwd={cwd}
             onUpdateTab={onUpdateTab}
             onOpenDiff={onOpenDiff}
@@ -333,12 +350,18 @@ function MenuItem({
 function TabContent({
   tab,
   sessionName,
+  sessionStopped,
+  restarting,
+  onRestartSession,
   cwd,
   onUpdateTab,
   onOpenDiff,
 }: {
   tab: Tab;
   sessionName: string;
+  sessionStopped: boolean;
+  restarting: boolean;
+  onRestartSession: () => void;
   cwd: string;
   onUpdateTab: (id: string, patch: Partial<Tab>) => void;
   onOpenDiff?: (file: string, mode: DiffMode) => void;
@@ -347,9 +370,15 @@ function TabContent({
     return (
       <div className="flex-1 min-h-0 p-3">
         <Terminal
-          key={`${sessionName}:${tab.windowId}`}
+          // Including `sessionStopped` in the key forces a fresh xterm
+          // + WS when the user clicks "再開" (stopped → live) so the
+          // snapshot pane is replaced by the new PTY's output.
+          key={`${sessionName}:${tab.windowId}:${sessionStopped ? "s" : "l"}`}
           sessionName={sessionName}
           windowId={tab.windowId}
+          stopped={sessionStopped}
+          restarting={restarting}
+          onRestart={onRestartSession}
         />
       </div>
     );

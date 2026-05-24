@@ -23,7 +23,7 @@ pub use meta::{health, version};
 pub use preferences::{get_preferences, put_preferences};
 pub use projects::list_projects;
 pub use projects_write::{clone_project, delete_project, import_project};
-pub use sessions::{delete_session, list_sessions, start_session};
+pub use sessions::{delete_session, list_sessions, restart_session, start_session};
 pub use windows::{create_window, delete_window, list_windows};
 
 /// Render an `{ "error": "<msg>" }` JSON body with the given status code.

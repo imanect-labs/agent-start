@@ -166,6 +166,17 @@ pub async fn mark_dead(db: &Db, name: &str) -> Result<(), StateError> {
     Ok(())
 }
 
+/// Flip a previously stopped session back to `running` with a fresh
+/// pid. Used by the `restart` endpoint after a host reboot.
+pub async fn mark_running(db: &Db, name: &str, pid: Option<i64>) -> Result<(), StateError> {
+    sqlx::query("UPDATE sessions SET status = 'running', pid = ? WHERE name = ?")
+        .bind(pid)
+        .bind(name)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 /// Sweep on startup: anything still marked `running` in the DB
 /// belongs to a previous boot of `agent-start-host` whose PTYs are
 /// gone. Mark them all dead so they stop showing up in
