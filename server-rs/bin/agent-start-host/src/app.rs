@@ -45,9 +45,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         let projects_str = projects.to_string_lossy().into_owned();
         let has = cfg.roots.iter().any(|r| {
             let p = config_loader::expand_root(r);
-            p == projects
-                || p.to_string_lossy() == projects_str
-                || r.as_str() == projects_str
+            p == projects || p.to_string_lossy() == projects_str || r.as_str() == projects_str
         });
         if !has {
             cfg.roots.insert(0, projects_str);
@@ -121,10 +119,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
             "/api/projects/import",
             axum::routing::post(crate::http::import_project),
         )
-        .route(
-            "/api/projects/:name",
-            delete(crate::http::delete_project),
-        )
+        .route("/api/projects/:name", delete(crate::http::delete_project))
         .route("/api/sessions", get(crate::http::list_sessions))
         .route(
             "/api/sessions",

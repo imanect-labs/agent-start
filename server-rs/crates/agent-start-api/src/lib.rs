@@ -68,7 +68,10 @@ pub struct ConfigPatch {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CliConfigPatch {
     pub command: String,
-    #[serde(rename = "skipPermissionsFlag", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "skipPermissionsFlag",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub skip_permissions_flag: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,

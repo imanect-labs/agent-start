@@ -29,10 +29,15 @@ fn allowed_bases() -> Vec<PathBuf> {
     bases
 }
 
-fn resolve_under_roots(target: &Path) -> Result<PathBuf, Response> {
-    let bases = allowed_bases();
-    under_any(&bases, target)
-        .ok_or_else(|| err(StatusCode::FORBIDDEN, "path outside allowed roots"))
+// `Err` is a full axum Response (~128B), so callers receive an Option and emit
+// the error themselves; this keeps clippy::result_large_err quiet without
+// boxing every call site.
+fn resolve_under_roots(target: &Path) -> Option<PathBuf> {
+    under_any(&allowed_bases(), target)
+}
+
+fn forbidden() -> Response {
+    err(StatusCode::FORBIDDEN, "path outside allowed roots")
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,8 +48,8 @@ pub struct TreeQuery {
 pub async fn fs_tree(Query(q): Query<TreeQuery>) -> Response {
     let target = PathBuf::from(&q.path);
     let resolved = match resolve_under_roots(&target) {
-        Ok(p) => p,
-        Err(e) => return e,
+        Some(p) => p,
+        None => return forbidden(),
     };
 
     let cfg = config_loader::load_config().ok();
@@ -84,8 +89,8 @@ pub struct FileQuery {
 pub async fn fs_read(Query(q): Query<FileQuery>) -> Response {
     let target = PathBuf::from(&q.path);
     let resolved = match resolve_under_roots(&target) {
-        Ok(p) => p,
-        Err(e) => return e,
+        Some(p) => p,
+        None => return forbidden(),
     };
 
     let meta = match std::fs::metadata(&resolved) {
@@ -138,10 +143,7 @@ pub async fn fs_write(Json(req): Json<FsWriteRequest>) -> Response {
             if let Ok(s) = String::from_utf8(current) {
                 let actual = content_hash(&s);
                 if &actual != expected {
-                    return err(
-                        StatusCode::CONFLICT,
-                        "file changed on disk since last read",
-                    );
+                    return err(StatusCode::CONFLICT, "file changed on disk since last read");
                 }
             }
         }
@@ -149,16 +151,19 @@ pub async fn fs_write(Json(req): Json<FsWriteRequest>) -> Response {
 
     // Atomic write: tmp file in same dir, fsync, rename.
     let parent = resolved.parent().unwrap_or_else(|| Path::new("."));
-    let tmp = parent.join(format!(
-        ".agent-start.tmp.{}",
-        std::process::id()
-    ));
+    let tmp = parent.join(format!(".agent-start.tmp.{}", std::process::id()));
     if let Err(e) = std::fs::write(&tmp, req.content.as_bytes()) {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, format!("write failed: {e}"));
+        return err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("write failed: {e}"),
+        );
     }
     if let Err(e) = std::fs::rename(&tmp, &resolved) {
         let _ = std::fs::remove_file(&tmp);
-        return err(StatusCode::INTERNAL_SERVER_ERROR, format!("rename failed: {e}"));
+        return err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("rename failed: {e}"),
+        );
     }
     let sha = content_hash(&req.content);
     Json(FsFileBody {

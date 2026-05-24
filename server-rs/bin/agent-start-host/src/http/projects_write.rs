@@ -70,7 +70,10 @@ fn write_error_marker(root: &Path, name: &str, msg: &str) {
 pub async fn clone_project(Json(req): Json<CloneRequest>) -> Response {
     let root = projects_root();
     if let Err(e) = std::fs::create_dir_all(&root) {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, format!("create projects dir: {e}"));
+        return err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("create projects dir: {e}"),
+        );
     }
 
     let base = req
@@ -85,7 +88,10 @@ pub async fn clone_project(Json(req): Json<CloneRequest>) -> Response {
     // Reserve the partial path before spawning so concurrent calls don't
     // race on the same name.
     if let Err(e) = std::fs::create_dir_all(&partial) {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, format!("reserve dir: {e}"));
+        return err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("reserve dir: {e}"),
+        );
     }
     let _ = std::fs::write(partial.join(".agent-start-kind"), "clone");
 
@@ -95,9 +101,10 @@ pub async fn clone_project(Json(req): Json<CloneRequest>) -> Response {
     tokio::spawn(async move {
         // git clone writes into an empty target; the partial dir holds a
         // marker file plus an empty `repo/` we clone into.
-        let target = root_clone.join(format!("{}.partial", &name_for_task)).join("repo");
-        let res =
-            tokio::task::spawn_blocking(move || git_ops::clone(&url, &target)).await;
+        let target = root_clone
+            .join(format!("{}.partial", &name_for_task))
+            .join("repo");
+        let res = tokio::task::spawn_blocking(move || git_ops::clone(&url, &target)).await;
         let outcome = match res {
             Ok(Ok(())) => Ok(()),
             Ok(Err(e)) => Err(e.to_string()),
@@ -105,26 +112,23 @@ pub async fn clone_project(Json(req): Json<CloneRequest>) -> Response {
         };
         match outcome {
             Ok(()) => {
-                let from = root_clone.join(format!("{}.partial", &name_for_task)).join("repo");
+                let from = root_clone
+                    .join(format!("{}.partial", &name_for_task))
+                    .join("repo");
                 let to = root_clone.join(&name_for_task);
                 if let Err(e) = std::fs::rename(&from, &to) {
                     write_error_marker(&root_clone, &name_for_task, &format!("rename: {e}"));
                     return;
                 }
-                let _ = std::fs::remove_dir_all(
-                    root_clone.join(format!("{}.partial", &name_for_task)),
-                );
+                let _ =
+                    std::fs::remove_dir_all(root_clone.join(format!("{}.partial", &name_for_task)));
             }
             Err(msg) => write_error_marker(&root_clone, &name_for_task, &msg),
         }
     });
 
     let path = root.join(&name).to_string_lossy().into_owned();
-    (
-        StatusCode::ACCEPTED,
-        Json(ProjectOpResponse { name, path }),
-    )
-        .into_response()
+    (StatusCode::ACCEPTED, Json(ProjectOpResponse { name, path })).into_response()
 }
 
 pub async fn import_project(Json(req): Json<ImportRequest>) -> Response {
@@ -139,7 +143,10 @@ pub async fn import_project(Json(req): Json<ImportRequest>) -> Response {
 
     let root = projects_root();
     if let Err(e) = std::fs::create_dir_all(&root) {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, format!("create projects dir: {e}"));
+        return err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("create projects dir: {e}"),
+        );
     }
 
     let base = req
@@ -159,7 +166,10 @@ pub async fn import_project(Json(req): Json<ImportRequest>) -> Response {
     let name = unique_name(&root, &base);
     let partial = root.join(format!("{}.partial", &name));
     if let Err(e) = std::fs::create_dir_all(&partial) {
-        return err(StatusCode::INTERNAL_SERVER_ERROR, format!("reserve dir: {e}"));
+        return err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("reserve dir: {e}"),
+        );
     }
     let _ = std::fs::write(partial.join(".agent-start-kind"), "import");
 
@@ -168,13 +178,12 @@ pub async fn import_project(Json(req): Json<ImportRequest>) -> Response {
     let src_for_task = canon.clone();
     tokio::spawn(async move {
         let res = tokio::task::spawn_blocking(move || {
-            let target =
-                root_clone.join(format!("{}.partial", &name_for_task)).join("data");
+            let target = root_clone
+                .join(format!("{}.partial", &name_for_task))
+                .join("data");
             copy_dir_recursive(&src_for_task, &target)?;
             std::fs::rename(&target, root_clone.join(&name_for_task))?;
-            let _ = std::fs::remove_dir_all(
-                root_clone.join(format!("{}.partial", &name_for_task)),
-            );
+            let _ = std::fs::remove_dir_all(root_clone.join(format!("{}.partial", &name_for_task)));
             Ok::<_, std::io::Error>(())
         })
         .await;
@@ -185,11 +194,7 @@ pub async fn import_project(Json(req): Json<ImportRequest>) -> Response {
     });
 
     let path = root.join(&name).to_string_lossy().into_owned();
-    (
-        StatusCode::ACCEPTED,
-        Json(ProjectOpResponse { name, path }),
-    )
-        .into_response()
+    (StatusCode::ACCEPTED, Json(ProjectOpResponse { name, path })).into_response()
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {

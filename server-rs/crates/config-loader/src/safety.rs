@@ -84,6 +84,9 @@ mod tests {
         fs::create_dir(&inside).unwrap();
         let outside = dir.path().parent().unwrap().join("escape");
         let err = ensure_under(&inside, &outside).unwrap_err();
-        assert!(matches!(err, SafetyError::OutsideBase | SafetyError::BadInput(_)));
+        assert!(matches!(
+            err,
+            SafetyError::OutsideBase | SafetyError::BadInput(_)
+        ));
     }
 }
