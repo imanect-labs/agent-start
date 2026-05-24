@@ -1,5 +1,5 @@
 import useSWR, { mutate } from "swr";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { Sidebar, type PendingProject, type Project, type TmuxSession } from "@/components/Sidebar";
 import { MainPane } from "@/components/MainPane";
@@ -90,21 +90,39 @@ export function IndexPage() {
   const pendingProjects = projData?.pending ?? [];
   const sessions = sessData?.sessions ?? [];
 
-  // Prune sessions that no longer exist server-side.
+  // Prune session tabs only after we've confirmed the session is
+  // truly gone — two consecutive empty responses, or the host
+  // explicitly returning an entry that's missing the name. A naive
+  // prune on every poll wipes tabs during the brief window where the
+  // host has restarted and SWR briefly returns an empty list (which
+  // then gets persisted to localStorage and the loss is permanent).
+  const confirmedMissing = useRef<Map<string, number>>(new Map());
   useEffect(() => {
-    if (!sessData) return;
+    if (!sessData || sessions.length === 0) return;
     const live = new Set(sessions.map((s) => s.name));
+    const missing = confirmedMissing.current;
     setPerSession((prev) => {
       const next: Record<string, SessionTabs> = {};
       let changed = false;
       for (const [k, v] of Object.entries(prev)) {
-        if (live.has(k)) next[k] = v;
-        else changed = true;
+        if (live.has(k)) {
+          next[k] = v;
+          missing.delete(k);
+          continue;
+        }
+        // Require two consecutive polls reporting missing before we
+        // actually drop the tabs.
+        const count = (missing.get(k) ?? 0) + 1;
+        if (count < 2) {
+          next[k] = v;
+          missing.set(k, count);
+        } else {
+          missing.delete(k);
+          changed = true;
+        }
       }
-      if (!changed) return prev;
-      return next;
+      return changed ? next : prev;
     });
-    setActiveSession((cur) => (cur && live.has(cur) ? cur : null));
   }, [sessData, sessions]);
 
   const openSession = useCallback((name: string) => {

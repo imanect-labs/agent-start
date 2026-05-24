@@ -61,19 +61,31 @@ pub async fn ws_terminal(
 }
 
 async fn handle_stopped(socket: WebSocket, history: Vec<u8>) {
-    let (mut sink, _stream) = socket.split();
+    let (mut sink, mut stream) = socket.split();
     if history.is_empty() {
         let _ = sink
-            .send(Message::Text(
-                "(no terminal history saved for this session)\r\n".into(),
+            .send(Message::Binary(
+                b"\r\n(no terminal history saved for this session)\r\n".to_vec(),
             ))
             .await;
     } else {
         let _ = sink.send(Message::Binary(history)).await;
+        let _ = sink
+            .send(Message::Binary(
+                b"\r\n\x1b[2m-- session stopped (restored from snapshot) --\x1b[0m\r\n".to_vec(),
+            ))
+            .await;
     }
-    // Stay open so xterm.js doesn't show a noisy disconnect; client
-    // can't write anyway because no PTY exists to receive input.
-    let _ = sink.close().await;
+    // Keep the socket open so xterm.js doesn't show a noisy disconnect
+    // and immediately reconnect (which would clear+replay forever). The
+    // client can't actually drive the PTY because there is none — we
+    // just drain any frames it sends and ignore them until close.
+    while let Some(msg) = stream.next().await {
+        match msg {
+            Ok(axum::extract::ws::Message::Close(_)) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 async fn handle(socket: WebSocket, session: std::sync::Arc<pty_manager::PtySession>, _app: Shared) {
