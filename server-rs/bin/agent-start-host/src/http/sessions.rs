@@ -221,9 +221,8 @@ pub async fn restart_session(State(app): State<Shared>, Path(name): Path<String>
         session.seed_history(&saved_history);
         // Separator so the user can see where the previous host's
         // output ended and the new shell began.
-        session.seed_history(
-            b"\r\n\x1b[2m-- restarted: previous session output above --\x1b[0m\r\n",
-        );
+        session
+            .seed_history(b"\r\n\x1b[2m-- restarted: previous session output above --\x1b[0m\r\n");
     }
 
     if let Err(e) = state::mark_running(&app.db, &name, session.pid().map(|v| v as i64)).await {

@@ -411,12 +411,7 @@ export function Terminal({
                 <br />
                 再開すると新しい PTY を起動します。
               </div>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={restarting}
-                onClick={onRestart}
-              >
+              <Button variant="primary" size="sm" disabled={restarting} onClick={onRestart}>
                 {restarting ? "再開中…" : "再開"}
               </Button>
             </div>
