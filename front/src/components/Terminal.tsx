@@ -250,13 +250,27 @@ export function Terminal({ sessionName, windowId = 0, virtualKeys = "auto" }: Pr
           term.write(new Uint8Array(ev.data));
         }
       };
+      const scheduleReconnect = () => {
+        if (disposed) return;
+        // Auto-retry with a small linear backoff so a host restart
+        // recovers without the user clicking 再接続.
+        setTimeout(
+          () => {
+            if (disposed) return;
+            setAttempt((n) => n + 1);
+          },
+          Math.min(8000, 1500 + 500 * attempt),
+        );
+      };
       ws.onclose = () => {
         if (disposed) return;
         setStatus("closed");
+        scheduleReconnect();
       };
       ws.onerror = () => {
         if (disposed) return;
         setStatus("closed");
+        scheduleReconnect();
       };
     })();
 

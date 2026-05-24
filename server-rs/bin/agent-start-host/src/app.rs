@@ -68,19 +68,21 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         tracing::warn!(error = %e, "failed to mark prior running sessions dead");
     }
 
-    // Rehydrate session rows whose worktree dir is still on disk. The
-    // PTY is gone, but the worktree is real work and the user should
-    // still see the session in the sidebar (with a "stopped" badge) so
-    // they can delete it cleanly or relaunch later. Window-0 history,
-    // if previously snapshotted, is attached so the WS handler can
-    // replay last-known terminal state.
+    // Rehydrate every session row whose backing directory (worktree or
+    // cwd) is still on disk. The PTY is gone but the session should
+    // stay visible (marked "stopped") so the user keeps all their open
+    // tabs and can either delete cleanly or just look at the scrollback.
     if let Ok(rows) = state::list_all_sessions(&db).await {
         let mut map: HashMap<String, SessionDirectory> = HashMap::new();
         for row in rows {
-            if row.worktree_path.is_empty() {
+            let probe = if !row.worktree_path.is_empty() {
+                row.worktree_path.as_str()
+            } else if !row.cwd.is_empty() {
+                row.cwd.as_str()
+            } else {
                 continue;
-            }
-            if !std::path::Path::new(&row.worktree_path).exists() {
+            };
+            if !std::path::Path::new(probe).exists() {
                 continue;
             }
             let history = state::load_pty_snapshot(&db, &row.name, 0)
@@ -267,6 +269,31 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
 
     manifest::write(&addr).ok();
 
-    axum::serve(listener, router.into_make_service()).await?;
+    let shutdown_state = app_state.clone();
+    axum::serve(listener, router.into_make_service())
+        .with_graceful_shutdown(async move {
+            let _ = tokio::signal::ctrl_c().await;
+            tracing::info!("shutdown signal received; flushing PTY snapshots");
+            // Final flush so the very last bytes are persisted before
+            // the process exits — otherwise a quick restart loses up to
+            // the last ~5s of output between periodic flushes.
+            let snapshots = shutdown_state.pty.snapshot_all();
+            for (name, window, bytes) in snapshots {
+                if bytes.is_empty() {
+                    continue;
+                }
+                if let Err(e) = state::save_pty_snapshot(
+                    &shutdown_state.db,
+                    &name,
+                    window as i64,
+                    &bytes,
+                )
+                .await
+                {
+                    tracing::warn!(error = %e, session = %name, window, "final snapshot flush failed");
+                }
+            }
+        })
+        .await?;
     Ok(())
 }

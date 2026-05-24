@@ -43,19 +43,20 @@ pub async fn ws_terminal(
         return ws.on_upgrade(move |socket| handle(socket, session, app));
     }
     // No live PTY — if we rehydrated this name from disk after a host
-    // restart, replay the snapshotted scrollback so the user can see
-    // their last terminal state. Window != 0 has no snapshot.
-    let stopped_history = if window == 0 {
+    // restart, hold the WS open so xterm doesn't loop-reconnect. For
+    // window 0 we also replay snapshotted scrollback when available.
+    let stopped = app.sessions.read().get(&name).filter(|d| !d.live).is_some();
+    if !stopped {
+        return (StatusCode::NOT_FOUND, "session not found").into_response();
+    }
+    let history = if window == 0 {
         app.sessions
             .read()
             .get(&name)
-            .filter(|d| !d.live)
             .map(|d| d.history.clone())
+            .unwrap_or_default()
     } else {
-        None
-    };
-    let Some(history) = stopped_history else {
-        return (StatusCode::NOT_FOUND, "session not found").into_response();
+        Vec::new()
     };
     ws.on_upgrade(move |socket| handle_stopped(socket, history))
 }
