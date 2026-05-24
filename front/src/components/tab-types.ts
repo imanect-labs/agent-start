@@ -21,7 +21,32 @@ export type FilesTab = {
   label?: string;
 };
 
-export type Tab = TerminalTab | FilesTab;
+export type EditorTab = {
+  id: string;
+  kind: "editor";
+  /** Absolute path to the file being edited. */
+  path: string;
+  /** Inline view mode toggle: Edit / Preview. */
+  view: "edit" | "preview";
+  /** True while the buffer differs from the on-disk content. */
+  dirty?: boolean;
+  label?: string;
+};
+
+export type DiffMode = "worktree" | "staged" | "head";
+
+export type DiffTab = {
+  id: string;
+  kind: "diff";
+  /** Session cwd at the time the tab was opened. */
+  cwd: string;
+  /** File path relative to cwd, as reported by git status. */
+  file: string;
+  mode: DiffMode;
+  label?: string;
+};
+
+export type Tab = TerminalTab | FilesTab | EditorTab | DiffTab;
 
 export type SessionTabs = {
   tabs: Tab[];

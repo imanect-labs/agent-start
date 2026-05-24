@@ -12,6 +12,6 @@ mod status;
 mod worktree;
 
 pub use diff::{git_diff, DiffMode, GitDiff};
-pub use exec::{is_git_repo, GitError};
+pub use exec::{clone, is_git_repo, GitError};
 pub use status::{git_status, GitFile, GitStatus};
 pub use worktree::{create_worktree, remove_worktree, worktree_path_for, WorktreeCreated};

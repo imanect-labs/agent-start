@@ -58,6 +58,7 @@ impl From<&SessionRow> for agent_start_api::Session {
             name: row.name.clone(),
             created_at: row.created_at_ms,
             attached: false, // filled in by the host using its live attach map
+            stopped: row.status != "running",
             path: if row.worktree_path.is_empty() {
                 row.cwd.clone()
             } else {
@@ -134,6 +135,18 @@ pub async fn list_sessions(db: &Db, prefix: &str) -> Result<Vec<SessionRow>, Sta
     Ok(rows.into_iter().map(SessionRow::from_row).collect())
 }
 
+/// Every row regardless of status — used on host boot to rehydrate
+/// sessions whose worktree still exists on disk.
+pub async fn list_all_sessions(db: &Db) -> Result<Vec<SessionRow>, StateError> {
+    let rows = sqlx::query(
+        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status \
+         FROM sessions ORDER BY created_at_ms DESC",
+    )
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().map(SessionRow::from_row).collect())
+}
+
 pub async fn get_session(db: &Db, name: &str) -> Result<Option<SessionRow>, StateError> {
     let row = sqlx::query(
         "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status \
@@ -153,6 +166,17 @@ pub async fn mark_dead(db: &Db, name: &str) -> Result<(), StateError> {
     Ok(())
 }
 
+/// Flip a previously stopped session back to `running` with a fresh
+/// pid. Used by the `restart` endpoint after a host reboot.
+pub async fn mark_running(db: &Db, name: &str, pid: Option<i64>) -> Result<(), StateError> {
+    sqlx::query("UPDATE sessions SET status = 'running', pid = ? WHERE name = ?")
+        .bind(pid)
+        .bind(name)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 /// Sweep on startup: anything still marked `running` in the DB
 /// belongs to a previous boot of `agent-start-host` whose PTYs are
 /// gone. Mark them all dead so they stop showing up in
@@ -166,6 +190,52 @@ pub async fn mark_all_running_dead(db: &Db) -> Result<(), StateError> {
 
 pub async fn delete_session(db: &Db, name: &str) -> Result<(), StateError> {
     sqlx::query("DELETE FROM sessions WHERE name = ?")
+        .bind(name)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// Overwrite the latest snapshot for one PTY window. Used by the
+/// background flusher so the most recent scrollback survives a host
+/// restart and can be replayed to clients of stopped sessions.
+pub async fn save_pty_snapshot(
+    db: &Db,
+    name: &str,
+    window: i64,
+    chunk: &[u8],
+) -> Result<(), StateError> {
+    let now = Utc::now().timestamp_millis();
+    sqlx::query(
+        "INSERT INTO pty_snapshot (session_name, window, saved_at_ms, chunk) \
+         VALUES (?, ?, ?, ?) \
+         ON CONFLICT(session_name, window) DO UPDATE SET \
+           saved_at_ms = excluded.saved_at_ms, chunk = excluded.chunk",
+    )
+    .bind(name)
+    .bind(window)
+    .bind(now)
+    .bind(chunk)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+pub async fn load_pty_snapshot(
+    db: &Db,
+    name: &str,
+    window: i64,
+) -> Result<Option<Vec<u8>>, StateError> {
+    let row = sqlx::query("SELECT chunk FROM pty_snapshot WHERE session_name = ? AND window = ?")
+        .bind(name)
+        .bind(window)
+        .fetch_optional(db)
+        .await?;
+    Ok(row.map(|r| r.get::<Vec<u8>, _>("chunk")))
+}
+
+pub async fn delete_pty_snapshots(db: &Db, name: &str) -> Result<(), StateError> {
+    sqlx::query("DELETE FROM pty_snapshot WHERE session_name = ?")
         .bind(name)
         .execute(db)
         .await?;

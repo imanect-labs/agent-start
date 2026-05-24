@@ -65,7 +65,7 @@ impl Default for Config {
             },
         );
         Config {
-            roots: vec![paths::home().join("dev").to_string_lossy().into_owned()],
+            roots: vec![paths::projects_dir().to_string_lossy().into_owned()],
             session_prefix: "cc-".to_string(),
             shell: "/bin/bash".to_string(),
             show_hidden: false,
@@ -87,6 +87,19 @@ fn cache() -> &'static RwLock<Option<Config>> {
 #[cfg(test)]
 pub fn clear_cache() {
     *cache().write() = None;
+}
+
+/// Drop the cached `Config`. Call after writing the file so subsequent
+/// `load_config()` calls pick up the new contents.
+pub fn invalidate_cache() {
+    *cache().write() = None;
+}
+
+/// Persist `cfg` to `config_path()` (pretty JSON) and invalidate the cache.
+pub fn save_config(cfg: &Config) -> Result<(), ConfigError> {
+    write_json(&config_path(), cfg)?;
+    invalidate_cache();
+    Ok(())
 }
 
 /// Load (and migrate if necessary) the on-disk config, creating it from

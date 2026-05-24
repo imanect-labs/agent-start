@@ -32,6 +32,29 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
     if let Err(e) = config_loader::migrate_legacy_layout() {
         tracing::warn!(error = %e, "legacy layout migration encountered an error (continuing)");
     }
+
+    // Ensure the default projects directory exists before any config load
+    // so first-run users immediately see a valid roots entry.
+    let projects = config_loader::projects_dir();
+    if let Err(e) = std::fs::create_dir_all(&projects) {
+        tracing::warn!(error = %e, path = %projects.display(), "failed to create projects dir");
+    }
+    // If existing config has no projects-dir entry in `roots`, add it and
+    // persist. Keeps user-customized additional roots intact.
+    if let Ok(mut cfg) = config_loader::load_config() {
+        let projects_str = projects.to_string_lossy().into_owned();
+        let has = cfg.roots.iter().any(|r| {
+            let p = config_loader::expand_root(r);
+            p == projects || p.to_string_lossy() == projects_str || r.as_str() == projects_str
+        });
+        if !has {
+            cfg.roots.insert(0, projects_str);
+            if let Err(e) = config_loader::save_config(&cfg) {
+                tracing::warn!(error = %e, "failed to persist projects-dir root");
+            }
+        }
+    }
+
     let db = state::open().await?;
     let pty = Arc::new(PtyManager::new());
     let sessions = Arc::new(RwLock::new(HashMap::new()));
@@ -43,6 +66,57 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
     // a clean slate. Worktree dirs on disk are preserved either way.
     if let Err(e) = state::mark_all_running_dead(&db).await {
         tracing::warn!(error = %e, "failed to mark prior running sessions dead");
+    }
+
+    // Rehydrate every session row whose backing directory (worktree or
+    // cwd) is still on disk. The PTY is gone but the session should
+    // stay visible (marked "stopped") so the user keeps all their open
+    // tabs and can either delete cleanly or just look at the scrollback.
+    if let Ok(rows) = state::list_all_sessions(&db).await {
+        let mut map: HashMap<String, SessionDirectory> = HashMap::new();
+        for row in rows {
+            let probe = if !row.worktree_path.is_empty() {
+                row.worktree_path.as_str()
+            } else if !row.cwd.is_empty() {
+                row.cwd.as_str()
+            } else {
+                continue;
+            };
+            if !std::path::Path::new(probe).exists() {
+                continue;
+            }
+            let history = match state::load_pty_snapshot(&db, &row.name, 0).await {
+                Ok(Some(h)) => {
+                    tracing::info!(session = %row.name, bytes = h.len(), "rehydrated snapshot");
+                    h
+                }
+                Ok(None) => {
+                    tracing::info!(session = %row.name, "no snapshot in db");
+                    Vec::new()
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, session = %row.name, "failed to load snapshot");
+                    Vec::new()
+                }
+            };
+            map.insert(
+                row.name.clone(),
+                SessionDirectory {
+                    name: row.name,
+                    created_at_ms: row.created_at_ms,
+                    cli: row.cli,
+                    cwd: row.cwd,
+                    worktree_path: row.worktree_path,
+                    orig_path: row.orig_path,
+                    live: false,
+                    history,
+                },
+            );
+        }
+        if !map.is_empty() {
+            tracing::info!(count = map.len(), "rehydrated stopped sessions from disk");
+            *sessions.write() = map;
+        }
     }
 
     let app_state: Shared = Arc::new(AppState { db, pty, sessions });
@@ -71,6 +145,33 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
             }));
     }
 
+    // Periodic flusher: every 5s snapshot every live PTY's ring buffer
+    // into SQLite. On a restart `list_all_sessions` + `load_pty_snapshot`
+    // reconstructs the scrollback so users see their last terminal state
+    // instead of an empty pane.
+    {
+        let state_for_flush = app_state.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+            tick.tick().await; // skip the immediate first tick
+            loop {
+                tick.tick().await;
+                let snapshots = state_for_flush.pty.snapshot_all();
+                for (name, window, bytes) in snapshots {
+                    if bytes.is_empty() {
+                        continue;
+                    }
+                    if let Err(e) =
+                        state::save_pty_snapshot(&state_for_flush.db, &name, window as i64, &bytes)
+                            .await
+                    {
+                        tracing::debug!(error = %e, session = %name, window, "snapshot flush failed");
+                    }
+                }
+            }
+        });
+    }
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -81,10 +182,22 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         .route("/v1/health", get(crate::http::health))
         .route("/v1/version", get(crate::http::version))
         // `/api/*` surface consumed by the Vite+ SPA under `/front/`.
-        .route("/api/config", get(crate::http::get_config))
+        .route(
+            "/api/config",
+            get(crate::http::get_config).put(crate::http::put_config),
+        )
         .route("/api/preferences", get(crate::http::get_preferences))
         .route("/api/preferences", put(crate::http::put_preferences))
         .route("/api/projects", get(crate::http::list_projects))
+        .route(
+            "/api/projects/clone",
+            axum::routing::post(crate::http::clone_project),
+        )
+        .route(
+            "/api/projects/import",
+            axum::routing::post(crate::http::import_project),
+        )
+        .route("/api/projects/:name", delete(crate::http::delete_project))
         .route("/api/sessions", get(crate::http::list_sessions))
         .route(
             "/api/sessions",
@@ -92,12 +205,21 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         )
         .route("/api/sessions/:name", delete(crate::http::delete_session))
         .route(
+            "/api/sessions/:name/restart",
+            axum::routing::post(crate::http::restart_session),
+        )
+        .route(
             "/api/sessions/:name/windows",
             get(crate::http::list_windows).post(crate::http::create_window),
         )
         .route(
             "/api/sessions/:name/windows/:index",
             delete(crate::http::delete_window),
+        )
+        .route("/api/fs/tree", get(crate::http::fs_tree))
+        .route(
+            "/api/fs/file",
+            get(crate::http::fs_read).put(crate::http::fs_write),
         )
         .route("/api/git/status", get(crate::http::git_status))
         .route("/api/git/diff", get(crate::http::git_diff))
@@ -159,6 +281,44 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
     tracing::info!("agent-start-host listening on http://{addr}");
 
     manifest::write(&addr).ok();
+
+    // Spawn a Ctrl-C watcher that flushes snapshots and hard-exits.
+    // Graceful axum shutdown blocks indefinitely on live WebSocket
+    // connections (the browser holds the terminal sockets open with
+    // no FIN), so the user would otherwise have to ^Z the process —
+    // which prevents any future periodic flush from running and loses
+    // up to the last 5s of terminal output. Hard-exit is fine here
+    // because every piece of mutable state worth keeping (sessions,
+    // PTY snapshots, scrollback) is in SQLite by the time we return.
+    let shutdown_state = app_state.clone();
+    tokio::spawn(async move {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("shutdown signal received; flushing PTY snapshots");
+        let snapshots = shutdown_state.pty.snapshot_all();
+        tracing::info!(count = snapshots.len(), "snapshot_all collected");
+        for (name, window, bytes) in snapshots {
+            if bytes.is_empty() {
+                tracing::info!(session = %name, window, "skipping empty snapshot");
+                continue;
+            }
+            match state::save_pty_snapshot(&shutdown_state.db, &name, window as i64, &bytes).await {
+                Ok(()) => tracing::info!(
+                    session = %name,
+                    window,
+                    bytes = bytes.len(),
+                    "snapshot saved"
+                ),
+                Err(e) => tracing::warn!(
+                    error = %e,
+                    session = %name,
+                    window,
+                    "final snapshot flush failed"
+                ),
+            }
+        }
+        tracing::info!("flush complete; exiting");
+        std::process::exit(0);
+    });
 
     axum::serve(listener, router.into_make_service()).await?;
     Ok(())

@@ -11,8 +11,10 @@ import {
 } from "@/components/icons";
 import { Terminal } from "@/components/Terminal";
 import { FilesView } from "@/components/FilesView";
+import { EditorTab as EditorView } from "@/components/EditorTab";
+import { DiffTabView } from "@/components/DiffTabView";
 import type { TmuxSession } from "@/components/Sidebar";
-import type { SessionTabs, Tab } from "@/components/tab-types";
+import type { DiffMode, SessionTabs, Tab } from "@/components/tab-types";
 
 const CLI_LABEL: Record<string, string> = {
   claude: "Claude Code",
@@ -28,8 +30,16 @@ type Props = {
   onAddTerminal: () => void;
   onAddFiles: () => void;
   onStopSession: (s: TmuxSession) => void;
+  onRestartSession: (s: TmuxSession) => void;
+  restarting?: boolean;
   rightPaneOpen: boolean;
   onToggleRightPane: () => void;
+  /** Update an editor tab's view/dirty/etc. */
+  onUpdateTab: (id: string, patch: Partial<Tab>) => void;
+  /** Toggle sidebar visibility (mobile drawer). */
+  onToggleSidebar?: () => void;
+  /** Open a diff for a changed file as a tab. */
+  onOpenDiff?: (file: string, mode: DiffMode) => void;
 };
 
 export function MainPane({
@@ -40,8 +50,13 @@ export function MainPane({
   onAddTerminal,
   onAddFiles,
   onStopSession,
+  onRestartSession,
+  restarting,
   rightPaneOpen,
   onToggleRightPane,
+  onUpdateTab,
+  onToggleSidebar,
+  onOpenDiff,
 }: Props) {
   if (!session || !tabs) {
     return <WelcomeBanner />;
@@ -56,12 +71,28 @@ export function MainPane({
     <div className="flex-1 min-w-0 flex flex-col bg-app">
       {/* Session header */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-line bg-surface">
+        {onToggleSidebar && (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label="サイドバーを開く"
+            className="md:hidden -ml-1 w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted"
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M3 5h14v2H3V5Zm0 4h14v2H3V9Zm0 4h14v2H3v-2Z" />
+            </svg>
+          </button>
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="font-mono text-sm text-fg truncate">{session.name}</span>
             <Badge tone="violet">{cliLabel}</Badge>
             {hasWorktree && <Badge tone="amber">worktree</Badge>}
-            {session.attached && <Badge tone="blue">接続中</Badge>}
+            {session.stopped ? (
+              <Badge tone="amber">停止中 (再起動後)</Badge>
+            ) : (
+              session.attached && <Badge tone="blue">接続中</Badge>
+            )}
           </div>
           <div className="text-[11px] text-fg-subtle truncate mt-0.5 font-mono">
             {session.origPath || session.path}
@@ -85,6 +116,16 @@ export function MainPane({
           />
           変更
         </button>
+        {session.stopped && (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!!restarting}
+            onClick={() => onRestartSession(session)}
+          >
+            {restarting ? "再開中…" : "再開"}
+          </Button>
+        )}
         <Button
           variant="dangerOutline"
           size="sm"
@@ -100,7 +141,13 @@ export function MainPane({
         tabs={tabs.tabs}
         activeId={tabs.activeTabId}
         onSelect={onSelectTab}
-        onClose={onCloseTab}
+        onClose={(id) => {
+          const t = tabs.tabs.find((x) => x.id === id);
+          if (t && t.kind === "editor" && t.dirty) {
+            if (!window.confirm("未保存の変更があります。破棄してタブを閉じますか?")) return;
+          }
+          onCloseTab(id);
+        }}
         onAddTerminal={onAddTerminal}
         onAddFiles={onAddFiles}
         canAddFiles={!!cwd}
@@ -109,7 +156,16 @@ export function MainPane({
       {/* Active tab content */}
       <div className="flex-1 min-h-0 flex flex-col">
         {active ? (
-          <TabContent tab={active} sessionName={session.name} cwd={cwd} />
+          <TabContent
+            tab={active}
+            sessionName={session.name}
+            sessionStopped={!!session.stopped}
+            restarting={!!restarting}
+            onRestartSession={() => onRestartSession(session)}
+            cwd={cwd}
+            onUpdateTab={onUpdateTab}
+            onOpenDiff={onOpenDiff}
+          />
         ) : (
           <div className="flex-1 flex items-center justify-center text-fg-subtle text-sm">
             タブを選択してください
@@ -162,14 +218,32 @@ function TabBar({
           const isActive = t.id === activeId;
           let label = t.label;
           let icon = <IconTerminal className="w-3.5 h-3.5 shrink-0 text-fg-faint" />;
+          let dirty = false;
           if (t.kind === "terminal") {
             // Number from the underlying PTY window index (stable for
             // the lifetime of the window — never reused even after
             // siblings are closed). Window 0 displays as "Terminal 1".
             label = label ?? `Terminal ${t.windowId + 1}`;
-          } else {
+          } else if (t.kind === "files") {
             label = label ?? "Files";
             icon = <IconFolder className="w-3.5 h-3.5 shrink-0 text-fg-faint" />;
+          } else if (t.kind === "diff") {
+            const base = t.file.split("/").pop() || t.file;
+            label = label ?? `${base} (diff)`;
+            icon = (
+              <span className="w-3.5 h-3.5 inline-flex items-center justify-center text-[10px] text-fg-faint">
+                Δ
+              </span>
+            );
+          } else {
+            const base = t.path.split("/").pop() || t.path;
+            label = label ?? base;
+            dirty = !!t.dirty;
+            icon = (
+              <span className="w-3.5 h-3.5 inline-flex items-center text-[10px] text-fg-faint">
+                ≡
+              </span>
+            );
           }
           return (
             <div
@@ -185,7 +259,10 @@ function TabBar({
               onClick={() => onSelect(t.id)}
             >
               {icon}
-              <span className="text-[12px] truncate">{label}</span>
+              <span className="text-[12px] truncate">
+                {label}
+                {dirty && <span className="ml-1 text-warn">•</span>}
+              </span>
               <button
                 type="button"
                 aria-label="タブを閉じる"
@@ -270,22 +347,67 @@ function MenuItem({
   );
 }
 
-function TabContent({ tab, sessionName, cwd }: { tab: Tab; sessionName: string; cwd: string }) {
+function TabContent({
+  tab,
+  sessionName,
+  sessionStopped,
+  restarting,
+  onRestartSession,
+  cwd,
+  onUpdateTab,
+  onOpenDiff,
+}: {
+  tab: Tab;
+  sessionName: string;
+  sessionStopped: boolean;
+  restarting: boolean;
+  onRestartSession: () => void;
+  cwd: string;
+  onUpdateTab: (id: string, patch: Partial<Tab>) => void;
+  onOpenDiff?: (file: string, mode: DiffMode) => void;
+}) {
   if (tab.kind === "terminal") {
     return (
       <div className="flex-1 min-h-0 p-3">
         <Terminal
-          key={`${sessionName}:${tab.windowId}`}
+          // Including `sessionStopped` in the key forces a fresh xterm
+          // + WS when the user clicks "再開" (stopped → live) so the
+          // snapshot pane is replaced by the new PTY's output.
+          key={`${sessionName}:${tab.windowId}:${sessionStopped ? "s" : "l"}`}
           sessionName={sessionName}
           windowId={tab.windowId}
+          stopped={sessionStopped}
+          restarting={restarting}
+          onRestart={onRestartSession}
         />
       </div>
     );
   }
+  if (tab.kind === "files") {
+    return (
+      <div className="flex-1 min-h-0 overflow-y-auto scroll-thin">
+        <FilesView cwd={cwd} fullWidth onOpenDiff={onOpenDiff} />
+      </div>
+    );
+  }
+  if (tab.kind === "diff") {
+    return (
+      <DiffTabView
+        key={`${tab.cwd}:${tab.file}:${tab.mode}`}
+        cwd={tab.cwd}
+        file={tab.file}
+        mode={tab.mode}
+      />
+    );
+  }
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto scroll-thin">
-      <FilesView cwd={cwd} fullWidth />
-    </div>
+    <EditorView
+      key={tab.path}
+      path={tab.path}
+      view={tab.view}
+      onViewChange={(v) => onUpdateTab(tab.id, { view: v } as Partial<Tab>)}
+      onDirtyChange={(d) => onUpdateTab(tab.id, { dirty: d } as Partial<Tab>)}
+    />
   );
 }
 

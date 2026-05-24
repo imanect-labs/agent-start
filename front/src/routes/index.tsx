@@ -1,13 +1,14 @@
 import useSWR, { mutate } from "swr";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/Toast";
-import { Sidebar, type Project, type TmuxSession } from "@/components/Sidebar";
+import { Sidebar, type PendingProject, type Project, type TmuxSession } from "@/components/Sidebar";
 import { MainPane } from "@/components/MainPane";
 import { RightPane } from "@/components/RightPane";
-import { SettingsDialog } from "@/components/SettingsDialog";
 import { LaunchConfirmSheet, type LaunchOverrides } from "@/components/LaunchConfirmSheet";
 import { DeleteConfirmSheet, type DeleteTarget } from "@/components/DeleteConfirmSheet";
-import { makeTabId, type SessionTabs, type Tab } from "@/components/tab-types";
+import { AddProjectModal } from "@/components/AddProjectModal";
+import { DeleteProjectConfirm } from "@/components/DeleteProjectConfirm";
+import { makeTabId, type DiffMode, type SessionTabs, type Tab } from "@/components/tab-types";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -48,63 +49,66 @@ function persistStored(s: StoredTabs) {
 export function IndexPage() {
   const toast = useToast();
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [launchTarget, setLaunchTarget] = useState<Project | null>(null);
   const [launching, setLaunching] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
 
   // Per-session tab state. `perSession[sessionName]` is undefined until the
   // user has opened the session for the first time.
-  const [perSession, setPerSession] = useState<Record<string, SessionTabs>>({});
-  const [activeSession, setActiveSession] = useState<string | null>(null);
-  const [rightPaneOpen, setRightPaneOpen] = useState(true);
-  // Hydrate from localStorage on first mount.
-  useEffect(() => {
-    const s = loadStored();
-    setPerSession(s.perSession);
-    setActiveSession(s.activeSession);
-    setRightPaneOpen(s.rightPaneOpen);
-  }, []);
+  //
+  // Hydration runs via the useState initializer (not an effect) so the
+  // very first render already has the saved tabs. An effect-based
+  // hydrate races with the persist effect on the same mount: both fire
+  // in the same commit, persist writes the empty initial state, and on
+  // the next reload the saved tabs are gone — exactly the "terminal1
+  // 以外の全てのタブが消える" symptom users hit.
+  const initial = useMemo(loadStored, []);
+  const [perSession, setPerSession] = useState<Record<string, SessionTabs>>(
+    () => initial.perSession,
+  );
+  const [activeSession, setActiveSession] = useState<string | null>(() => initial.activeSession);
+  const [rightPaneOpen, setRightPaneOpen] = useState(() => initial.rightPaneOpen);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [restarting, setRestarting] = useState<string | null>(null);
 
-  // Persist on every change.
+  // Persist on every change. Safe to fire on mount now that the
+  // initial state already equals what's in localStorage.
   useEffect(() => {
     persistStored({ perSession, activeSession, rightPaneOpen });
   }, [perSession, activeSession, rightPaneOpen]);
 
   const { data: projData, isLoading: projLoading } = useSWR<{
     projects: Project[];
-  }>("/api/projects", fetcher);
+    pending?: PendingProject[];
+  }>("/api/projects", fetcher, {
+    refreshInterval: (data) => ((data?.pending?.length ?? 0) > 0 ? 2000 : 0),
+  });
 
   const { data: sessData, isLoading: sessLoading } = useSWR<{
     sessions: TmuxSession[];
   }>("/api/sessions", fetcher, { refreshInterval: 5000 });
 
   const projects = projData?.projects ?? [];
+  const pendingProjects = projData?.pending ?? [];
   const sessions = sessData?.sessions ?? [];
 
-  // Prune sessions that no longer exist server-side.
-  useEffect(() => {
-    if (!sessData) return;
-    const live = new Set(sessions.map((s) => s.name));
-    setPerSession((prev) => {
-      const next: Record<string, SessionTabs> = {};
-      let changed = false;
-      for (const [k, v] of Object.entries(prev)) {
-        if (live.has(k)) next[k] = v;
-        else changed = true;
-      }
-      if (!changed) return prev;
-      return next;
-    });
-    setActiveSession((cur) => (cur && live.has(cur) ? cur : null));
-  }, [sessData, sessions]);
+  // Note: we deliberately do not auto-prune perSession against
+  // /api/sessions. Both delete flows (handleStopConfirm, manual close)
+  // already drop the entry explicitly, and the host now rehydrates
+  // stopped sessions on restart so the list shouldn't shrink
+  // unexpectedly. Auto-pruning races with restarts and wipes the
+  // user's open tabs irreversibly through the localStorage persist.
 
   const openSession = useCallback((name: string) => {
     setActiveSession(name);
     setPerSession((prev) => {
       if (prev[name]) return prev;
-      // First open: create default terminal tab pointed at window 0.
+      // First open: terminal tab on window 0. For stopped sessions the
+      // server replays the saved scrollback over the WS then closes —
+      // the user sees their last terminal state, just can't type.
       const id = makeTabId();
       const tab: Tab = { id, kind: "terminal", windowId: 0 };
       return { ...prev, [name]: { tabs: [tab], activeTabId: id } };
@@ -153,6 +157,63 @@ export function IndexPage() {
       });
     }
   }, [activeSession, toast]);
+
+  const updateTab = useCallback(
+    (tabId: string, patch: Partial<Tab>) => {
+      if (!activeSession) return;
+      setPerSession((prev) => {
+        const cur = prev[activeSession];
+        if (!cur) return prev;
+        const nextTabs = cur.tabs.map((t) => (t.id === tabId ? ({ ...t, ...patch } as Tab) : t));
+        return { ...prev, [activeSession]: { ...cur, tabs: nextTabs } };
+      });
+    },
+    [activeSession],
+  );
+
+  const openEditorTab = useCallback(
+    (path: string) => {
+      if (!activeSession) return;
+      setPerSession((prev) => {
+        const cur = prev[activeSession];
+        if (!cur) return prev;
+        const existing = cur.tabs.find((t) => t.kind === "editor" && t.path === path);
+        if (existing) {
+          return { ...prev, [activeSession]: { ...cur, activeTabId: existing.id } };
+        }
+        const id = makeTabId();
+        const tab: Tab = { id, kind: "editor", path, view: "edit" };
+        return {
+          ...prev,
+          [activeSession]: { tabs: [...cur.tabs, tab], activeTabId: id },
+        };
+      });
+    },
+    [activeSession],
+  );
+
+  const openDiffTab = useCallback(
+    (cwd: string, file: string, mode: DiffMode) => {
+      if (!activeSession) return;
+      setPerSession((prev) => {
+        const cur = prev[activeSession];
+        if (!cur) return prev;
+        const existing = cur.tabs.find(
+          (t) => t.kind === "diff" && t.file === file && t.mode === mode && t.cwd === cwd,
+        );
+        if (existing) {
+          return { ...prev, [activeSession]: { ...cur, activeTabId: existing.id } };
+        }
+        const id = makeTabId();
+        const tab: Tab = { id, kind: "diff", cwd, file, mode };
+        return {
+          ...prev,
+          [activeSession]: { tabs: [...cur.tabs, tab], activeTabId: id },
+        };
+      });
+    },
+    [activeSession],
+  );
 
   const addFilesTab = useCallback(() => {
     if (!activeSession) return;
@@ -258,6 +319,32 @@ export function IndexPage() {
     }
   };
 
+  const handleRestartSession = useCallback(
+    async (name: string) => {
+      setRestarting(name);
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(name)}/restart`, {
+          method: "POST",
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+        toast({ title: "再開しました", description: name, color: "success" });
+        // Refresh /api/sessions so `stopped` flips to false; the Terminal
+        // tab key includes that flag and will remount onto the fresh PTY.
+        await mutate("/api/sessions");
+      } catch (e) {
+        toast({
+          title: "再開失敗",
+          description: (e as Error).message,
+          color: "danger",
+        });
+      } finally {
+        setRestarting(null);
+      }
+    },
+    [toast],
+  );
+
   const handleStopConfirm = async (deleteWorktree: boolean) => {
     if (!deleteTarget) return;
     setDeleting(true);
@@ -315,12 +402,21 @@ export function IndexPage() {
     <main className="h-[100dvh] flex bg-app text-fg overflow-hidden">
       <Sidebar
         projects={projects}
+        pending={pendingProjects}
+        onAddProject={() => setAddOpen(true)}
+        onDeleteProject={(name) => setProjectToDelete(name)}
         sessions={sessions}
         loadingProjects={projLoading}
         loadingSessions={sessLoading}
         activeSession={activeSession}
-        onLaunchProject={setLaunchTarget}
-        onOpenSession={openSession}
+        onLaunchProject={(p) => {
+          setSidebarOpen(false);
+          setLaunchTarget(p);
+        }}
+        onOpenSession={(n) => {
+          setSidebarOpen(false);
+          openSession(n);
+        }}
         onStopSession={(s) =>
           setDeleteTarget({
             name: s.name,
@@ -328,8 +424,9 @@ export function IndexPage() {
             origPath: s.origPath,
           })
         }
-        onOpenSettings={() => setSettingsOpen(true)}
         onRefresh={refresh}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       <MainPane
@@ -346,15 +443,23 @@ export function IndexPage() {
             origPath: s.origPath,
           })
         }
+        onRestartSession={(s) => handleRestartSession(s.name)}
+        restarting={restarting === activeSession}
         rightPaneOpen={rightPaneOpen}
         onToggleRightPane={() => setRightPaneOpen((v) => !v)}
+        onUpdateTab={updateTab}
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        onOpenDiff={(file, mode) => openDiffTab(activeCwd, file, mode)}
       />
 
       {rightPaneOpen && activeSessionObj && (
-        <RightPane cwd={activeCwd} onClose={() => setRightPaneOpen(false)} />
+        <RightPane
+          cwd={activeCwd}
+          onClose={() => setRightPaneOpen(false)}
+          onOpenFile={openEditorTab}
+          onOpenDiff={(file, mode) => openDiffTab(activeCwd, file, mode)}
+        />
       )}
-
-      <SettingsDialog isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <LaunchConfirmSheet
         isOpen={!!launchTarget}
@@ -371,6 +476,13 @@ export function IndexPage() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleStopConfirm}
         busy={deleting}
+      />
+
+      <AddProjectModal open={addOpen} onClose={() => setAddOpen(false)} />
+      <DeleteProjectConfirm
+        open={!!projectToDelete}
+        name={projectToDelete ?? ""}
+        onClose={() => setProjectToDelete(null)}
       />
     </main>
   );

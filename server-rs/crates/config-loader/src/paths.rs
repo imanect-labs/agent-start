@@ -41,6 +41,15 @@ pub fn worktree_root() -> PathBuf {
     agent_start_home().join("worktrees")
 }
 
+/// Default directory where cloned/imported projects live. Override with
+/// `AGENT_START_PROJECTS=<path>`; defaults to `~/.agent-start/projects/`.
+pub fn projects_dir() -> PathBuf {
+    if let Some(p) = std::env::var_os("AGENT_START_PROJECTS") {
+        return PathBuf::from(p);
+    }
+    agent_start_home().join("projects")
+}
+
 pub fn host_state_dir() -> PathBuf {
     agent_start_home()
 }

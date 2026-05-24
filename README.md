@@ -93,6 +93,7 @@ npm run dev:front
 ├── preferences.json             # UI で保存される起動フラグ
 ├── host.db                      # sessions + pty_history (SQLite)
 ├── runtime/manifest.json        # 起動中ホストの URL / PID
+├── projects/                    # クローン/インポートされたプロジェクト群 (AGENT_START_PROJECTS で上書き可)
 └── worktrees/<session>/         # git worktree (AGENT_START_WORKTREE_ROOT で上書き可)
 ```
 
@@ -109,13 +110,25 @@ agent-start stop                  # manifest.json 経由で SIGTERM
 
 リモート tailnet 越しに使う場合は `--url http://server:3030` を渡す。
 
+## 設定 (UI)
+
+設定は左サイドバー右上の歯車アイコン →  `/settings` ページから編集できる。
+全項目が `~/.agent-start/config.json` と `preferences.json` に保存され、未保存変更がある状態で離脱しようとすると警告が出る。
+
+主な項目:
+- **プロジェクトディレクトリ** (旧 `roots`): プロジェクトを探す検索先。デフォルトは `~/.agent-start/projects`。1 行 1 パスで複数指定可。
+- **起動デフォルト**: 既定の CLI、権限スキップ、worktree 作成、追加フラグ
+- **セッション**: セッション接頭辞、シェル、隠しディレクトリ表示、git のみ
+
+サイドバー左下の **「プロジェクトを追加」** から、Git リポジトリのクローン または ローカルディレクトリのインポート ができる (どちらも `~/.agent-start/projects/` 配下に作成される)。クローン/コピー中はサイドバーのその行にスピナーが出る。プロジェクト行を右クリックすると削除できる (確認モーダルあり)。
+
 ## 設定ファイル
 
-`~/.config/agent-start/config.json`:
+`~/.agent-start/config.json` の中身:
 
 ```json
 {
-  "roots": ["/home/shuya/dev"],
+  "roots": ["/Users/me/.agent-start/projects"],
   "sessionPrefix": "cc-",
   "shell": "/bin/bash",
   "showHidden": false,

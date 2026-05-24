@@ -42,6 +42,16 @@ impl PtySession {
         let snap = self.ring.lock().snapshot();
         (snap, self.tx.subscribe())
     }
+    /// Push pre-existing bytes (e.g. a persisted scrollback snapshot
+    /// from a previous host process) into the ring without broadcasting.
+    /// Used by the restart endpoint so the new PTY's first subscriber
+    /// sees the old session's last terminal state above the new prompt.
+    pub fn seed_history(&self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        self.ring.lock().push(bytes);
+    }
     pub fn write(&self, data: &[u8]) -> Result<(), PtyError> {
         let mut writer = self.writer.lock();
         writer.write_all(data)?;

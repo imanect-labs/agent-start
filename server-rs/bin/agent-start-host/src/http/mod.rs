@@ -7,19 +7,23 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 
 mod config;
+mod fs;
 mod git;
 mod meta;
 mod preferences;
 mod projects;
+mod projects_write;
 mod sessions;
 mod windows;
 
-pub use config::get_config;
+pub use config::{get_config, put_config};
+pub use fs::{fs_read, fs_tree, fs_write};
 pub use git::{git_diff, git_status};
 pub use meta::{health, version};
 pub use preferences::{get_preferences, put_preferences};
 pub use projects::list_projects;
-pub use sessions::{delete_session, list_sessions, start_session};
+pub use projects_write::{clone_project, delete_project, import_project};
+pub use sessions::{delete_session, list_sessions, restart_session, start_session};
 pub use windows::{create_window, delete_window, list_windows};
 
 /// Render an `{ "error": "<msg>" }` JSON body with the given status code.

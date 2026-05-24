@@ -39,10 +39,54 @@ pub async fn ws_terminal(
         return (StatusCode::BAD_REQUEST, "invalid session name").into_response();
     }
     let window = q.window.unwrap_or(0);
-    let Some(session) = app.pty.get(&name, window) else {
+    if let Some(session) = app.pty.get(&name, window) {
+        return ws.on_upgrade(move |socket| handle(socket, session, app));
+    }
+    // No live PTY — if we rehydrated this name from disk after a host
+    // restart, hold the WS open so xterm doesn't loop-reconnect. For
+    // window 0 we also replay snapshotted scrollback when available.
+    let stopped = app.sessions.read().get(&name).filter(|d| !d.live).is_some();
+    if !stopped {
         return (StatusCode::NOT_FOUND, "session not found").into_response();
+    }
+    let history = if window == 0 {
+        app.sessions
+            .read()
+            .get(&name)
+            .map(|d| d.history.clone())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
     };
-    ws.on_upgrade(move |socket| handle(socket, session, app))
+    ws.on_upgrade(move |socket| handle_stopped(socket, history))
+}
+
+async fn handle_stopped(socket: WebSocket, history: Vec<u8>) {
+    let (mut sink, mut stream) = socket.split();
+    if history.is_empty() {
+        let _ = sink
+            .send(Message::Binary(
+                b"\r\n(no terminal history saved for this session)\r\n".to_vec(),
+            ))
+            .await;
+    } else {
+        let _ = sink.send(Message::Binary(history)).await;
+        let _ = sink
+            .send(Message::Binary(
+                b"\r\n\x1b[2m-- session stopped (restored from snapshot) --\x1b[0m\r\n".to_vec(),
+            ))
+            .await;
+    }
+    // Keep the socket open so xterm.js doesn't show a noisy disconnect
+    // and immediately reconnect (which would clear+replay forever). The
+    // client can't actually drive the PTY because there is none — we
+    // just drain any frames it sends and ignore them until close.
+    while let Some(msg) = stream.next().await {
+        match msg {
+            Ok(axum::extract::ws::Message::Close(_)) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 async fn handle(socket: WebSocket, session: std::sync::Arc<pty_manager::PtySession>, _app: Shared) {

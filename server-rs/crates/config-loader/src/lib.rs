@@ -14,12 +14,16 @@ mod io;
 mod migrate;
 mod paths;
 mod preferences;
+pub mod safety;
 
-pub use config::{is_path_under_roots, load_config, CliConfig, Config};
+pub use config::{
+    invalidate_cache, is_path_under_roots, load_config, save_config, CliConfig, Config,
+};
 pub use error::ConfigError;
 pub use migrate::migrate_legacy_layout;
 pub use paths::{
-    agent_start_home, config_path, expand_root, host_state_dir, preferences_path, worktree_root,
+    agent_start_home, config_path, expand_root, host_state_dir, preferences_path, projects_dir,
+    worktree_root,
 };
 pub use preferences::{
     build_launch_command, load_preferences, sanitize_extra_args, save_preferences, Preferences,

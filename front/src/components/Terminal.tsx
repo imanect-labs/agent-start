@@ -9,6 +9,15 @@ type Props = {
   windowId?: number;
   /** show the on-screen Ctrl/Esc/arrows row. Defaults to "auto" (touch only). */
   virtualKeys?: "auto" | "always" | "never";
+  /** When true, suppress auto-reconnect — host has the session marked
+   *  stopped, so retrying the WS just 404-loops. The parent should bump
+   *  this terminal's key once the session is restarted to remount. */
+  stopped?: boolean;
+  /** Called when the user clicks the in-terminal "再開" overlay button.
+   *  Only meaningful when `stopped` is true. */
+  onRestart?: () => void;
+  /** True while a restart RPC is in flight — disables the button. */
+  restarting?: boolean;
 };
 
 const LIGHT_TERM_THEME = {
@@ -61,7 +70,18 @@ const DARK_TERM_THEME = {
 
 type Status = "connecting" | "open" | "closed";
 
-export function Terminal({ sessionName, windowId = 0, virtualKeys = "auto" }: Props) {
+export function Terminal({
+  sessionName,
+  windowId = 0,
+  virtualKeys = "auto",
+  stopped = false,
+  onRestart,
+  restarting = false,
+}: Props) {
+  const stoppedRef = useRef(stopped);
+  useEffect(() => {
+    stoppedRef.current = stopped;
+  }, [stopped]);
   const { resolved } = useTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -250,13 +270,32 @@ export function Terminal({ sessionName, windowId = 0, virtualKeys = "auto" }: Pr
           term.write(new Uint8Array(ev.data));
         }
       };
+      const scheduleReconnect = () => {
+        if (disposed) return;
+        // When the session is stopped on the host, retrying just hits
+        // 404 (window>0) or replays the same snapshot forever (window
+        // 0). The user re-enters via the "再開" button, which bumps our
+        // key and remounts.
+        if (stoppedRef.current) return;
+        // Auto-retry with a small linear backoff so a host restart
+        // recovers without the user clicking 再接続.
+        setTimeout(
+          () => {
+            if (disposed) return;
+            setAttempt((n) => n + 1);
+          },
+          Math.min(8000, 1500 + 500 * attempt),
+        );
+      };
       ws.onclose = () => {
         if (disposed) return;
         setStatus("closed");
+        scheduleReconnect();
       };
       ws.onerror = () => {
         if (disposed) return;
         setStatus("closed");
+        scheduleReconnect();
       };
     })();
 
@@ -324,29 +363,61 @@ export function Terminal({ sessionName, windowId = 0, virtualKeys = "auto" }: Pr
           <span
             className={[
               "inline-block w-1.5 h-1.5 rounded-full",
-              status === "open" ? "bg-success" : status === "connecting" ? "bg-warn" : "bg-danger",
+              stopped
+                ? "bg-warn"
+                : status === "open"
+                  ? "bg-success"
+                  : status === "connecting"
+                    ? "bg-warn"
+                    : "bg-danger",
             ].join(" ")}
           />
           <span className="text-fg-subtle">
-            {status === "open" ? "接続中" : status === "connecting" ? "接続中…" : "切断されました"}
+            {stopped
+              ? "停止中 (再起動後のスナップショット)"
+              : status === "open"
+                ? "接続中"
+                : status === "connecting"
+                  ? "接続中…"
+                  : "切断されました"}
           </span>
         </div>
-        {status === "closed" && (
+        {!stopped && status === "closed" && (
           <Button variant="secondary" size="sm" onClick={() => setAttempt((n) => n + 1)}>
             再接続
           </Button>
         )}
       </div>
 
-      <div
-        ref={containerRef}
-        onClick={focusTerm}
-        className="rounded-md border border-line p-2 overflow-hidden flex-1 min-h-0"
-        style={{
-          touchAction: "none",
-          background: theme.background,
-        }}
-      />
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={containerRef}
+          onClick={focusTerm}
+          className="rounded-md border border-line p-2 overflow-hidden h-full"
+          style={{
+            touchAction: "none",
+            background: theme.background,
+          }}
+        />
+        {stopped && onRestart && (
+          // Overlay anchored to the bottom of the terminal pane. Using
+          // an overlay (rather than replacing the terminal) keeps the
+          // restored scrollback visible above so the user can read the
+          // last state while deciding to revive.
+          <div className="absolute inset-x-0 bottom-0 p-3 pointer-events-none flex justify-center">
+            <div className="pointer-events-auto bg-surface-elev border border-line-strong rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 max-w-[28rem]">
+              <div className="text-xs text-fg-muted flex-1">
+                セッションは停止しています。
+                <br />
+                再開すると新しい PTY を起動します。
+              </div>
+              <Button variant="primary" size="sm" disabled={restarting} onClick={onRestart}>
+                {restarting ? "再開中…" : "再開"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className={`${vkClass} gap-1.5 overflow-x-auto -mx-1 px-1 pb-1`}>
         <VirtualKeys onKey={handleVirtualKey} onScroll={handleScroll} ctrlActive={ctrlActive} />
