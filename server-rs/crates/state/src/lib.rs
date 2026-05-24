@@ -58,6 +58,7 @@ impl From<&SessionRow> for agent_start_api::Session {
             name: row.name.clone(),
             created_at: row.created_at_ms,
             attached: false, // filled in by the host using its live attach map
+            stopped: row.status != "running",
             path: if row.worktree_path.is_empty() {
                 row.cwd.clone()
             } else {
@@ -129,6 +130,18 @@ pub async fn list_sessions(db: &Db, prefix: &str) -> Result<Vec<SessionRow>, Sta
          ORDER BY created_at_ms DESC",
     )
     .bind(like)
+    .fetch_all(db)
+    .await?;
+    Ok(rows.into_iter().map(SessionRow::from_row).collect())
+}
+
+/// Every row regardless of status — used on host boot to rehydrate
+/// sessions whose worktree still exists on disk.
+pub async fn list_all_sessions(db: &Db) -> Result<Vec<SessionRow>, StateError> {
+    let rows = sqlx::query(
+        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status \
+         FROM sessions ORDER BY created_at_ms DESC",
+    )
     .fetch_all(db)
     .await?;
     Ok(rows.into_iter().map(SessionRow::from_row).collect())

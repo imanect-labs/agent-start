@@ -84,7 +84,11 @@ export function MainPane({
             <span className="font-mono text-sm text-fg truncate">{session.name}</span>
             <Badge tone="violet">{cliLabel}</Badge>
             {hasWorktree && <Badge tone="amber">worktree</Badge>}
-            {session.attached && <Badge tone="blue">接続中</Badge>}
+            {session.stopped ? (
+              <Badge tone="amber">停止中 (再起動後)</Badge>
+            ) : (
+              session.attached && <Badge tone="blue">接続中</Badge>
+            )}
           </div>
           <div className="text-[11px] text-fg-subtle truncate mt-0.5 font-mono">
             {session.origPath || session.path}

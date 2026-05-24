@@ -199,6 +199,10 @@ pub struct Session {
     #[serde(rename = "createdAt")]
     pub created_at: i64,
     pub attached: bool,
+    /// True for sessions that were rehydrated from disk after a host
+    /// restart: their worktree still exists but no PTY is running.
+    #[serde(default)]
+    pub stopped: bool,
     pub path: String,
     pub cli: String,
     #[serde(rename = "worktreePath")]

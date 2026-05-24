@@ -35,6 +35,9 @@ export type TmuxSession = {
   path: string;
   createdAt: number;
   attached: boolean;
+  /** True when the host rehydrated this session from disk after a
+   * restart — the worktree exists but no PTY is running. */
+  stopped?: boolean;
   cli: string;
   worktreePath: string;
   origPath: string;
@@ -481,7 +484,7 @@ function SessionRow({
         aria-hidden
         className={[
           "mt-1.5 inline-block w-1.5 h-1.5 rounded-full shrink-0",
-          session.attached ? "bg-success" : "bg-fg-faint",
+          session.stopped ? "bg-warn" : session.attached ? "bg-success" : "bg-fg-faint",
         ].join(" ")}
       />
       <div className="flex-1 min-w-0">
@@ -491,7 +494,17 @@ function SessionRow({
           ) : (
             <IconTerminal className="w-3 h-3 text-fg-faint shrink-0" />
           )}
-          <span className="text-[12px] font-mono truncate">{session.name}</span>
+          <span
+            className={[
+              "text-[12px] font-mono truncate",
+              session.stopped ? "text-fg-subtle" : "",
+            ].join(" ")}
+          >
+            {session.name}
+          </span>
+          {session.stopped && (
+            <span className="text-[9px] uppercase tracking-wider text-warn shrink-0">stopped</span>
+          )}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-fg-faint">
           <span>{cliLabel}</span>

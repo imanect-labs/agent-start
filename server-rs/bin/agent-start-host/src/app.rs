@@ -68,6 +68,38 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         tracing::warn!(error = %e, "failed to mark prior running sessions dead");
     }
 
+    // Rehydrate session rows whose worktree dir is still on disk. The
+    // PTY is gone, but the worktree is real work and the user should
+    // still see the session in the sidebar (with a "stopped" badge) so
+    // they can delete it cleanly or relaunch later.
+    if let Ok(rows) = state::list_all_sessions(&db).await {
+        let mut map: HashMap<String, SessionDirectory> = HashMap::new();
+        for row in rows {
+            if row.worktree_path.is_empty() {
+                continue;
+            }
+            if !std::path::Path::new(&row.worktree_path).exists() {
+                continue;
+            }
+            map.insert(
+                row.name.clone(),
+                SessionDirectory {
+                    name: row.name,
+                    created_at_ms: row.created_at_ms,
+                    cli: row.cli,
+                    cwd: row.cwd,
+                    worktree_path: row.worktree_path,
+                    orig_path: row.orig_path,
+                    live: false,
+                },
+            );
+        }
+        if !map.is_empty() {
+            tracing::info!(count = map.len(), "rehydrated stopped sessions from disk");
+            *sessions.write() = map;
+        }
+    }
+
     let app_state: Shared = Arc::new(AppState { db, pty, sessions });
 
     // When a child process exits on its own (user types `exit`, the

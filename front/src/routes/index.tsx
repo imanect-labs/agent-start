@@ -107,16 +107,22 @@ export function IndexPage() {
     setActiveSession((cur) => (cur && live.has(cur) ? cur : null));
   }, [sessData, sessions]);
 
-  const openSession = useCallback((name: string) => {
-    setActiveSession(name);
-    setPerSession((prev) => {
-      if (prev[name]) return prev;
-      // First open: create default terminal tab pointed at window 0.
-      const id = makeTabId();
-      const tab: Tab = { id, kind: "terminal", windowId: 0 };
-      return { ...prev, [name]: { tabs: [tab], activeTabId: id } };
-    });
-  }, []);
+  const openSession = useCallback(
+    (name: string) => {
+      setActiveSession(name);
+      setPerSession((prev) => {
+        if (prev[name]) return prev;
+        // Stopped sessions (rehydrated after restart) have no PTY —
+        // open them with just a Files tab so the user can still browse
+        // the worktree without a terminal-connection error.
+        const isStopped = sessions.find((s) => s.name === name)?.stopped;
+        const id = makeTabId();
+        const tab: Tab = isStopped ? { id, kind: "files" } : { id, kind: "terminal", windowId: 0 };
+        return { ...prev, [name]: { tabs: [tab], activeTabId: id } };
+      });
+    },
+    [sessions],
+  );
 
   const selectTab = useCallback(
     (tabId: string) => {

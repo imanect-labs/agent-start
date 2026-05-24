@@ -141,6 +141,7 @@ pub async fn start_session(
             cwd: cwd.to_string_lossy().into_owned(),
             worktree_path: wt_str,
             orig_path: orig_str,
+            live: true,
         },
     );
 
