@@ -268,6 +268,8 @@ pub async fn delete_session(
     for window in app.pty.remove_session(&name) {
         window.kill();
     }
+    app.code_server.kill(&name).await;
+    let _ = state::delete_code_server(&app.db, &name).await;
     if let Err(e) = state::mark_dead(&app.db, &name).await {
         tracing::warn!(error = %e, "failed to mark session dead");
     }

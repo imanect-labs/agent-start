@@ -265,6 +265,48 @@ pub async fn load_history(db: &Db, name: &str) -> Result<Vec<u8>, StateError> {
     Ok(out)
 }
 
+/// Record a running code-server instance. Replaces any prior row for
+/// this session so a respawn after an orphaned record is idempotent.
+pub async fn insert_code_server(
+    db: &Db,
+    session: &str,
+    port: i64,
+    pid: i64,
+) -> Result<(), StateError> {
+    let now = Utc::now().timestamp_millis();
+    sqlx::query(
+        "INSERT INTO code_server_instances (session_name, port, pid, started_at_ms) \
+         VALUES (?, ?, ?, ?) \
+         ON CONFLICT(session_name) DO UPDATE SET \
+           port = excluded.port, pid = excluded.pid, started_at_ms = excluded.started_at_ms",
+    )
+    .bind(session)
+    .bind(port)
+    .bind(pid)
+    .bind(now)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+pub async fn delete_code_server(db: &Db, session: &str) -> Result<(), StateError> {
+    sqlx::query("DELETE FROM code_server_instances WHERE session_name = ?")
+        .bind(session)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// Wipe every recorded code-server instance. Called on host startup
+/// because the previous boot's children are gone and their ports are
+/// stale, just like PTYs.
+pub async fn clear_code_server(db: &Db) -> Result<(), StateError> {
+    sqlx::query("DELETE FROM code_server_instances")
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 pub async fn trim_history(db: &Db, name: &str, keep_last: i64) -> Result<(), StateError> {
     sqlx::query(
         "DELETE FROM pty_history \

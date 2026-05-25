@@ -15,6 +15,7 @@ import { EditorTab as EditorView } from "@/components/EditorTab";
 import { DiffTabView } from "@/components/DiffTabView";
 import type { TmuxSession } from "@/components/Sidebar";
 import type { DiffMode, SessionTabs, Tab } from "@/components/tab-types";
+import { useToast } from "@/components/Toast";
 
 const CLI_LABEL: Record<string, string> = {
   claude: "Claude Code",
@@ -66,6 +67,41 @@ export function MainPane({
   const cliLabel = CLI_LABEL[session.cli] || session.cli;
   const hasWorktree = !!session.worktreePath;
   const cwd = session.worktreePath || session.path;
+  const toast = useToast();
+  const [openingVscode, setOpeningVscode] = useState(false);
+
+  const handleOpenVscode = async () => {
+    if (openingVscode) return;
+    setOpeningVscode(true);
+    // window.open must be called synchronously from a user gesture to
+    // avoid the popup blocker; reserve the tab now and navigate it once
+    // the host confirms code-server is up.
+    const tab = window.open("about:blank", "_blank");
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(session.name)}/code-server`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { url: string };
+      if (tab) {
+        tab.location.href = data.url;
+      } else {
+        window.location.href = data.url;
+      }
+    } catch (e: unknown) {
+      if (tab) tab.close();
+      toast({
+        title: "VSCode を開けませんでした",
+        message: e instanceof Error ? e.message : String(e),
+        color: "danger",
+      });
+    } finally {
+      setOpeningVscode(false);
+    }
+  };
 
   return (
     <div className="flex-1 min-w-0 flex flex-col bg-app">
@@ -126,6 +162,19 @@ export function MainPane({
             {restarting ? "再開中…" : "再開"}
           </Button>
         )}
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={openingVscode || session.stopped}
+          onClick={handleOpenVscode}
+          title={
+            session.stopped
+              ? "停止中のセッションでは利用できません"
+              : "ブラウザで VSCode (code-server) を開く"
+          }
+        >
+          {openingVscode ? "起動中…" : "VSCode で開く"}
+        </Button>
         <Button
           variant="dangerOutline"
           size="sm"

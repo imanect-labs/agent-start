@@ -3,6 +3,7 @@ use axum::http::{header, StatusCode, Uri};
 use axum::response::IntoResponse;
 use axum::routing::{any, delete, get, put};
 use axum::Router;
+use code_server_manager::CodeServerManager;
 use parking_lot::RwLock;
 use pty_manager::PtyManager;
 use state::Db;
@@ -19,6 +20,7 @@ use crate::sessions::SessionDirectory;
 pub struct AppState {
     pub db: Db,
     pub pty: Arc<PtyManager>,
+    pub code_server: Arc<CodeServerManager>,
     /// In-memory mirror of session metadata. Persisted on insert via SQLite.
     pub sessions: Arc<RwLock<HashMap<String, SessionDirectory>>>,
 }
@@ -57,7 +59,15 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
 
     let db = state::open().await?;
     let pty = Arc::new(PtyManager::new());
+    let code_server = Arc::new(CodeServerManager::new());
     let sessions = Arc::new(RwLock::new(HashMap::new()));
+
+    // Stale rows from the previous boot point at dead children/ports.
+    // Wipe them now so the proxy never tries to forward to a phantom
+    // port; live entries are recreated as users click "VSCode で開く".
+    if let Err(e) = state::clear_code_server(&db).await {
+        tracing::warn!(error = %e, "failed to clear stale code-server rows");
+    }
 
     // PTYs are in-process state; they cannot survive a host restart.
     // Any rows still flagged `running` in SQLite from a previous boot
@@ -119,7 +129,12 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         }
     }
 
-    let app_state: Shared = Arc::new(AppState { db, pty, sessions });
+    let app_state: Shared = Arc::new(AppState {
+        db,
+        pty,
+        code_server,
+        sessions,
+    });
 
     // When a child process exits on its own (user types `exit`, the
     // agent finishes, etc.) drop the in-memory entry and mark the row
@@ -223,6 +238,26 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         )
         .route("/api/git/status", get(crate::http::git_status))
         .route("/api/git/diff", get(crate::http::git_diff))
+        .route(
+            "/api/sessions/:name/code-server",
+            axum::routing::post(crate::http::open_code_server)
+                .delete(crate::http::close_code_server),
+        )
+        // Reverse proxy to code-server child process. Captures both the
+        // root and any sub-path so VSCode's static assets, API, and WS
+        // upgrades all route to the right child.
+        .route(
+            "/v/:name",
+            any(crate::http::code_server_proxy::proxy_handler),
+        )
+        .route(
+            "/v/:name/",
+            any(crate::http::code_server_proxy::proxy_handler),
+        )
+        .route(
+            "/v/:name/*rest",
+            any(crate::http::code_server_proxy::proxy_handler),
+        )
         // WebSocket — same URL the UI already uses.
         .route("/ws/terminal", get(crate::ws::ws_terminal))
         .with_state(app_state.clone());
@@ -248,7 +283,10 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
             let index_path = index_path.clone();
             async move {
                 let path = uri.path();
-                if path.starts_with("/api/") || path.starts_with("/v1/") || path.starts_with("/ws/")
+                if path.starts_with("/api/")
+                    || path.starts_with("/v1/")
+                    || path.starts_with("/ws/")
+                    || path.starts_with("/v/")
                 {
                     return StatusCode::NOT_FOUND.into_response();
                 }

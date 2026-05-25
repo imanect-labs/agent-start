@@ -1,0 +1,76 @@
+//! `POST /api/sessions/:name/code-server` — ensure a code-server child
+//! is running for this session and return the URL the browser should
+//! open. `DELETE` stops it. The actual HTTP/WS forwarding lives in the
+//! `code_server_proxy` module.
+
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::Json;
+use serde::Serialize;
+use std::path::PathBuf;
+
+use super::err;
+use crate::app::Shared;
+
+#[derive(Serialize)]
+pub struct OpenResponse {
+    pub url: String,
+    pub port: u16,
+}
+
+pub async fn open_code_server(State(app): State<Shared>, Path(name): Path<String>) -> Response {
+    let worktree = match resolve_worktree(&app, &name) {
+        Some(p) => p,
+        None => return err(StatusCode::NOT_FOUND, "session not found"),
+    };
+
+    let instance = match app.code_server.ensure(&name, &worktree).await {
+        Ok(i) => i,
+        Err(code_server_manager::CodeServerError::NotInstalled) => {
+            return err(
+                StatusCode::FAILED_DEPENDENCY,
+                "code-server not found on PATH (install code-server or set AGENT_START_CODE_SERVER_BIN)",
+            );
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, session = %name, "code-server spawn failed");
+            return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
+        }
+    };
+
+    if let Err(e) = state::insert_code_server(
+        &app.db,
+        &name,
+        instance.port() as i64,
+        instance.pid() as i64,
+    )
+    .await
+    {
+        tracing::warn!(error = %e, session = %name, "failed to persist code-server row");
+    }
+
+    Json(OpenResponse {
+        url: format!("/v/{name}/"),
+        port: instance.port(),
+    })
+    .into_response()
+}
+
+pub async fn close_code_server(State(app): State<Shared>, Path(name): Path<String>) -> Response {
+    app.code_server.kill(&name).await;
+    let _ = state::delete_code_server(&app.db, &name).await;
+    (StatusCode::NO_CONTENT, ()).into_response()
+}
+
+fn resolve_worktree(app: &Shared, name: &str) -> Option<PathBuf> {
+    let dirs = app.sessions.read();
+    let d = dirs.get(name)?;
+    if !d.worktree_path.is_empty() {
+        Some(PathBuf::from(&d.worktree_path))
+    } else if !d.cwd.is_empty() {
+        Some(PathBuf::from(&d.cwd))
+    } else {
+        None
+    }
+}
