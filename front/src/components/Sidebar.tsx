@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Badge, Input, Spinner } from "@/components/ui";
+import { Badge, Input, SkeletonRows, Spinner } from "@/components/ui";
 import {
   IconBranch,
   IconChevronDown,
@@ -75,6 +75,7 @@ export function Sidebar({
   onDeleteProject,
   open = true,
   onClose,
+  mode = "inline",
 }: {
   projects: Project[];
   pending?: PendingProject[];
@@ -88,9 +89,12 @@ export function Sidebar({
   onRefresh: () => void;
   onAddProject?: () => void;
   onDeleteProject?: (name: string) => void;
-  /** Mobile drawer visibility. Always true on md+. */
+  /** Mobile drawer visibility. Ignored when mode === "inline". */
   open?: boolean;
   onClose?: () => void;
+  /** "inline" fills its parent (desktop, inside a resizable Panel).
+   *  "overlay" pins to the left edge as a drawer with a backdrop. */
+  mode?: "inline" | "overlay";
 }) {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -166,17 +170,22 @@ export function Sidebar({
 
   const totalSessions = sessions.length;
 
+  const isOverlay = mode === "overlay";
   return (
     <>
-      {open && onClose && (
-        <div className="md:hidden fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden />
+      {isOverlay && open && onClose && (
+        <div className="fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden />
       )}
       <aside
         className={[
-          "w-72 shrink-0 h-full flex flex-col border-r border-line bg-surface",
-          "md:static md:translate-x-0",
-          "fixed inset-y-0 left-0 z-40 transition-transform",
-          open ? "translate-x-0" : "-translate-x-full",
+          "h-full flex flex-col border-r border-line bg-surface",
+          isOverlay
+            ? [
+                "w-[85vw] max-w-80 shrink-0",
+                "fixed inset-y-0 left-0 z-40 transition-transform",
+                open ? "translate-x-0" : "-translate-x-full",
+              ].join(" ")
+            : "w-full",
         ].join(" ")}
       >
         <div className="px-3 py-3 flex items-center gap-2 border-b border-line">
@@ -233,8 +242,8 @@ export function Sidebar({
             </ul>
           )}
           {(loadingProjects || loadingSessions) && groups.length === 0 ? (
-            <div className="flex justify-center py-8">
-              <Spinner size="sm" />
+            <div className="px-3 py-3">
+              <SkeletonRows n={5} rowHeight={26} />
             </div>
           ) : filtered.length === 0 && pending.length === 0 ? (
             <div className="px-4 py-8 text-center text-xs text-fg-subtle">

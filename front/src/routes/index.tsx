@@ -1,5 +1,11 @@
 import useSWR, { mutate } from "swr";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ImperativePanelHandle,
+  Panel,
+  PanelGroup,
+  PanelResizeHandle,
+} from "react-resizable-panels";
 import { useToast } from "@/components/Toast";
 import { Sidebar, type PendingProject, type Project, type TmuxSession } from "@/components/Sidebar";
 import { MainPane } from "@/components/MainPane";
@@ -9,6 +15,7 @@ import { DeleteConfirmSheet, type DeleteTarget } from "@/components/DeleteConfir
 import { AddProjectModal } from "@/components/AddProjectModal";
 import { DeleteProjectConfirm } from "@/components/DeleteProjectConfirm";
 import { makeTabId, type DiffMode, type SessionTabs, type Tab } from "@/components/tab-types";
+import { useMediaQuery } from "@/lib/useMediaQuery";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -44,6 +51,21 @@ function persistStored(s: StoredTabs) {
   } catch {
     // ignore
   }
+}
+
+function ResizeHandle() {
+  return (
+    <PanelResizeHandle
+      className={[
+        "group relative w-1.5 shrink-0",
+        "bg-transparent data-[resize-handle-active]:bg-accent/40",
+        "hover:bg-accent/30 transition-colors",
+        "cursor-col-resize",
+      ].join(" ")}
+    >
+      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-line group-hover:bg-accent/60 group-data-[resize-handle-active]:bg-accent" />
+    </PanelResizeHandle>
+  );
 }
 
 export function IndexPage() {
@@ -398,67 +420,136 @@ export function IndexPage() {
   const activeCwd =
     activeSessionObj?.worktreePath || activeSessionObj?.path || activeSessionObj?.origPath || "";
 
-  return (
-    <main className="h-[100dvh] flex bg-app text-fg overflow-hidden">
-      <Sidebar
-        projects={projects}
-        pending={pendingProjects}
-        onAddProject={() => setAddOpen(true)}
-        onDeleteProject={(name) => setProjectToDelete(name)}
-        sessions={sessions}
-        loadingProjects={projLoading}
-        loadingSessions={sessLoading}
-        activeSession={activeSession}
-        onLaunchProject={(p) => {
-          setSidebarOpen(false);
-          setLaunchTarget(p);
-        }}
-        onOpenSession={(n) => {
-          setSidebarOpen(false);
-          openSession(n);
-        }}
-        onStopSession={(s) =>
-          setDeleteTarget({
-            name: s.name,
-            worktreePath: s.worktreePath,
-            origPath: s.origPath,
-          })
-        }
-        onRefresh={refresh}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const rightPanelRef = useRef<ImperativePanelHandle>(null);
 
-      <MainPane
-        session={activeSessionObj}
-        tabs={activeTabs ?? null}
-        onSelectTab={selectTab}
-        onCloseTab={closeTab}
-        onAddTerminal={addTerminalTab}
-        onAddFiles={addFilesTab}
-        onStopSession={(s) =>
-          setDeleteTarget({
-            name: s.name,
-            worktreePath: s.worktreePath,
-            origPath: s.origPath,
-          })
-        }
-        onRestartSession={(s) => handleRestartSession(s.name)}
-        restarting={restarting === activeSession}
-        rightPaneOpen={rightPaneOpen}
-        onToggleRightPane={() => setRightPaneOpen((v) => !v)}
-        onUpdateTab={updateTab}
-        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+  // On desktop the right pane lives in a resizable Panel; sync the
+  // open flag with the imperative collapse/expand API so the user's
+  // dragging the handle and clicking the toggle stay consistent.
+  useEffect(() => {
+    if (!isDesktop) return;
+    const panel = rightPanelRef.current;
+    if (!panel) return;
+    if (rightPaneOpen) {
+      if (panel.isCollapsed()) panel.expand();
+    } else if (!panel.isCollapsed()) {
+      panel.collapse();
+    }
+  }, [isDesktop, rightPaneOpen]);
+
+  const sidebar = (mode: "inline" | "overlay") => (
+    <Sidebar
+      mode={mode}
+      projects={projects}
+      pending={pendingProjects}
+      onAddProject={() => setAddOpen(true)}
+      onDeleteProject={(name) => setProjectToDelete(name)}
+      sessions={sessions}
+      loadingProjects={projLoading}
+      loadingSessions={sessLoading}
+      activeSession={activeSession}
+      onLaunchProject={(p) => {
+        setSidebarOpen(false);
+        setLaunchTarget(p);
+      }}
+      onOpenSession={(n) => {
+        setSidebarOpen(false);
+        openSession(n);
+      }}
+      onStopSession={(s) =>
+        setDeleteTarget({
+          name: s.name,
+          worktreePath: s.worktreePath,
+          origPath: s.origPath,
+        })
+      }
+      onRefresh={refresh}
+      open={sidebarOpen}
+      onClose={() => setSidebarOpen(false)}
+    />
+  );
+
+  const mainPane = (
+    <MainPane
+      session={activeSessionObj}
+      tabs={activeTabs ?? null}
+      onSelectTab={selectTab}
+      onCloseTab={closeTab}
+      onAddTerminal={addTerminalTab}
+      onAddFiles={addFilesTab}
+      onStopSession={(s) =>
+        setDeleteTarget({
+          name: s.name,
+          worktreePath: s.worktreePath,
+          origPath: s.origPath,
+        })
+      }
+      onRestartSession={(s) => handleRestartSession(s.name)}
+      restarting={restarting === activeSession}
+      rightPaneOpen={rightPaneOpen}
+      onToggleRightPane={() => setRightPaneOpen((v) => !v)}
+      onUpdateTab={updateTab}
+      onToggleSidebar={() => setSidebarOpen((v) => !v)}
+      onOpenDiff={(file, mode) => openDiffTab(activeCwd, file, mode)}
+    />
+  );
+
+  const rightPane = (mode: "inline" | "overlay") =>
+    activeSessionObj ? (
+      <RightPane
+        mode={mode}
+        cwd={activeCwd}
+        onClose={() => setRightPaneOpen(false)}
+        onOpenFile={openEditorTab}
         onOpenDiff={(file, mode) => openDiffTab(activeCwd, file, mode)}
       />
+    ) : null;
 
-      {rightPaneOpen && activeSessionObj && (
-        <RightPane
-          cwd={activeCwd}
-          onClose={() => setRightPaneOpen(false)}
-          onOpenFile={openEditorTab}
-          onOpenDiff={(file, mode) => openDiffTab(activeCwd, file, mode)}
-        />
+  return (
+    <main className="h-[100dvh] flex bg-app text-fg overflow-hidden">
+      {isDesktop ? (
+        <PanelGroup
+          direction="horizontal"
+          autoSaveId="agent-start:layout:v1"
+          className="flex-1 min-w-0"
+        >
+          <Panel
+            id="sidebar"
+            order={1}
+            defaultSize={18}
+            minSize={12}
+            maxSize={35}
+            className="flex flex-col"
+          >
+            {sidebar("inline")}
+          </Panel>
+          <ResizeHandle />
+          <Panel id="main" order={2} minSize={30} className="flex flex-col min-w-0">
+            {mainPane}
+          </Panel>
+          <ResizeHandle />
+          <Panel
+            id="right"
+            order={3}
+            ref={rightPanelRef}
+            defaultSize={22}
+            minSize={16}
+            maxSize={45}
+            collapsible
+            collapsedSize={0}
+            onCollapse={() => setRightPaneOpen(false)}
+            onExpand={() => setRightPaneOpen(true)}
+            className="flex flex-col"
+          >
+            {activeSessionObj ? rightPane("inline") : null}
+          </Panel>
+        </PanelGroup>
+      ) : (
+        <>
+          {sidebar("overlay")}
+          <div className="flex-1 min-w-0 flex">{mainPane}</div>
+          {rightPaneOpen && rightPane("overlay")}
+        </>
       )}
 
       <LaunchConfirmSheet

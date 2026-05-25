@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FilesView } from "@/components/FilesView";
 import { FileExplorer } from "@/components/FileExplorer";
 import { IconX } from "@/components/icons";
@@ -9,14 +9,34 @@ type Props = {
   onClose: () => void;
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (file: string, mode: DiffMode) => void;
+  /** "inline" fills its parent (used inside a Panel on desktop).
+   *  "overlay" pins to the right edge as a drawer with a backdrop (mobile/tablet). */
+  mode?: "inline" | "overlay";
 };
 
 type Sub = "changes" | "files";
 
-export function RightPane({ cwd, onClose, onOpenFile, onOpenDiff }: Props) {
+export function RightPane({ cwd, onClose, onOpenFile, onOpenDiff, mode = "inline" }: Props) {
   const [sub, setSub] = useState<Sub>("changes");
-  return (
-    <aside className="w-80 shrink-0 h-full flex-col border-l border-line bg-surface hidden lg:flex">
+
+  useEffect(() => {
+    if (mode !== "overlay") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mode, onClose]);
+
+  const body = (
+    <aside
+      className={[
+        "h-full flex flex-col border-l border-line bg-surface",
+        mode === "overlay"
+          ? "fixed inset-y-0 right-0 z-40 w-[min(420px,100vw)] shadow-xl overscroll-contain"
+          : "w-full",
+      ].join(" ")}
+    >
       <div className="px-2 py-1.5 flex items-center gap-1 border-b border-line">
         <SubTab active={sub === "changes"} onClick={() => setSub("changes")}>
           変更
@@ -43,6 +63,16 @@ export function RightPane({ cwd, onClose, onOpenFile, onOpenDiff }: Props) {
       </div>
     </aside>
   );
+
+  if (mode === "overlay") {
+    return (
+      <>
+        <div className="fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden />
+        {body}
+      </>
+    );
+  }
+  return body;
 }
 
 function SubTab({

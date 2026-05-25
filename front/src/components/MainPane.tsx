@@ -104,7 +104,7 @@ export function MainPane({
   };
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col bg-app">
+    <div className="h-full w-full min-w-0 flex flex-col bg-app">
       {/* Session header */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-line bg-surface">
         {onToggleSidebar && (
@@ -112,7 +112,7 @@ export function MainPane({
             type="button"
             onClick={onToggleSidebar}
             aria-label="サイドバーを開く"
-            className="md:hidden -ml-1 w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted"
+            className="lg:hidden -ml-1 w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted"
           >
             <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
               <path d="M3 5h14v2H3V5Zm0 4h14v2H3V9Zm0 4h14v2H3v-2Z" />
@@ -152,37 +152,51 @@ export function MainPane({
           />
           変更
         </button>
-        {session.stopped && (
+        {/* Inline buttons on sm+; collapsed into a kebab menu on phones
+            so the header doesn't wrap and badges stay on one row. */}
+        <div className="hidden sm:flex items-center gap-2 shrink-0">
+          {session.stopped && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!!restarting}
+              onClick={() => onRestartSession(session)}
+            >
+              {restarting ? "再開中…" : "再開"}
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
-            disabled={!!restarting}
-            onClick={() => onRestartSession(session)}
+            disabled={openingVscode || session.stopped}
+            onClick={handleOpenVscode}
+            title={
+              session.stopped
+                ? "停止中のセッションでは利用できません"
+                : "ブラウザで VSCode (code-server) を開く"
+            }
           >
-            {restarting ? "再開中…" : "再開"}
+            {openingVscode ? "起動中…" : "VSCode で開く"}
           </Button>
-        )}
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={openingVscode || session.stopped}
-          onClick={handleOpenVscode}
-          title={
-            session.stopped
-              ? "停止中のセッションでは利用できません"
-              : "ブラウザで VSCode (code-server) を開く"
-          }
-        >
-          {openingVscode ? "起動中…" : "VSCode で開く"}
-        </Button>
-        <Button
-          variant="dangerOutline"
-          size="sm"
-          onClick={() => onStopSession(session)}
-          leftIcon={<IconStop className="w-3.5 h-3.5" />}
-        >
-          停止
-        </Button>
+          <Button
+            variant="dangerOutline"
+            size="sm"
+            onClick={() => onStopSession(session)}
+            leftIcon={<IconStop className="w-3.5 h-3.5" />}
+          >
+            停止
+          </Button>
+        </div>
+        <div className="sm:hidden">
+          <HeaderActionsMenu
+            sessionStopped={!!session.stopped}
+            restarting={!!restarting}
+            openingVscode={openingVscode}
+            onRestart={() => onRestartSession(session)}
+            onOpenVscode={handleOpenVscode}
+            onStop={() => onStopSession(session)}
+          />
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -202,24 +216,38 @@ export function MainPane({
         canAddFiles={!!cwd}
       />
 
-      {/* Active tab content */}
-      <div className="flex-1 min-h-0 flex flex-col">
-        {active ? (
-          <TabContent
-            tab={active}
-            sessionName={session.name}
-            sessionStopped={!!session.stopped}
-            restarting={!!restarting}
-            onRestartSession={() => onRestartSession(session)}
-            cwd={cwd}
-            onUpdateTab={onUpdateTab}
-            onOpenDiff={onOpenDiff}
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-fg-subtle text-sm">
+      {/* Tab contents. All tabs stay mounted (hidden when inactive) so
+          tab switching never tears down xterm / CodeMirror / diff state.
+          Terminal WebSockets stay open in the background; if a project
+          regularly opens many terminals this may need an LRU cap. */}
+      <div className="flex-1 min-h-0 relative">
+        {tabs.tabs.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center text-fg-subtle text-sm">
             タブを選択してください
           </div>
         )}
+        {tabs.tabs.map((t) => (
+          <div
+            key={t.id}
+            className={["absolute inset-0 flex flex-col", t.id === active?.id ? "" : "hidden"].join(
+              " ",
+            )}
+            // aria-hidden prevents inactive panels from receiving focus
+            // when users tab through the live tab.
+            aria-hidden={t.id !== active?.id}
+          >
+            <TabContent
+              tab={t}
+              sessionName={session.name}
+              sessionStopped={!!session.stopped}
+              restarting={!!restarting}
+              onRestartSession={() => onRestartSession(session)}
+              cwd={cwd}
+              onUpdateTab={onUpdateTab}
+              onOpenDiff={onOpenDiff}
+            />
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -302,7 +330,7 @@ function TabBar({
                 // behaviour the user hit: without it, tabs squish to
                 // their min content, and once min content > available
                 // width the row reflows.
-                "shrink-0 group flex items-center gap-2 pl-3 pr-1 py-2 border-r border-line max-w-[200px] cursor-pointer",
+                "shrink-0 group flex items-center gap-2 pl-3 pr-1 py-2 border-r border-line max-w-[140px] sm:max-w-[200px] cursor-pointer",
                 isActive ? "bg-app text-fg" : "text-fg-muted hover:bg-surface",
               ].join(" ")}
               onClick={() => onSelect(t.id)}
@@ -460,9 +488,112 @@ function TabContent({
   );
 }
 
+function HeaderActionsMenu({
+  sessionStopped,
+  restarting,
+  openingVscode,
+  onRestart,
+  onOpenVscode,
+  onStop,
+}: {
+  sessionStopped: boolean;
+  restarting: boolean;
+  openingVscode: boolean;
+  onRestart: () => void;
+  onOpenVscode: () => void;
+  onStop: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="セッション操作"
+        title="セッション操作"
+        className="w-8 h-8 inline-flex items-center justify-center rounded-md border border-line bg-surface text-fg-muted hover:bg-surface-muted"
+      >
+        <span className="text-base leading-none">⋯</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-30 w-44 bg-surface-elev border border-line rounded-md shadow-lg py-1">
+          {sessionStopped && (
+            <MenuButton
+              onClick={() => {
+                setOpen(false);
+                onRestart();
+              }}
+              disabled={restarting}
+            >
+              {restarting ? "再開中…" : "再開"}
+            </MenuButton>
+          )}
+          <MenuButton
+            onClick={() => {
+              setOpen(false);
+              onOpenVscode();
+            }}
+            disabled={openingVscode || sessionStopped}
+          >
+            {openingVscode ? "起動中…" : "VSCode で開く"}
+          </MenuButton>
+          <MenuButton
+            onClick={() => {
+              setOpen(false);
+              onStop();
+            }}
+            tone="danger"
+          >
+            停止
+          </MenuButton>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuButton({
+  onClick,
+  disabled,
+  tone,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: "danger";
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      className={[
+        "w-full text-left px-3 py-1.5 text-xs",
+        disabled
+          ? "text-fg-faint cursor-not-allowed"
+          : tone === "danger"
+            ? "text-danger hover:bg-danger/5"
+            : "text-fg hover:bg-surface-muted",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
+
 function WelcomeBanner() {
   return (
-    <div className="flex-1 flex items-center justify-center bg-app">
+    <div className="h-full w-full flex items-center justify-center bg-app">
       <div className="text-center max-w-md px-6">
         <div className="mx-auto w-14 h-14 rounded-xl bg-surface-muted border border-line flex items-center justify-center text-fg-subtle">
           <IconTerminal className="w-6 h-6" />
