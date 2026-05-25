@@ -75,6 +75,17 @@ impl CodeServerManager {
         session: &str,
         worktree: &Path,
     ) -> Result<Arc<Instance>, CodeServerError> {
+        self.ensure_with_base(session, worktree, None).await
+    }
+
+    /// Same as [`Self::ensure`] but lets the caller pass the absolute
+    /// proxy path so code-server emits links prefixed with `/v/<name>`.
+    pub async fn ensure_with_base(
+        &self,
+        session: &str,
+        worktree: &Path,
+        abs_proxy_base_path: Option<&str>,
+    ) -> Result<Arc<Instance>, CodeServerError> {
         if let Some(existing) = self.instances.lock().get(session).cloned() {
             return Ok(existing);
         }
@@ -99,10 +110,18 @@ impl CodeServerManager {
             .arg("--extensions-dir")
             .arg(&exts)
             .arg("--disable-telemetry")
-            .arg("--disable-update-check")
-            .arg(worktree)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .arg("--disable-update-check");
+        if let Some(base) = abs_proxy_base_path {
+            // code-server rewrites generated URLs to live under this
+            // prefix, which is what makes the reverse proxy actually
+            // usable (otherwise `/static/...` etc. miss the proxy).
+            cmd.arg("--abs-proxy-base-path").arg(base);
+        }
+        // Inherit stdout/stderr so the host's terminal shows code-server
+        // logs — invaluable when debugging the reverse proxy path.
+        cmd.arg(worktree)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .stdin(Stdio::null())
             .kill_on_drop(true);
 

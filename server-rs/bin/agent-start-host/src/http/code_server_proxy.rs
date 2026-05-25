@@ -58,6 +58,8 @@ pub async fn proxy_handler(
         .map(|s| s.eq_ignore_ascii_case("websocket"))
         .unwrap_or(false);
 
+    tracing::debug!(session = %name, port, %suffix, is_ws, method = %req.method(), "code-server proxy");
+
     if is_ws {
         proxy_websocket(req, port, suffix).await
     } else {

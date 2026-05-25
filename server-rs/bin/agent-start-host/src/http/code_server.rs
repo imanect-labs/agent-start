@@ -25,7 +25,12 @@ pub async fn open_code_server(State(app): State<Shared>, Path(name): Path<String
         None => return err(StatusCode::NOT_FOUND, "session not found"),
     };
 
-    let instance = match app.code_server.ensure(&name, &worktree).await {
+    let base = format!("/v/{name}");
+    let instance = match app
+        .code_server
+        .ensure_with_base(&name, &worktree, Some(&base))
+        .await
+    {
         Ok(i) => i,
         Err(code_server_manager::CodeServerError::NotInstalled) => {
             return err(
