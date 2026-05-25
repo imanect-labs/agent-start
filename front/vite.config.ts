@@ -18,6 +18,9 @@ export default defineConfig({
       "/api": { target: HOST, changeOrigin: false },
       "/v1": { target: HOST, changeOrigin: false },
       "/ws": { target: HOST, changeOrigin: false, ws: true },
+      // code-server reverse proxy (HTTP + WS). Without this, navigating to
+      // /v/<session>/ in dev would hit the SPA's 404 instead of the host.
+      "/v/": { target: HOST, changeOrigin: false, ws: true },
     },
   },
   build: {
