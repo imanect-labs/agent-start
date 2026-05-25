@@ -114,7 +114,8 @@ export function Sidebar({
       else orphan.sessions.push(s);
     }
     // Sort sessions within each group by createdAt desc
-    for (const g of byPath.values()) g.sessions.sort((a, b) => b.createdAt - a.createdAt);
+    for (const g of byPath.values())
+      g.sessions.sort((a, b) => b.createdAt - a.createdAt);
     orphan.sessions.sort((a, b) => b.createdAt - a.createdAt);
 
     // Sort projects: those with running sessions first, then by mtimeMs desc
@@ -138,8 +139,11 @@ export function Sidebar({
       .map((g) => {
         const projHit =
           g.project &&
-          (g.project.name.toLowerCase().includes(q) || g.project.path.toLowerCase().includes(q));
-        const matchSessions = g.sessions.filter((s) => s.name.toLowerCase().includes(q));
+          (g.project.name.toLowerCase().includes(q) ||
+            g.project.path.toLowerCase().includes(q));
+        const matchSessions = g.sessions.filter((s) =>
+          s.name.toLowerCase().includes(q),
+        );
         if (projHit) return g; // show whole group with all sessions
         if (matchSessions.length > 0) return { ...g, sessions: matchSessions };
         return null;
@@ -165,7 +169,9 @@ export function Sidebar({
     const s = sessions.find((x) => x.name === activeSession);
     if (!s) return;
     const groupKey = sessionProjectPath(s);
-    setCollapsed((prev) => (prev[groupKey] ? { ...prev, [groupKey]: false } : prev));
+    setCollapsed((prev) =>
+      prev[groupKey] ? { ...prev, [groupKey]: false } : prev,
+    );
   }, [activeSession, sessions]);
 
   const totalSessions = sessions.length;
@@ -174,7 +180,11 @@ export function Sidebar({
   return (
     <>
       {isOverlay && open && onClose && (
-        <div className="fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden />
+        <div
+          className="fixed inset-0 z-30 bg-black/40"
+          onClick={onClose}
+          aria-hidden
+        />
       )}
       <aside
         className={[
@@ -190,8 +200,9 @@ export function Sidebar({
       >
         <div className="px-3 py-3 flex items-center gap-2 border-b border-line">
           <div className="flex items-baseline gap-2 flex-1 min-w-0">
-            <span className="text-sm font-semibold tracking-tight text-fg">agent-start</span>
-            <span className="text-[10px] uppercase tracking-wider text-fg-faint">launcher</span>
+            <span className="text-sm font-semibold tracking-tight text-fg">
+              agent-start
+            </span>
           </div>
           <button
             type="button"
@@ -256,9 +267,13 @@ export function Sidebar({
                   key={g.key}
                   group={g}
                   expanded={!collapsed[g.key]}
-                  onToggle={() => setCollapsed((prev) => ({ ...prev, [g.key]: !prev[g.key] }))}
+                  onToggle={() =>
+                    setCollapsed((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
+                  }
                   activeSession={activeSession}
-                  onLaunch={g.project ? () => onLaunchProject(g.project!) : null}
+                  onLaunch={
+                    g.project ? () => onLaunchProject(g.project!) : null
+                  }
                   onOpenSession={onOpenSession}
                   onStopSession={onStopSession}
                   onDeleteProject={onDeleteProject}
@@ -284,7 +299,13 @@ export function Sidebar({
   );
 }
 
-function PendingRow({ pending, onCancel }: { pending: PendingProject; onCancel: () => void }) {
+function PendingRow({
+  pending,
+  onCancel,
+}: {
+  pending: PendingProject;
+  onCancel: () => void;
+}) {
   const isError = !!pending.error;
   return (
     <li className="px-1.5">
@@ -416,7 +437,11 @@ function GroupRow({
       </div>
       {menuOpen && group.project && onDeleteProject && (
         <>
-          <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} aria-hidden />
+          <div
+            className="fixed inset-0 z-20"
+            onClick={() => setMenuOpen(false)}
+            aria-hidden
+          />
           <div className="absolute right-2 top-8 z-30 w-44 bg-surface-elev border border-line rounded-md shadow-lg py-1">
             <button
               type="button"
@@ -485,7 +510,9 @@ function SessionRow({
       className={[
         "group ml-4 flex items-start gap-1.5 px-1.5 py-1.5 rounded-md",
         "cursor-pointer",
-        active ? "bg-accent/10 text-fg" : "hover:bg-surface-muted text-fg-muted",
+        active
+          ? "bg-accent/10 text-fg"
+          : "hover:bg-surface-muted text-fg-muted",
       ].join(" ")}
       onClick={onOpen}
     >
@@ -493,7 +520,11 @@ function SessionRow({
         aria-hidden
         className={[
           "mt-1.5 inline-block w-1.5 h-1.5 rounded-full shrink-0",
-          session.stopped ? "bg-warn" : session.attached ? "bg-success" : "bg-fg-faint",
+          session.stopped
+            ? "bg-warn"
+            : session.attached
+              ? "bg-success"
+              : "bg-fg-faint",
         ].join(" ")}
       />
       <div className="flex-1 min-w-0">
@@ -512,7 +543,9 @@ function SessionRow({
             {session.name}
           </span>
           {session.stopped && (
-            <span className="text-[9px] uppercase tracking-wider text-warn shrink-0">stopped</span>
+            <span className="text-[9px] uppercase tracking-wider text-warn shrink-0">
+              stopped
+            </span>
           )}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-fg-faint">
