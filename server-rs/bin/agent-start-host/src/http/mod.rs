@@ -6,6 +6,8 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
+mod code_server;
+pub mod code_server_proxy;
 mod config;
 mod fs;
 mod git;
@@ -16,6 +18,7 @@ mod projects_write;
 mod sessions;
 mod windows;
 
+pub use code_server::{close_code_server, open_code_server};
 pub use config::{get_config, put_config};
 pub use fs::{fs_read, fs_tree, fs_write};
 pub use git::{git_diff, git_status};
