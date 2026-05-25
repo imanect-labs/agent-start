@@ -94,8 +94,13 @@ impl CodeServerManager {
         }
         let bin = resolve_binary()?;
         let port = allocate_port()?;
+        // Per-session user-data-dir so code-server doesn't carry over
+        // "last opened folder" / window state from a different session
+        // and override the worktree we pass on the command line.
+        // Extensions are safe to share across sessions, so keep them
+        // in one place to avoid re-downloading per workspace.
         let home = config_loader::agent_start_home().join("code-server");
-        let user_data = home.join("user");
+        let user_data = home.join("users").join(session);
         let exts = home.join("exts");
         std::fs::create_dir_all(&user_data)?;
         std::fs::create_dir_all(&exts)?;

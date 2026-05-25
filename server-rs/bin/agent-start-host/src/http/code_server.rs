@@ -55,11 +55,30 @@ pub async fn open_code_server(State(app): State<Shared>, Path(name): Path<String
         tracing::warn!(error = %e, session = %name, "failed to persist code-server row");
     }
 
+    // Pass `?folder=` so code-server explicitly opens the worktree on
+    // load — without it, the client sometimes restores a different
+    // workspace from window state instead of the one we spawned with.
+    let folder = urlencode(&worktree.to_string_lossy());
     Json(OpenResponse {
-        url: format!("/v/{name}/"),
+        url: format!("/v/{name}/?folder={folder}"),
         port: instance.port(),
     })
     .into_response()
+}
+
+/// Minimal RFC 3986 query-component percent-encoder. Avoids pulling in
+/// the `urlencoding` crate just for one call site.
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 pub async fn close_code_server(State(app): State<Shared>, Path(name): Path<String>) -> Response {
