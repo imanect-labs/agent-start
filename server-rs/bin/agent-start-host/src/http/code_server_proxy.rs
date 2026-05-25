@@ -8,7 +8,7 @@
 
 use axum::body::Body;
 use axum::extract::ws::{Message as AxMessage, WebSocket, WebSocketUpgrade};
-use axum::extract::{FromRequestParts, Path, Request, State};
+use axum::extract::{FromRequestParts, Request, State};
 use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use futures::{SinkExt, StreamExt};
@@ -31,11 +31,16 @@ const HOP_BY_HOP: &[&str] = &[
     "host",
 ];
 
-pub async fn proxy_handler(
-    State(app): State<Shared>,
-    Path(name): Path<String>,
-    req: Request,
-) -> Response {
+pub async fn proxy_handler(State(app): State<Shared>, req: Request) -> Response {
+    // Parse the session name out of the URI manually. We can't use
+    // `Path<String>` here because the route `/v/:name/*rest` has two
+    // captures and `Path<String>` rejects the request with 500, which
+    // is exactly what was breaking every asset load.
+    let name = match session_from_uri(req.uri()) {
+        Some(n) => n,
+        None => return err(StatusCode::BAD_REQUEST, "missing session name in path"),
+    };
+
     let port = match app.code_server.port_for(&name) {
         Some(p) => p,
         None => {
@@ -64,6 +69,18 @@ pub async fn proxy_handler(
         proxy_websocket(req, port, suffix).await
     } else {
         proxy_http(req, port, suffix).await
+    }
+}
+
+/// Pull the session name out of a `/v/<name>` or `/v/<name>/...` URI.
+fn session_from_uri(uri: &Uri) -> Option<String> {
+    let path = uri.path();
+    let rest = path.strip_prefix("/v/")?;
+    let name = rest.split('/').next()?;
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
     }
 }
 
