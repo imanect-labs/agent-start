@@ -1,5 +1,5 @@
 {
-  "roots": ["/home/shuya/dev"],
+  "roots": ["/home/user/projects"],
   "sessionPrefix": "cc-",
   "shell": "/bin/bash",
   "showHidden": false,

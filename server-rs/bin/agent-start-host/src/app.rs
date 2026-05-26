@@ -6,6 +6,7 @@ use axum::Router;
 use code_server_manager::CodeServerManager;
 use parking_lot::RwLock;
 use pty_manager::PtyManager;
+use rust_embed::RustEmbed;
 use state::Db;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -13,6 +14,12 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
+
+/// SPA assets compiled into the host binary. Source is `front/dist/`, populated
+/// by `vp build` (or by the build.rs placeholder when missing).
+#[derive(RustEmbed)]
+#[folder = "$CARGO_MANIFEST_DIR/../../../front/dist"]
+struct FrontAssets;
 
 use crate::manifest;
 use crate::sessions::SessionDirectory;
@@ -264,30 +271,28 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
 
     // SPA wiring. API routes already registered above take precedence.
     // For everything else:
-    //   * `/assets/*` -> ServeDir on `dist/assets` (hashed JS/CSS chunks).
-    //   * any other path -> read `dist/index.html` and return it with 200
-    //     so TanStack Router can pick up the client-side route after
-    //     hydration. We avoid `ServeDir::not_found_service` because
-    //     tower-http hard-codes the response status to 404 for that
-    //     code path, which breaks SEO / 404-rate monitors.
+    //   * `/assets/*` -> hashed JS/CSS chunks.
+    //   * any other path -> serve `index.html` with 200 so TanStack Router
+    //     can pick up the client-side route after hydration.
     //
-    // The fallback explicitly 404s API/WS prefix typos rather than
+    // Source precedence:
+    //   1. If `--frontend-dist` is set, serve from that filesystem path
+    //      (useful for dev / staging without rebuilding the host).
+    //   2. Otherwise serve assets embedded into the host binary at build
+    //      time via `rust-embed` (default for distributed binaries).
+    //
+    // Both branches explicitly 404 API/WS prefix typos rather than
     // serving them HTML — otherwise `/api/typo` would return 200 with
     // index.html and silently mask broken client integrations.
     let router = if let Some(dist) = frontend_dist {
         let index_path = dist.join("index.html");
         let assets_dir = dist.join("assets");
-        tracing::info!(path = %dist.display(), "serving front-end SPA from dist");
+        tracing::info!(path = %dist.display(), "serving front-end SPA from dist (filesystem override)");
 
         let serve_index = any(move |uri: Uri| {
             let index_path = index_path.clone();
             async move {
-                let path = uri.path();
-                if path.starts_with("/api/")
-                    || path.starts_with("/v1/")
-                    || path.starts_with("/ws/")
-                    || path.starts_with("/v/")
-                {
+                if is_api_path(uri.path()) {
                     return StatusCode::NOT_FOUND.into_response();
                 }
                 match tokio::fs::read(&index_path).await {
@@ -309,7 +314,10 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
             .nest_service("/assets", ServeDir::new(&assets_dir))
             .fallback_service(serve_index)
     } else {
+        tracing::info!("serving front-end SPA from embedded assets");
         api_router
+            .route("/assets/*path", get(serve_embedded_asset))
+            .fallback(serve_embedded_index)
     };
 
     let router = router.layer(cors).layer(TraceLayer::new_for_http());
@@ -360,4 +368,47 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
 
     axum::serve(listener, router.into_make_service()).await?;
     Ok(())
+}
+
+fn is_api_path(path: &str) -> bool {
+    path.starts_with("/api/")
+        || path.starts_with("/v1/")
+        || path.starts_with("/ws/")
+        || path.starts_with("/v/")
+}
+
+async fn serve_embedded_index(uri: Uri) -> axum::response::Response {
+    if is_api_path(uri.path()) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    match FrontAssets::get("index.html") {
+        Some(file) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            file.data.into_owned(),
+        )
+            .into_response(),
+        None => {
+            tracing::error!("embedded index.html missing");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+async fn serve_embedded_asset(
+    axum::extract::Path(path): axum::extract::Path<String>,
+) -> axum::response::Response {
+    let full = format!("assets/{path}");
+    match FrontAssets::get(&full) {
+        Some(file) => {
+            let mime = mime_guess::from_path(&full).first_or_octet_stream();
+            (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, mime.as_ref().to_string())],
+                file.data.into_owned(),
+            )
+                .into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }

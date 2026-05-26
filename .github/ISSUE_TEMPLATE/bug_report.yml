@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a problem with agent-start.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please fill in as much as
+        you can — the more detail, the faster we can fix it.
+
+        **Security issues**: do *not* file a public issue. See
+        [SECURITY.md](../../SECURITY.md) instead.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A clear, concise description of the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: How can a maintainer trigger the bug locally?
+      placeholder: |
+        1. Run `agent-start-host --port 3030`
+        2. Open the UI and click ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: agent-start version
+      description: Output of `agent-start-host --version` or a commit hash.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / arch
+      description: e.g. Ubuntu 24.04 / x86_64, macOS 14 / arm64
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: |
+        Paste host logs (set `AGENT_START_LOG=debug` for verbose output) or
+        attach screenshots if relevant.
+      render: shell
