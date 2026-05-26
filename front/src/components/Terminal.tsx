@@ -174,14 +174,35 @@ export function Terminal({
         }
       });
 
-      resizeObs = new ResizeObserver(() => {
+      const doFit = () => {
         try {
           fit.fit();
         } catch {
           // ignore
         }
-      });
+      };
+      resizeObs = new ResizeObserver(doFit);
       resizeObs.observe(containerRef.current);
+
+      // iOS Safari's bottom toolbar overlays content and doesn't trip
+      // ResizeObserver on layout elements — re-fit when visualViewport
+      // resizes (toolbar show/hide, keyboard appear) so the bottom row
+      // doesn't end up hidden under the chrome.
+      const vv = typeof window !== "undefined" ? window.visualViewport : null;
+      const onVvResize = () => {
+        // rAF coalesces multiple successive events into one fit pass.
+        requestAnimationFrame(doFit);
+      };
+      vv?.addEventListener("resize", onVvResize);
+      vv?.addEventListener("scroll", onVvResize);
+      (
+        containerRef.current as HTMLDivElement & {
+          __vvCleanup?: () => void;
+        }
+      ).__vvCleanup = () => {
+        vv?.removeEventListener("resize", onVvResize);
+        vv?.removeEventListener("scroll", onVvResize);
+      };
 
       // Touch-swipe scroll: vertical pan inside terminal viewport.
       const ROW_PX = 22;
@@ -204,7 +225,7 @@ export function Terminal({
         const lines = Math.trunc(accum / ROW_PX);
         if (lines !== 0) {
           accum -= lines * ROW_PX;
-          dispatchScroll(ws, -lines);
+          termRef.current?.scrollLines(-lines);
           e.preventDefault();
         }
       };
@@ -302,10 +323,14 @@ export function Terminal({
     return () => {
       disposed = true;
       if (resizeObs) resizeObs.disconnect();
-      const cleanup = (
-        containerRef.current as (HTMLDivElement & { __touchCleanup?: () => void }) | null
-      )?.__touchCleanup;
-      if (cleanup) cleanup();
+      const c = containerRef.current as
+        | (HTMLDivElement & {
+            __touchCleanup?: () => void;
+            __vvCleanup?: () => void;
+          })
+        | null;
+      c?.__touchCleanup?.();
+      c?.__vvCleanup?.();
       try {
         ws?.close();
       } catch {
@@ -345,7 +370,9 @@ export function Terminal({
     if (!term) return;
     const visible = term.rows ?? 10;
     const lines = direction * Math.max(5, visible - 2);
-    dispatchScroll(wsRef.current, lines);
+    // Scroll xterm's local scrollback — the backend has no "scroll"
+    // message handler, so dispatching via WS was silently a no-op.
+    term.scrollLines(lines);
   };
 
   const vkClass =
@@ -393,7 +420,12 @@ export function Terminal({
         <div
           ref={containerRef}
           onClick={focusTerm}
-          className="rounded-md border border-line p-2 overflow-hidden h-full"
+          // The larger pb on mobile reserves a full extra cell so the
+          // bottom cursor block doesn't sink under the rounded border —
+          // xterm fit-addon floor()s row count and the leftover
+          // sub-pixel commonly ate the cursor's bottom edge. Mobile
+          // also has to compensate for iOS Safari's overlay toolbar.
+          className="rounded-md border border-line px-2 pt-2 pb-6 sm:pb-3 overflow-hidden h-full"
           style={{
             touchAction: "none",
             background: theme.background,
@@ -419,7 +451,7 @@ export function Terminal({
         )}
       </div>
 
-      <div className={`${vkClass} gap-1.5 overflow-x-auto -mx-1 px-1 pb-1`}>
+      <div className={`${vkClass} gap-1.5 overflow-x-auto -mx-1 px-1 pt-1 pb-3 sm:pb-1`}>
         <VirtualKeys onKey={handleVirtualKey} onScroll={handleScroll} ctrlActive={ctrlActive} />
       </div>
     </div>
@@ -430,17 +462,6 @@ function sendInputViaWs(ws: WebSocket | null, data: string) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "input", data }));
   }
-}
-
-function dispatchScroll(ws: WebSocket | null, lines: number) {
-  if (!ws || ws.readyState !== WebSocket.OPEN || lines === 0) return;
-  ws.send(
-    JSON.stringify({
-      type: "scroll",
-      direction: lines < 0 ? -1 : 1,
-      count: Math.abs(lines),
-    }),
-  );
 }
 
 type KeyDef =

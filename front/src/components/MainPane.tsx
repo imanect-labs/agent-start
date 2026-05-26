@@ -60,7 +60,7 @@ export function MainPane({
   onOpenDiff,
 }: Props) {
   if (!session || !tabs) {
-    return <WelcomeBanner />;
+    return <WelcomeBanner onToggleSidebar={onToggleSidebar} />;
   }
 
   const active = tabs.tabs.find((t) => t.id === tabs.activeTabId) ?? null;
@@ -104,15 +104,17 @@ export function MainPane({
   };
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col bg-app">
-      {/* Session header */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-line bg-surface">
+    <div className="h-full w-full min-w-0 flex flex-col bg-app">
+      {/* Session header — tighter padding on mobile so the row holds its
+          height even with a long session name. Badges below sm only show
+          a colored status dot to keep everything on one line. */}
+      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 border-b border-line bg-surface min-h-[52px]">
         {onToggleSidebar && (
           <button
             type="button"
             onClick={onToggleSidebar}
             aria-label="サイドバーを開く"
-            className="md:hidden -ml-1 w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted"
+            className="lg:hidden -ml-1 w-10 h-10 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted"
           >
             <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
               <path d="M3 5h14v2H3V5Zm0 4h14v2H3V9Zm0 4h14v2H3v-2Z" />
@@ -120,15 +122,26 @@ export function MainPane({
           </button>
         )}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            {/* Mobile: tiny status dot (attached/stopped). Replaces the
+                wrapping badge row that doubled the header height. */}
+            <span
+              aria-hidden
+              className={[
+                "sm:hidden inline-block w-1.5 h-1.5 rounded-full shrink-0",
+                session.stopped ? "bg-warn" : session.attached ? "bg-success" : "bg-fg-faint",
+              ].join(" ")}
+            />
             <span className="font-mono text-sm text-fg truncate">{session.name}</span>
-            <Badge tone="violet">{cliLabel}</Badge>
-            {hasWorktree && <Badge tone="amber">worktree</Badge>}
-            {session.stopped ? (
-              <Badge tone="amber">停止中 (再起動後)</Badge>
-            ) : (
-              session.attached && <Badge tone="blue">接続中</Badge>
-            )}
+            <div className="hidden sm:flex items-center gap-1.5 flex-wrap">
+              <Badge tone="violet">{cliLabel}</Badge>
+              {hasWorktree && <Badge tone="amber">worktree</Badge>}
+              {session.stopped ? (
+                <Badge tone="amber">停止中 (再起動後)</Badge>
+              ) : (
+                session.attached && <Badge tone="blue">接続中</Badge>
+              )}
+            </div>
           </div>
           <div className="text-[11px] text-fg-subtle truncate mt-0.5 font-mono">
             {session.origPath || session.path}
@@ -138,11 +151,13 @@ export function MainPane({
           type="button"
           onClick={onToggleRightPane}
           className={[
-            "shrink-0 h-8 px-2.5 inline-flex items-center gap-1.5 rounded-md border text-xs",
+            "shrink-0 h-10 sm:h-8 inline-flex items-center justify-center gap-1.5 rounded-md border",
+            "w-10 sm:w-auto sm:px-2.5 text-xs",
             rightPaneOpen
               ? "bg-surface-muted text-fg border-line-strong"
               : "bg-surface text-fg-muted border-line hover:bg-surface-muted",
           ].join(" ")}
+          aria-label={rightPaneOpen ? "右ペインを隠す" : "右ペインを表示"}
           title={rightPaneOpen ? "右ペインを隠す" : "右ペインを表示"}
         >
           <IconChevronRight
@@ -150,39 +165,53 @@ export function MainPane({
               " ",
             )}
           />
-          変更
+          <span className="hidden sm:inline">変更</span>
         </button>
-        {session.stopped && (
+        {/* Inline buttons on sm+; collapsed into a kebab menu on phones
+            so the header doesn't wrap and badges stay on one row. */}
+        <div className="hidden sm:flex items-center gap-2 shrink-0">
+          {session.stopped && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!!restarting}
+              onClick={() => onRestartSession(session)}
+            >
+              {restarting ? "再開中…" : "再開"}
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
-            disabled={!!restarting}
-            onClick={() => onRestartSession(session)}
+            disabled={openingVscode || session.stopped}
+            onClick={handleOpenVscode}
+            title={
+              session.stopped
+                ? "停止中のセッションでは利用できません"
+                : "ブラウザで VSCode (code-server) を開く"
+            }
           >
-            {restarting ? "再開中…" : "再開"}
+            {openingVscode ? "起動中…" : "VSCode で開く"}
           </Button>
-        )}
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={openingVscode || session.stopped}
-          onClick={handleOpenVscode}
-          title={
-            session.stopped
-              ? "停止中のセッションでは利用できません"
-              : "ブラウザで VSCode (code-server) を開く"
-          }
-        >
-          {openingVscode ? "起動中…" : "VSCode で開く"}
-        </Button>
-        <Button
-          variant="dangerOutline"
-          size="sm"
-          onClick={() => onStopSession(session)}
-          leftIcon={<IconStop className="w-3.5 h-3.5" />}
-        >
-          停止
-        </Button>
+          <Button
+            variant="dangerOutline"
+            size="sm"
+            onClick={() => onStopSession(session)}
+            leftIcon={<IconStop className="w-3.5 h-3.5" />}
+          >
+            停止
+          </Button>
+        </div>
+        <div className="sm:hidden">
+          <HeaderActionsMenu
+            sessionStopped={!!session.stopped}
+            restarting={!!restarting}
+            openingVscode={openingVscode}
+            onRestart={() => onRestartSession(session)}
+            onOpenVscode={handleOpenVscode}
+            onStop={() => onStopSession(session)}
+          />
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -202,24 +231,38 @@ export function MainPane({
         canAddFiles={!!cwd}
       />
 
-      {/* Active tab content */}
-      <div className="flex-1 min-h-0 flex flex-col">
-        {active ? (
-          <TabContent
-            tab={active}
-            sessionName={session.name}
-            sessionStopped={!!session.stopped}
-            restarting={!!restarting}
-            onRestartSession={() => onRestartSession(session)}
-            cwd={cwd}
-            onUpdateTab={onUpdateTab}
-            onOpenDiff={onOpenDiff}
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-fg-subtle text-sm">
+      {/* Tab contents. All tabs stay mounted (hidden when inactive) so
+          tab switching never tears down xterm / CodeMirror / diff state.
+          Terminal WebSockets stay open in the background; if a project
+          regularly opens many terminals this may need an LRU cap. */}
+      <div className="flex-1 min-h-0 relative">
+        {tabs.tabs.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center text-fg-subtle text-sm">
             タブを選択してください
           </div>
         )}
+        {tabs.tabs.map((t) => (
+          <div
+            key={t.id}
+            className={["absolute inset-0 flex flex-col", t.id === active?.id ? "" : "hidden"].join(
+              " ",
+            )}
+            // aria-hidden prevents inactive panels from receiving focus
+            // when users tab through the live tab.
+            aria-hidden={t.id !== active?.id}
+          >
+            <TabContent
+              tab={t}
+              sessionName={session.name}
+              sessionStopped={!!session.stopped}
+              restarting={!!restarting}
+              onRestartSession={() => onRestartSession(session)}
+              cwd={cwd}
+              onUpdateTab={onUpdateTab}
+              onOpenDiff={onOpenDiff}
+            />
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -302,7 +345,7 @@ function TabBar({
                 // behaviour the user hit: without it, tabs squish to
                 // their min content, and once min content > available
                 // width the row reflows.
-                "shrink-0 group flex items-center gap-2 pl-3 pr-1 py-2 border-r border-line max-w-[200px] cursor-pointer",
+                "shrink-0 group flex items-center gap-2 pl-3 pr-1 py-2.5 sm:py-2 border-r border-line max-w-[140px] sm:max-w-[200px] cursor-pointer",
                 isActive ? "bg-app text-fg" : "text-fg-muted hover:bg-surface",
               ].join(" ")}
               onClick={() => onSelect(t.id)}
@@ -320,9 +363,9 @@ function TabBar({
                   e.stopPropagation();
                   onClose(t.id);
                 }}
-                className="ml-1 w-5 h-5 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev"
+                className="ml-1 w-7 h-7 sm:w-5 sm:h-5 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev"
               >
-                <IconX className="w-3 h-3" />
+                <IconX className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
               </button>
             </div>
           );
@@ -334,7 +377,7 @@ function TabBar({
         <button
           type="button"
           onClick={() => setMenuOpen((s) => !s)}
-          className="h-full px-3 inline-flex items-center text-fg-faint hover:text-fg hover:bg-surface"
+          className="h-full px-4 sm:px-3 inline-flex items-center text-fg-faint hover:text-fg hover:bg-surface"
           aria-label="タブを追加"
           title="タブを追加"
         >
@@ -460,23 +503,146 @@ function TabContent({
   );
 }
 
-function WelcomeBanner() {
+function HeaderActionsMenu({
+  sessionStopped,
+  restarting,
+  openingVscode,
+  onRestart,
+  onOpenVscode,
+  onStop,
+}: {
+  sessionStopped: boolean;
+  restarting: boolean;
+  openingVscode: boolean;
+  onRestart: () => void;
+  onOpenVscode: () => void;
+  onStop: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
   return (
-    <div className="flex-1 flex items-center justify-center bg-app">
-      <div className="text-center max-w-md px-6">
-        <div className="mx-auto w-14 h-14 rounded-xl bg-surface-muted border border-line flex items-center justify-center text-fg-subtle">
-          <IconTerminal className="w-6 h-6" />
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="セッション操作"
+        title="セッション操作"
+        className="w-10 h-10 inline-flex items-center justify-center rounded-md border border-line bg-surface text-fg-muted hover:bg-surface-muted"
+      >
+        <span className="text-base leading-none">⋯</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-30 w-44 bg-surface-elev border border-line rounded-md shadow-lg py-1">
+          {sessionStopped && (
+            <MenuButton
+              onClick={() => {
+                setOpen(false);
+                onRestart();
+              }}
+              disabled={restarting}
+            >
+              {restarting ? "再開中…" : "再開"}
+            </MenuButton>
+          )}
+          <MenuButton
+            onClick={() => {
+              setOpen(false);
+              onOpenVscode();
+            }}
+            disabled={openingVscode || sessionStopped}
+          >
+            {openingVscode ? "起動中…" : "VSCode で開く"}
+          </MenuButton>
+          <MenuButton
+            onClick={() => {
+              setOpen(false);
+              onStop();
+            }}
+            tone="danger"
+          >
+            停止
+          </MenuButton>
         </div>
-        <h2 className="mt-4 text-base font-semibold text-fg">セッションが選択されていません</h2>
-        <p className="mt-1 text-sm text-fg-subtle">
-          左のサイドバーからプロジェクトを選び、 <span className="font-mono">＋</span>{" "}
-          で新しいセッションを起動するか、稼働中のセッションをクリックしてターミナルを開きます。
-        </p>
-        <p className="mt-3 text-[11px] text-fg-faint inline-flex items-center gap-1">
-          <IconBranch className="inline w-3 h-3" /> = worktree 付き
-          <span className="mx-1">·</span>
-          選択中のセッションには複数のタブとファイル変更ペインを開けます
-        </p>
+      )}
+    </div>
+  );
+}
+
+function MenuButton({
+  onClick,
+  disabled,
+  tone,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: "danger";
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      className={[
+        "w-full text-left px-3 py-1.5 text-xs",
+        disabled
+          ? "text-fg-faint cursor-not-allowed"
+          : tone === "danger"
+            ? "text-danger hover:bg-danger/5"
+            : "text-fg hover:bg-surface-muted",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
+
+function WelcomeBanner({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
+  return (
+    <div className="h-full w-full flex flex-col bg-app">
+      {/* Mobile/tablet still needs a way to open the sidebar before any
+          session exists — otherwise the user is stranded on the welcome
+          screen with no entry point. Desktop hides this bar via lg:hidden. */}
+      {onToggleSidebar && (
+        <div className="lg:hidden flex items-center gap-2 px-3 py-2 border-b border-line bg-surface min-h-[52px]">
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label="サイドバーを開く"
+            className="-ml-1 w-10 h-10 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted"
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M3 5h14v2H3V5Zm0 4h14v2H3V9Zm0 4h14v2H3v-2Z" />
+            </svg>
+          </button>
+          <span className="text-sm font-semibold tracking-tight text-fg">agent-start</span>
+        </div>
+      )}
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center max-w-md px-6">
+          <div className="mx-auto w-14 h-14 rounded-xl bg-surface-muted border border-line flex items-center justify-center text-fg-subtle">
+            <IconTerminal className="w-6 h-6" />
+          </div>
+          <h2 className="mt-4 text-base font-semibold text-fg">セッションが選択されていません</h2>
+          <p className="mt-1 text-sm text-fg-subtle">
+            左のサイドバーからプロジェクトを選び、 <span className="font-mono">＋</span>{" "}
+            で新しいセッションを起動するか、稼働中のセッションをクリックしてターミナルを開きます。
+          </p>
+          <p className="mt-3 text-[11px] text-fg-faint inline-flex items-center gap-1">
+            <IconBranch className="inline w-3 h-3" /> = worktree 付き
+            <span className="mx-1">·</span>
+            選択中のセッションには複数のタブとファイル変更ペインを開けます
+          </p>
+        </div>
       </div>
     </div>
   );

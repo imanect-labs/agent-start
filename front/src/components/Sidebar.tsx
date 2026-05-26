@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Badge, Input, Spinner } from "@/components/ui";
+import { Badge, Input, SkeletonRows, Spinner } from "@/components/ui";
 import {
   IconBranch,
   IconChevronDown,
@@ -75,6 +75,7 @@ export function Sidebar({
   onDeleteProject,
   open = true,
   onClose,
+  mode = "inline",
 }: {
   projects: Project[];
   pending?: PendingProject[];
@@ -88,9 +89,12 @@ export function Sidebar({
   onRefresh: () => void;
   onAddProject?: () => void;
   onDeleteProject?: (name: string) => void;
-  /** Mobile drawer visibility. Always true on md+. */
+  /** Mobile drawer visibility. Ignored when mode === "inline". */
   open?: boolean;
   onClose?: () => void;
+  /** "inline" fills its parent (desktop, inside a resizable Panel).
+   *  "overlay" pins to the left edge as a drawer with a backdrop. */
+  mode?: "inline" | "overlay";
 }) {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -166,39 +170,54 @@ export function Sidebar({
 
   const totalSessions = sessions.length;
 
+  const isOverlay = mode === "overlay";
   return (
     <>
-      {open && onClose && (
-        <div className="md:hidden fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden />
+      {isOverlay && open && onClose && (
+        <div className="fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden />
       )}
       <aside
         className={[
-          "w-72 shrink-0 h-full flex flex-col border-r border-line bg-surface",
-          "md:static md:translate-x-0",
-          "fixed inset-y-0 left-0 z-40 transition-transform",
-          open ? "translate-x-0" : "-translate-x-full",
+          "h-full flex flex-col border-r border-line bg-surface",
+          isOverlay
+            ? [
+                "w-[85vw] max-w-80 shrink-0",
+                "fixed inset-y-0 left-0 z-40 transition-transform",
+                "safe-left safe-bottom",
+                open ? "translate-x-0" : "-translate-x-full",
+              ].join(" ")
+            : "w-full",
         ].join(" ")}
       >
-        <div className="px-3 py-3 flex items-center gap-2 border-b border-line">
+        <div className="px-3 py-2.5 flex items-center gap-2 border-b border-line">
           <div className="flex items-baseline gap-2 flex-1 min-w-0">
             <span className="text-sm font-semibold tracking-tight text-fg">agent-start</span>
-            <span className="text-[10px] uppercase tracking-wider text-fg-faint">launcher</span>
           </div>
           <button
             type="button"
             onClick={onRefresh}
             aria-label="再読み込み"
-            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
+            className="w-9 h-9 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
           >
             <IconRefresh className="w-4 h-4" />
           </button>
           <Link
             to="/settings"
             aria-label="設定"
-            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
+            className="w-9 h-9 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
           >
             <IconGear className="w-4 h-4" />
           </Link>
+          {isOverlay && onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="閉じる"
+              className="w-9 h-9 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
+            >
+              <IconX className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         <div className="px-3 py-3 border-b border-line">
@@ -233,8 +252,8 @@ export function Sidebar({
             </ul>
           )}
           {(loadingProjects || loadingSessions) && groups.length === 0 ? (
-            <div className="flex justify-center py-8">
-              <Spinner size="sm" />
+            <div className="px-3 py-3">
+              <SkeletonRows n={5} rowHeight={26} />
             </div>
           ) : filtered.length === 0 && pending.length === 0 ? (
             <div className="px-4 py-8 text-center text-xs text-fg-subtle">
@@ -264,7 +283,7 @@ export function Sidebar({
             <button
               type="button"
               onClick={onAddProject}
-              className="w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-md border border-line bg-surface hover:bg-surface-muted text-sm text-fg"
+              className="w-full inline-flex items-center justify-center gap-1.5 h-11 sm:h-9 rounded-md border border-line bg-surface hover:bg-surface-muted text-sm text-fg"
             >
               <IconPlus className="w-3.5 h-3.5" /> プロジェクトを追加
             </button>
@@ -336,7 +355,7 @@ function GroupRow({
     <li className="px-1.5 relative">
       <div
         className={[
-          "group flex items-center gap-1 px-1.5 py-1.5 rounded-md",
+          "group flex items-center gap-1 px-1.5 py-2 rounded-md min-h-[40px]",
           "hover:bg-surface-muted",
         ].join(" ")}
         onContextMenu={(e) => {
@@ -388,9 +407,9 @@ function GroupRow({
             }}
             aria-label="プロジェクト操作"
             title="…"
-            className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev opacity-0 group-hover:opacity-100 transition-opacity"
+            className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev opacity-0 group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity"
           >
-            <span className="text-xs">⋯</span>
+            <span className="text-base leading-none">⋯</span>
           </button>
         )}
         {onLaunch && (
@@ -399,7 +418,7 @@ function GroupRow({
             onClick={onLaunch}
             aria-label={`${name} で新規セッション`}
             title="新規セッション起動"
-            className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev"
+            className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev"
           >
             <IconPlus className="w-3.5 h-3.5" />
           </button>
@@ -474,7 +493,7 @@ function SessionRow({
   return (
     <li
       className={[
-        "group ml-4 flex items-start gap-1.5 px-1.5 py-1.5 rounded-md",
+        "group ml-4 flex items-start gap-1.5 px-1.5 py-2 rounded-md min-h-[44px]",
         "cursor-pointer",
         active ? "bg-accent/10 text-fg" : "hover:bg-surface-muted text-fg-muted",
       ].join(" ")}
@@ -520,9 +539,9 @@ function SessionRow({
         }}
         aria-label="停止"
         title="停止"
-        className="shrink-0 w-5 h-5 inline-flex items-center justify-center rounded text-fg-faint hover:text-danger hover:bg-danger/10"
+        className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded text-fg-faint hover:text-danger hover:bg-danger/10"
       >
-        <IconX className="w-3 h-3" />
+        <IconX className="w-3.5 h-3.5" />
       </button>
     </li>
   );

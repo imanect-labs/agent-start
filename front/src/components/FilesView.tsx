@@ -1,6 +1,6 @@
 import useSWR from "swr";
 import { useMemo } from "react";
-import { Button, Spinner } from "@/components/ui";
+import { Button, Skeleton, SkeletonRows } from "@/components/ui";
 import { IconBranch, IconRefresh } from "@/components/icons";
 import type { DiffMode } from "@/components/tab-types";
 
@@ -60,9 +60,13 @@ export function FilesView({
     return <Empty>セッションの作業ディレクトリが特定できません</Empty>;
   }
   if (isLoading && !data) {
+    // Reserve roughly the same area the real header + list would
+    // occupy so the pane doesn't pop in height when data arrives.
     return (
-      <div className="flex justify-center py-8">
-        <Spinner size="sm" />
+      <div className="p-3 space-y-3 min-h-[260px]">
+        <Skeleton style={{ height: 20, width: "55%" }} />
+        <Skeleton style={{ height: 12, width: "35%" }} />
+        <SkeletonRows n={4} rowHeight={26} className="mt-2" />
       </div>
     );
   }
@@ -210,5 +214,9 @@ function FileGroup({
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="text-center text-xs text-fg-subtle py-6 px-4">{children}</div>;
+  return (
+    <div className="min-h-[120px] flex items-center justify-center text-center text-xs text-fg-subtle py-6 px-4">
+      {children}
+    </div>
+  );
 }
