@@ -18,7 +18,7 @@ jobs:
       run:
         working-directory: front
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Vite+ (vp)
         run: |
           curl -fsSL https://vite.plus | bash
