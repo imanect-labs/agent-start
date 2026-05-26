@@ -33,7 +33,55 @@ Browser ── tailnet ── agent-start-host (Rust, :3030)
 
 The front-end (`/front/`) is a Vite+ + React + TanStack Router SPA. In development it runs out-of-process via `vp dev` on `:5173` and proxies `/api/*`, `/v1/*`, `/ws/*` to the host on `:3030`.
 
-## Setup
+## Installation
+
+Pre-built binaries are published on the [Releases page](https://github.com/imanect-labs/agent-start/releases) for Linux (x86_64, aarch64), macOS (Apple Silicon, Intel), and Windows (x86_64). They are fully self-contained — the web UI is embedded into the binary.
+
+### Linux / macOS (one-liner)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/imanect-labs/agent-start/main/install.sh | bash
+```
+
+This fetches the latest release, picks the right target for your OS/arch, and drops `agent-start-host` into `~/.local/bin/`. Environment overrides:
+
+- `AGENT_START_VERSION=v0.1.0` — pin a specific release instead of latest.
+- `INSTALL_DIR=/usr/local/bin` — install somewhere else (you may need `sudo`).
+
+After install:
+
+```bash
+agent-start-host --port 3030      # binds 127.0.0.1 by default
+# open http://localhost:3030
+```
+
+### Manual download
+
+Grab the archive that matches your platform from the [Releases page](https://github.com/imanect-labs/agent-start/releases), extract it, and put `agent-start-host` somewhere on your `PATH`:
+
+| Platform        | Asset                                                   |
+| --------------- | ------------------------------------------------------- |
+| Linux x86_64    | `agent-start-<tag>-x86_64-unknown-linux-gnu.tar.gz`     |
+| Linux aarch64   | `agent-start-<tag>-aarch64-unknown-linux-gnu.tar.gz`    |
+| macOS arm64     | `agent-start-<tag>-aarch64-apple-darwin.tar.gz`         |
+| macOS x86_64    | `agent-start-<tag>-x86_64-apple-darwin.tar.gz`          |
+| Windows x86_64  | `agent-start-<tag>-x86_64-pc-windows-msvc.zip`          |
+
+### Build from source
+
+```bash
+git clone https://github.com/imanect-labs/agent-start
+cd agent-start
+(cd front && vp install && vp build)              # builds the SPA into front/dist
+(cd server-rs && cargo build --release)           # rust-embed pulls front/dist into the binary
+./server-rs/target/release/agent-start-host --port 3030
+```
+
+You need the `vp` (Vite+) CLI for the front bundle — see [Toolchain](#toolchain) below. Rust toolchain version: see `rust-version` in `server-rs/Cargo.toml`.
+
+> ⚠️ Read [SECURITY.md](./SECURITY.md) **before** binding to anything other than `127.0.0.1`. agent-start has no built-in authentication.
+
+## Setup (development)
 
 Two processes during development (Rust host + Vite+ SPA). One binary in production.
 
@@ -71,20 +119,9 @@ npm run dev:front
 
 Open <http://localhost:5173>. Vite+'s proxy forwards `/api/*`, `/v1/*`, and `/ws/*` to the host on `:3030`.
 
-### Production mode (single binary)
+### Production runtime notes
 
-```bash
-# 1. Build the front bundle — picked up by rust-embed at host build time
-(cd front && vp build)              # -> front/dist/
-
-# 2. Build the host (front/dist gets embedded into the binary)
-(cd server-rs && cargo build --release)
-
-# 3. Run it
-./server-rs/target/release/agent-start-host --port 3030
-```
-
-Open `http://<server>:3030` from your phone (via tailnet, VPN, or LAN). The release binary is fully self-contained; no `--frontend-dist` flag is needed.
+The release binary is fully self-contained — see [Installation](#installation) to grab one or build from source. Open `http://<server>:3030` from your phone (via tailnet, VPN, or LAN).
 
 If you want to override the embedded SPA at runtime (e.g. staging a newer front bundle without rebuilding the host), pass `--frontend-dist <path>` or set `AGENT_START_FRONTEND_DIST`.
 
