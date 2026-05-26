@@ -11,11 +11,15 @@
  * and listens to prefers-color-scheme when the user picked "system".
  */
 :root {
-  /* Filled from JS via visualViewport.height — iOS Safari's bottom URL
-   * bar overlays content beyond 100dvh until the user scrolls, so a
-   * pure CSS height clips the bottom row. Fallback covers the
-   * pre-script-execution paint. */
-  --app-h: 100dvh;
+  /* `svh` is the *smallest* dynamic viewport — i.e. the visible area
+   * with browser chrome at its maximum extent. iOS Safari's overlay
+   * URL bar makes `dvh` lie until the user scrolls, so even the JS
+   * visualViewport.height read was racing the toolbar layout. `svh`
+   * always fits, at the cost of some bottom margin when the toolbar
+   * is hidden — preferable to having the terminal cursor disappear
+   * under the chrome. JS may still overwrite this with a tighter
+   * value when visualViewport is reliable. */
+  --app-h: 100svh;
 
   /* Surfaces */
   --app: 250 250 250; /* zinc-50 */
