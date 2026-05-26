@@ -49,7 +49,10 @@ export function Sheet({ open, onClose, children, maxWidth = "md", tall = false }
           "border-t border-line sm:border",
           "shadow-[0_-12px_40px_-12px_rgba(0,0,0,0.18)] sm:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.45)]",
           "flex flex-col overflow-hidden",
-          tall ? "h-[95dvh] sm:h-[92dvh]" : "max-h-[90vh]",
+          // Lock height on mobile so toggling content inside (e.g. 詳細
+          // オプション) doesn't jump the sheet up/down — body scrolls
+          // instead. Desktop keeps content-driven height.
+          tall ? "h-[95dvh] sm:h-[92dvh]" : "h-[80dvh] sm:h-auto sm:max-h-[90vh]",
         ].join(" ")}
       >
         {children}
@@ -109,5 +112,12 @@ export function SheetBody({
 }
 
 export function SheetFooter({ children }: { children: ReactNode }) {
-  return <div className="flex gap-2 px-5 py-3.5 border-t border-line safe-bottom">{children}</div>;
+  // Extra bottom padding on mobile so the action row breathes above the
+  // home indicator / device chrome — safe-area alone is 0 on non-notched
+  // phones and looked cramped.
+  return (
+    <div className="flex gap-2 px-5 pt-3.5 pb-5 sm:pb-3.5 border-t border-line safe-bottom">
+      {children}
+    </div>
+  );
 }

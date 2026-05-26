@@ -279,7 +279,7 @@ export function Sidebar({
         </div>
 
         {onAddProject && (
-          <div className="border-t border-line p-2 safe-bottom">
+          <div className="border-t border-line p-2">
             <button
               type="button"
               onClick={onAddProject}
