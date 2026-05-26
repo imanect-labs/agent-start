@@ -23,6 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # On workflow_dispatch the user supplies an existing tag; check it out
+          # so the build matches the tag exactly. On tag push, github.ref is
+          # already the tag ref.
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Install Vite+ (vp)
         run: curl -fsSL https://vite.plus | bash
@@ -75,6 +80,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Download front bundle
         uses: actions/download-artifact@v4
@@ -151,6 +158,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Download all archives
         uses: actions/download-artifact@v4
@@ -174,11 +183,15 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ steps.tag.outputs.tag }}"
+          # --verify-tag refuses to create a release for a tag that does not
+          # already exist, so a typo in `inputs.tag` (or a missing push) fails
+          # loudly instead of silently creating the tag off the default branch.
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/*.tar.gz dist/*.zip --clobber
           else
             gh release create "$tag" \
               --title "$tag" \
+              --verify-tag \
               --generate-notes \
               dist/*.tar.gz dist/*.zip
           fi
