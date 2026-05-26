@@ -28,7 +28,55 @@
 `vp dev` (:5173) を別プロセスで立て、Vite+ のプロキシ経由で `:3030` の host を叩く。
 本番では host バイナリ単体で完結する。
 
-## セットアップ
+## インストール
+
+[Releases](https://github.com/imanect-labs/agent-start/releases) ページで Linux (x86_64 / aarch64)、macOS (Apple Silicon / Intel)、Windows (x86_64) 向けのビルド済みバイナリを配布しています。Web UI は `rust-embed` でバイナリに同梱されているため、追加ファイルは不要です。
+
+### Linux / macOS (ワンライナー)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/imanect-labs/agent-start/main/install.sh | bash
+```
+
+最新リリースを自動検出し、OS / arch に合うバイナリを `~/.local/bin/agent-start-host` に配置します。環境変数:
+
+- `AGENT_START_VERSION=v0.1.0` — 特定バージョンを固定インストール
+- `INSTALL_DIR=/usr/local/bin` — 配置先を変更 (必要に応じて `sudo`)
+
+インストール後:
+
+```bash
+agent-start-host --port 3030      # 既定で 127.0.0.1 にバインド
+# ブラウザで http://localhost:3030
+```
+
+### 手動ダウンロード
+
+[Releases](https://github.com/imanect-labs/agent-start/releases) から該当プラットフォームのアーカイブをダウンロードして展開し、`agent-start-host` を `PATH` 上に配置してください。
+
+| プラットフォーム | アセット名 |
+| --- | --- |
+| Linux x86_64    | `agent-start-<tag>-x86_64-unknown-linux-gnu.tar.gz`     |
+| Linux aarch64   | `agent-start-<tag>-aarch64-unknown-linux-gnu.tar.gz`    |
+| macOS arm64     | `agent-start-<tag>-aarch64-apple-darwin.tar.gz`         |
+| macOS x86_64    | `agent-start-<tag>-x86_64-apple-darwin.tar.gz`          |
+| Windows x86_64  | `agent-start-<tag>-x86_64-pc-windows-msvc.zip`          |
+
+### ソースからビルド
+
+```bash
+git clone https://github.com/imanect-labs/agent-start
+cd agent-start
+(cd front && vp install && vp build)              # SPA を front/dist にビルド
+(cd server-rs && cargo build --release)           # rust-embed が front/dist を取り込む
+./server-rs/target/release/agent-start-host --port 3030
+```
+
+フロントのビルドには `vp` (Vite+) CLI が必要です ([ツールチェイン](#ツールチェイン) 参照)。Rust の最低要件は `server-rs/Cargo.toml` の `rust-version`。
+
+> ⚠️ `127.0.0.1` 以外にバインドする前に [SECURITY.md](./SECURITY.md) を必ず読んでください。本サーバは認証機構を持ちません。
+
+## セットアップ (開発)
 
 開発時は host (Rust) と front (Vite+) を別プロセスで動かす。本番では host が
 SPA を配信するので 1 バイナリで完結する。
