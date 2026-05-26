@@ -419,7 +419,7 @@ export function Terminal({
         )}
       </div>
 
-      <div className={`${vkClass} gap-1.5 overflow-x-auto -mx-1 px-1 pb-1`}>
+      <div className={`${vkClass} gap-1.5 overflow-x-auto -mx-1 px-1 pb-1 safe-bottom`}>
         <VirtualKeys onKey={handleVirtualKey} onScroll={handleScroll} ctrlActive={ctrlActive} />
       </div>
     </div>

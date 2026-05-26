@@ -114,8 +114,7 @@ export function Sidebar({
       else orphan.sessions.push(s);
     }
     // Sort sessions within each group by createdAt desc
-    for (const g of byPath.values())
-      g.sessions.sort((a, b) => b.createdAt - a.createdAt);
+    for (const g of byPath.values()) g.sessions.sort((a, b) => b.createdAt - a.createdAt);
     orphan.sessions.sort((a, b) => b.createdAt - a.createdAt);
 
     // Sort projects: those with running sessions first, then by mtimeMs desc
@@ -139,11 +138,8 @@ export function Sidebar({
       .map((g) => {
         const projHit =
           g.project &&
-          (g.project.name.toLowerCase().includes(q) ||
-            g.project.path.toLowerCase().includes(q));
-        const matchSessions = g.sessions.filter((s) =>
-          s.name.toLowerCase().includes(q),
-        );
+          (g.project.name.toLowerCase().includes(q) || g.project.path.toLowerCase().includes(q));
+        const matchSessions = g.sessions.filter((s) => s.name.toLowerCase().includes(q));
         if (projHit) return g; // show whole group with all sessions
         if (matchSessions.length > 0) return { ...g, sessions: matchSessions };
         return null;
@@ -169,9 +165,7 @@ export function Sidebar({
     const s = sessions.find((x) => x.name === activeSession);
     if (!s) return;
     const groupKey = sessionProjectPath(s);
-    setCollapsed((prev) =>
-      prev[groupKey] ? { ...prev, [groupKey]: false } : prev,
-    );
+    setCollapsed((prev) => (prev[groupKey] ? { ...prev, [groupKey]: false } : prev));
   }, [activeSession, sessions]);
 
   const totalSessions = sessions.length;
@@ -180,11 +174,7 @@ export function Sidebar({
   return (
     <>
       {isOverlay && open && onClose && (
-        <div
-          className="fixed inset-0 z-30 bg-black/40"
-          onClick={onClose}
-          aria-hidden
-        />
+        <div className="fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden />
       )}
       <aside
         className={[
@@ -193,32 +183,41 @@ export function Sidebar({
             ? [
                 "w-[85vw] max-w-80 shrink-0",
                 "fixed inset-y-0 left-0 z-40 transition-transform",
+                "safe-left safe-bottom",
                 open ? "translate-x-0" : "-translate-x-full",
               ].join(" ")
             : "w-full",
         ].join(" ")}
       >
-        <div className="px-3 py-3 flex items-center gap-2 border-b border-line">
+        <div className="px-3 py-2.5 flex items-center gap-2 border-b border-line">
           <div className="flex items-baseline gap-2 flex-1 min-w-0">
-            <span className="text-sm font-semibold tracking-tight text-fg">
-              agent-start
-            </span>
+            <span className="text-sm font-semibold tracking-tight text-fg">agent-start</span>
           </div>
           <button
             type="button"
             onClick={onRefresh}
             aria-label="再読み込み"
-            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
+            className="w-9 h-9 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
           >
             <IconRefresh className="w-4 h-4" />
           </button>
           <Link
             to="/settings"
             aria-label="設定"
-            className="w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
+            className="w-9 h-9 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
           >
             <IconGear className="w-4 h-4" />
           </Link>
+          {isOverlay && onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="閉じる"
+              className="w-9 h-9 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
+            >
+              <IconX className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         <div className="px-3 py-3 border-b border-line">
@@ -267,13 +266,9 @@ export function Sidebar({
                   key={g.key}
                   group={g}
                   expanded={!collapsed[g.key]}
-                  onToggle={() =>
-                    setCollapsed((prev) => ({ ...prev, [g.key]: !prev[g.key] }))
-                  }
+                  onToggle={() => setCollapsed((prev) => ({ ...prev, [g.key]: !prev[g.key] }))}
                   activeSession={activeSession}
-                  onLaunch={
-                    g.project ? () => onLaunchProject(g.project!) : null
-                  }
+                  onLaunch={g.project ? () => onLaunchProject(g.project!) : null}
                   onOpenSession={onOpenSession}
                   onStopSession={onStopSession}
                   onDeleteProject={onDeleteProject}
@@ -284,11 +279,11 @@ export function Sidebar({
         </div>
 
         {onAddProject && (
-          <div className="border-t border-line p-2">
+          <div className="border-t border-line p-2 safe-bottom">
             <button
               type="button"
               onClick={onAddProject}
-              className="w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-md border border-line bg-surface hover:bg-surface-muted text-sm text-fg"
+              className="w-full inline-flex items-center justify-center gap-1.5 h-11 sm:h-9 rounded-md border border-line bg-surface hover:bg-surface-muted text-sm text-fg"
             >
               <IconPlus className="w-3.5 h-3.5" /> プロジェクトを追加
             </button>
@@ -299,13 +294,7 @@ export function Sidebar({
   );
 }
 
-function PendingRow({
-  pending,
-  onCancel,
-}: {
-  pending: PendingProject;
-  onCancel: () => void;
-}) {
+function PendingRow({ pending, onCancel }: { pending: PendingProject; onCancel: () => void }) {
   const isError = !!pending.error;
   return (
     <li className="px-1.5">
@@ -366,7 +355,7 @@ function GroupRow({
     <li className="px-1.5 relative">
       <div
         className={[
-          "group flex items-center gap-1 px-1.5 py-1.5 rounded-md",
+          "group flex items-center gap-1 px-1.5 py-2 rounded-md min-h-[40px]",
           "hover:bg-surface-muted",
         ].join(" ")}
         onContextMenu={(e) => {
@@ -418,9 +407,9 @@ function GroupRow({
             }}
             aria-label="プロジェクト操作"
             title="…"
-            className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev opacity-0 group-hover:opacity-100 transition-opacity"
+            className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev opacity-0 group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity"
           >
-            <span className="text-xs">⋯</span>
+            <span className="text-base leading-none">⋯</span>
           </button>
         )}
         {onLaunch && (
@@ -429,7 +418,7 @@ function GroupRow({
             onClick={onLaunch}
             aria-label={`${name} で新規セッション`}
             title="新規セッション起動"
-            className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev"
+            className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev"
           >
             <IconPlus className="w-3.5 h-3.5" />
           </button>
@@ -437,11 +426,7 @@ function GroupRow({
       </div>
       {menuOpen && group.project && onDeleteProject && (
         <>
-          <div
-            className="fixed inset-0 z-20"
-            onClick={() => setMenuOpen(false)}
-            aria-hidden
-          />
+          <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} aria-hidden />
           <div className="absolute right-2 top-8 z-30 w-44 bg-surface-elev border border-line rounded-md shadow-lg py-1">
             <button
               type="button"
@@ -508,11 +493,9 @@ function SessionRow({
   return (
     <li
       className={[
-        "group ml-4 flex items-start gap-1.5 px-1.5 py-1.5 rounded-md",
+        "group ml-4 flex items-start gap-1.5 px-1.5 py-2 rounded-md min-h-[44px]",
         "cursor-pointer",
-        active
-          ? "bg-accent/10 text-fg"
-          : "hover:bg-surface-muted text-fg-muted",
+        active ? "bg-accent/10 text-fg" : "hover:bg-surface-muted text-fg-muted",
       ].join(" ")}
       onClick={onOpen}
     >
@@ -520,11 +503,7 @@ function SessionRow({
         aria-hidden
         className={[
           "mt-1.5 inline-block w-1.5 h-1.5 rounded-full shrink-0",
-          session.stopped
-            ? "bg-warn"
-            : session.attached
-              ? "bg-success"
-              : "bg-fg-faint",
+          session.stopped ? "bg-warn" : session.attached ? "bg-success" : "bg-fg-faint",
         ].join(" ")}
       />
       <div className="flex-1 min-w-0">
@@ -543,9 +522,7 @@ function SessionRow({
             {session.name}
           </span>
           {session.stopped && (
-            <span className="text-[9px] uppercase tracking-wider text-warn shrink-0">
-              stopped
-            </span>
+            <span className="text-[9px] uppercase tracking-wider text-warn shrink-0">stopped</span>
           )}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-fg-faint">
@@ -562,9 +539,9 @@ function SessionRow({
         }}
         aria-label="停止"
         title="停止"
-        className="shrink-0 w-5 h-5 inline-flex items-center justify-center rounded text-fg-faint hover:text-danger hover:bg-danger/10"
+        className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded text-fg-faint hover:text-danger hover:bg-danger/10"
       >
-        <IconX className="w-3 h-3" />
+        <IconX className="w-3.5 h-3.5" />
       </button>
     </li>
   );

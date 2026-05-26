@@ -187,21 +187,32 @@ export function SettingsPage() {
 
   return (
     <div className="min-h-[100dvh] bg-app text-fg flex flex-col">
-      <header className="sticky top-0 z-10 bg-surface border-b border-line">
-        <div className="max-w-5xl mx-auto w-full px-4 py-3 flex items-center gap-3">
+      <header className="sticky top-0 z-10 bg-surface border-b border-line safe-top">
+        <div className="max-w-5xl mx-auto w-full px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-3">
           <button
             type="button"
             onClick={cancel}
-            className="text-sm text-fg-subtle hover:text-fg"
+            className="h-10 sm:h-auto -ml-2 sm:ml-0 px-2 inline-flex items-center text-sm text-fg-subtle hover:text-fg"
             aria-label="戻る"
           >
             ← 戻る
           </button>
-          <h1 className="text-base font-semibold tracking-tight flex-1">設定</h1>
-          {dirty && <span className="text-[11px] text-warn">未保存</span>}
-          <Button variant="secondary" size="sm" onClick={cancel} disabled={saving}>
+          <h1 className="text-base font-semibold tracking-tight flex-1 truncate">設定</h1>
+          {dirty && <span className="hidden sm:inline text-[11px] text-warn">未保存</span>}
+          {/* キャンセルは「戻る」と同じ動作なのでモバイルでは省略。
+              dirty 時の警告ドットは「保存」ボタン左に小さく出す。 */}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={cancel}
+            disabled={saving}
+            className="hidden sm:inline-flex"
+          >
             キャンセル
           </Button>
+          {dirty && (
+            <span aria-hidden className="sm:hidden inline-block w-1.5 h-1.5 rounded-full bg-warn" />
+          )}
           <Button variant="primary" size="sm" loading={saving} onClick={save} disabled={!dirty}>
             保存
           </Button>

@@ -105,14 +105,16 @@ export function MainPane({
 
   return (
     <div className="h-full w-full min-w-0 flex flex-col bg-app">
-      {/* Session header */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-line bg-surface">
+      {/* Session header — tighter padding on mobile so the row holds its
+          height even with a long session name. Badges below sm only show
+          a colored status dot to keep everything on one line. */}
+      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 border-b border-line bg-surface min-h-[52px]">
         {onToggleSidebar && (
           <button
             type="button"
             onClick={onToggleSidebar}
             aria-label="サイドバーを開く"
-            className="lg:hidden -ml-1 w-8 h-8 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted"
+            className="lg:hidden -ml-1 w-10 h-10 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted"
           >
             <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
               <path d="M3 5h14v2H3V5Zm0 4h14v2H3V9Zm0 4h14v2H3v-2Z" />
@@ -120,15 +122,26 @@ export function MainPane({
           </button>
         )}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            {/* Mobile: tiny status dot (attached/stopped). Replaces the
+                wrapping badge row that doubled the header height. */}
+            <span
+              aria-hidden
+              className={[
+                "sm:hidden inline-block w-1.5 h-1.5 rounded-full shrink-0",
+                session.stopped ? "bg-warn" : session.attached ? "bg-success" : "bg-fg-faint",
+              ].join(" ")}
+            />
             <span className="font-mono text-sm text-fg truncate">{session.name}</span>
-            <Badge tone="violet">{cliLabel}</Badge>
-            {hasWorktree && <Badge tone="amber">worktree</Badge>}
-            {session.stopped ? (
-              <Badge tone="amber">停止中 (再起動後)</Badge>
-            ) : (
-              session.attached && <Badge tone="blue">接続中</Badge>
-            )}
+            <div className="hidden sm:flex items-center gap-1.5 flex-wrap">
+              <Badge tone="violet">{cliLabel}</Badge>
+              {hasWorktree && <Badge tone="amber">worktree</Badge>}
+              {session.stopped ? (
+                <Badge tone="amber">停止中 (再起動後)</Badge>
+              ) : (
+                session.attached && <Badge tone="blue">接続中</Badge>
+              )}
+            </div>
           </div>
           <div className="text-[11px] text-fg-subtle truncate mt-0.5 font-mono">
             {session.origPath || session.path}
@@ -138,11 +151,13 @@ export function MainPane({
           type="button"
           onClick={onToggleRightPane}
           className={[
-            "shrink-0 h-8 px-2.5 inline-flex items-center gap-1.5 rounded-md border text-xs",
+            "shrink-0 h-10 sm:h-8 inline-flex items-center justify-center gap-1.5 rounded-md border",
+            "w-10 sm:w-auto sm:px-2.5 text-xs",
             rightPaneOpen
               ? "bg-surface-muted text-fg border-line-strong"
               : "bg-surface text-fg-muted border-line hover:bg-surface-muted",
           ].join(" ")}
+          aria-label={rightPaneOpen ? "右ペインを隠す" : "右ペインを表示"}
           title={rightPaneOpen ? "右ペインを隠す" : "右ペインを表示"}
         >
           <IconChevronRight
@@ -150,7 +165,7 @@ export function MainPane({
               " ",
             )}
           />
-          変更
+          <span className="hidden sm:inline">変更</span>
         </button>
         {/* Inline buttons on sm+; collapsed into a kebab menu on phones
             so the header doesn't wrap and badges stay on one row. */}
@@ -330,7 +345,7 @@ function TabBar({
                 // behaviour the user hit: without it, tabs squish to
                 // their min content, and once min content > available
                 // width the row reflows.
-                "shrink-0 group flex items-center gap-2 pl-3 pr-1 py-2 border-r border-line max-w-[140px] sm:max-w-[200px] cursor-pointer",
+                "shrink-0 group flex items-center gap-2 pl-3 pr-1 py-2.5 sm:py-2 border-r border-line max-w-[140px] sm:max-w-[200px] cursor-pointer",
                 isActive ? "bg-app text-fg" : "text-fg-muted hover:bg-surface",
               ].join(" ")}
               onClick={() => onSelect(t.id)}
@@ -348,9 +363,9 @@ function TabBar({
                   e.stopPropagation();
                   onClose(t.id);
                 }}
-                className="ml-1 w-5 h-5 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev"
+                className="ml-1 w-7 h-7 sm:w-5 sm:h-5 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev"
               >
-                <IconX className="w-3 h-3" />
+                <IconX className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
               </button>
             </div>
           );
@@ -362,7 +377,7 @@ function TabBar({
         <button
           type="button"
           onClick={() => setMenuOpen((s) => !s)}
-          className="h-full px-3 inline-flex items-center text-fg-faint hover:text-fg hover:bg-surface"
+          className="h-full px-4 sm:px-3 inline-flex items-center text-fg-faint hover:text-fg hover:bg-surface"
           aria-label="タブを追加"
           title="タブを追加"
         >
@@ -520,7 +535,7 @@ function HeaderActionsMenu({
         onClick={() => setOpen((v) => !v)}
         aria-label="セッション操作"
         title="セッション操作"
-        className="w-8 h-8 inline-flex items-center justify-center rounded-md border border-line bg-surface text-fg-muted hover:bg-surface-muted"
+        className="w-10 h-10 inline-flex items-center justify-center rounded-md border border-line bg-surface text-fg-muted hover:bg-surface-muted"
       >
         <span className="text-base leading-none">⋯</span>
       </button>

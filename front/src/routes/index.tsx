@@ -506,7 +506,7 @@ export function IndexPage() {
     ) : null;
 
   return (
-    <main className="h-[100dvh] flex bg-app text-fg overflow-hidden">
+    <main className="h-[100dvh] flex bg-app text-fg overflow-hidden safe-top safe-left safe-right">
       {isDesktop ? (
         <PanelGroup
           direction="horizontal"

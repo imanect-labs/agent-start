@@ -33,7 +33,7 @@ export function RightPane({ cwd, onClose, onOpenFile, onOpenDiff, mode = "inline
       className={[
         "h-full flex flex-col border-l border-line bg-surface",
         mode === "overlay"
-          ? "fixed inset-y-0 right-0 z-40 w-[min(420px,100vw)] shadow-xl overscroll-contain"
+          ? "fixed inset-y-0 right-0 z-40 w-[min(420px,100vw)] shadow-xl overscroll-contain safe-bottom"
           : "w-full",
       ].join(" ")}
     >
