@@ -36,7 +36,11 @@ export function Sheet({ open, onClose, children, maxWidth = "md", tall = false }
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center"
+      // Sized to the visible viewport via --app-h so items-end anchors
+      // the sheet at the actual visible bottom — `fixed inset-0`
+      // extends below iOS Safari's overlay toolbar and the sheet's
+      // footer ends up hidden behind the chrome.
+      className="fixed top-0 left-0 right-0 h-[var(--app-h)] z-[100] flex items-end sm:items-center justify-center"
       role="dialog"
       aria-modal="true"
     >
@@ -52,7 +56,9 @@ export function Sheet({ open, onClose, children, maxWidth = "md", tall = false }
           // Lock height on mobile so toggling content inside (e.g. 詳細
           // オプション) doesn't jump the sheet up/down — body scrolls
           // instead. Desktop keeps content-driven height.
-          tall ? "h-[95dvh] sm:h-[92dvh]" : "h-[80dvh] sm:h-auto sm:max-h-[90vh]",
+          tall
+            ? "h-[calc(var(--app-h)*0.95)] sm:h-[calc(var(--app-h)*0.92)]"
+            : "h-[calc(var(--app-h)*0.8)] sm:h-auto sm:max-h-[90vh]",
         ].join(" ")}
       >
         {children}

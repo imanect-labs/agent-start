@@ -3,7 +3,10 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { SWRConfig } from "swr";
 import { router } from "./router";
+import { installAppHeightVar } from "./lib/viewportHeight";
 import "./styles/globals.css";
+
+installAppHeightVar();
 
 const SWR_CACHE_KEY = "agent-start:swr-cache:v1";
 // Keys whose responses we mirror to localStorage so a reload paints content

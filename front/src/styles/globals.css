@@ -11,6 +11,12 @@
  * and listens to prefers-color-scheme when the user picked "system".
  */
 :root {
+  /* Filled from JS via visualViewport.height — iOS Safari's bottom URL
+   * bar overlays content beyond 100dvh until the user scrolls, so a
+   * pure CSS height clips the bottom row. Fallback covers the
+   * pre-script-execution paint. */
+  --app-h: 100dvh;
+
   /* Surfaces */
   --app: 250 250 250; /* zinc-50 */
   --surface: 255 255 255; /* white */

@@ -186,7 +186,7 @@ export function SettingsPage() {
   const loading = prefLoading || cfgLoading;
 
   return (
-    <div className="min-h-[100dvh] bg-app text-fg flex flex-col">
+    <div className="min-h-[var(--app-h)] bg-app text-fg flex flex-col">
       <header className="sticky top-0 z-10 bg-surface border-b border-line safe-top">
         <div className="max-w-5xl mx-auto w-full px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-3">
           <button
