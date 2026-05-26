@@ -1,0 +1,184 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.1.0). Must already exist."
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build-front:
+    name: Build front-end bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vite+ (vp)
+        run: curl -fsSL https://vite.plus | bash
+
+      - name: Add vp to PATH
+        run: echo "$HOME/.vite-plus/bin" >> "$GITHUB_PATH"
+
+      - name: Install front deps
+        working-directory: front
+        run: vp install
+
+      - name: Build SPA
+        working-directory: front
+        run: vp build
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: front-dist
+          path: front/dist
+          if-no-files-found: error
+
+  build-host:
+    name: Build host (${{ matrix.target }})
+    needs: build-front
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+            use_cross: false
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            archive: tar.gz
+            use_cross: true
+          - os: macos-14
+            target: aarch64-apple-darwin
+            archive: tar.gz
+            use_cross: false
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive: tar.gz
+            use_cross: false
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+            use_cross: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download front bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: front-dist
+          path: front/dist
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross (Linux aarch64)
+        if: matrix.use_cross
+        run: cargo install cross --locked
+
+      - name: Build (native)
+        if: ${{ !matrix.use_cross }}
+        working-directory: server-rs
+        run: cargo build --release --bin agent-start-host --target ${{ matrix.target }}
+
+      - name: Build (cross)
+        if: matrix.use_cross
+        working-directory: server-rs
+        run: cross build --release --bin agent-start-host --target ${{ matrix.target }}
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Package (unix)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          target="${{ matrix.target }}"
+          name="agent-start-${tag}-${target}"
+          mkdir -p "dist/${name}"
+          cp "server-rs/target/${target}/release/agent-start-host" "dist/${name}/"
+          cp README.md LICENSE "dist/${name}/" 2>/dev/null || true
+          (cd dist && tar czf "${name}.tar.gz" "${name}")
+          echo "ASSET=dist/${name}.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Package (windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.tag.outputs.tag }}"
+          $target = "${{ matrix.target }}"
+          $name = "agent-start-$tag-$target"
+          New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
+          Copy-Item "server-rs/target/$target/release/agent-start-host.exe" "dist/$name/"
+          Copy-Item README.md, LICENSE "dist/$name/" -ErrorAction SilentlyContinue
+          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
+          echo "ASSET=dist/$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build-host
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create / update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/*.tar.gz dist/*.zip --clobber
+          else
+            gh release create "$tag" \
+              --title "$tag" \
+              --generate-notes \
+              dist/*.tar.gz dist/*.zip
+          fi

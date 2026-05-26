@@ -1,6 +1,8 @@
 node_modules
 front/node_modules
 front/dist
+target/
+server-rs/target/
 .env*.local
 *.log
 .DS_Store

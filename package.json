@@ -2,6 +2,8 @@
   "name": "agent-start",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "repository": "https://github.com/imanect-labs/agent-start",
   "description": "Root package: thin script proxy. Real front-end lives in ./front/ and is driven by Vite+ (vp CLI). Rust host lives in ./server-rs/.",
   "scripts": {
     "dev:front": "cd front && vp dev",
