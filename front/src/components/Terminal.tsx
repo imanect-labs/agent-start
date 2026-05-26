@@ -393,7 +393,12 @@ export function Terminal({
         <div
           ref={containerRef}
           onClick={focusTerm}
-          className="rounded-md border border-line p-2 overflow-hidden h-full"
+          // pb-3 (vs the p-2 on the other sides) reserves a full extra
+          // cell of vertical buffer so the bottom cursor block never
+          // sinks under the rounded border — xterm fit-addon's row
+          // count is floor()ed and the leftover sub-pixel commonly
+          // ate the cursor's bottom edge on small viewports.
+          className="rounded-md border border-line px-2 pt-2 pb-3 overflow-hidden h-full"
           style={{
             touchAction: "none",
             background: theme.background,
