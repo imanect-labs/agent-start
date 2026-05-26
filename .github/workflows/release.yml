@@ -61,10 +61,9 @@ jobs:
             target: x86_64-unknown-linux-gnu
             archive: tar.gz
             use_cross: false
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            archive: tar.gz
-            use_cross: true
+          # aarch64-unknown-linux-gnu temporarily disabled: cross's bundled
+          # toolchain is too old for the rust-embed macro. Re-enable once
+          # cross ships a newer rustc or we move to a native arm64 runner.
           - os: macos-14
             target: aarch64-apple-darwin
             archive: tar.gz
