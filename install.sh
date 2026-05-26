@@ -2,7 +2,7 @@
 # agent-start installer
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/imanect-labs/agent-start/main/install.sh | bash
+#   curl -fsSL https://agentstart.imanect.app/install.sh | bash
 #
 # Environment overrides:
 #   AGENT_START_VERSION=v0.1.0   # pin a specific release (default: latest)

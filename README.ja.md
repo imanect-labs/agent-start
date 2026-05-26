@@ -35,7 +35,7 @@
 ### Linux / macOS (ワンライナー)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/imanect-labs/agent-start/main/install.sh | bash
+curl -fsSL https://agentstart.imanect.app/install.sh | bash
 ```
 
 最新リリースを自動検出し、OS / arch に合うバイナリを `~/.local/bin/agent-start-host` に配置します。環境変数:

@@ -40,7 +40,7 @@ Pre-built binaries are published on the [Releases page](https://github.com/imane
 ### Linux / macOS (one-liner)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/imanect-labs/agent-start/main/install.sh | bash
+curl -fsSL https://agentstart.imanect.app/install.sh | bash
 ```
 
 This fetches the latest release, picks the right target for your OS/arch, and drops `agent-start-host` into `~/.local/bin/`. Environment overrides:
