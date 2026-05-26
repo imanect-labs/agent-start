@@ -9,6 +9,8 @@
 
 A self-hosted web launcher that lets you start and manage **`claude` / `codex` CLI** sessions on a remote machine (e.g. your home Linux box) from any browser, including a phone over a tailnet.
 
+<img width="1338" height="882" alt="agent-start-screenshot" src="https://github.com/user-attachments/assets/8edfb7a1-97d4-46d1-8882-93a6e3cd13fe" />
+
 - Browse projects, tap one, and spawn `claude` or `codex` inside a persistent PTY session.
 - List, preview, and stop running sessions.
 - Optionally start each session inside a fresh **`git worktree`** so parallel agents do not stomp on each other.
