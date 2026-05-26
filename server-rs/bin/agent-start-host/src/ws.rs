@@ -66,14 +66,16 @@ async fn handle_stopped(socket: WebSocket, history: Vec<u8>) {
     if history.is_empty() {
         let _ = sink
             .send(Message::Binary(
-                b"\r\n(no terminal history saved for this session)\r\n".to_vec(),
+                b"\r\n(no terminal history saved for this session)\r\n".to_vec().into(),
             ))
             .await;
     } else {
-        let _ = sink.send(Message::Binary(history)).await;
+        let _ = sink.send(Message::Binary(history.into())).await;
         let _ = sink
             .send(Message::Binary(
-                b"\r\n\x1b[2m-- session stopped (restored from snapshot) --\x1b[0m\r\n".to_vec(),
+                b"\r\n\x1b[2m-- session stopped (restored from snapshot) --\x1b[0m\r\n"
+                    .to_vec()
+                    .into(),
             ))
             .await;
     }
@@ -94,7 +96,7 @@ async fn handle(socket: WebSocket, session: std::sync::Arc<pty_manager::PtySessi
 
     let (history, mut rx) = session.subscribe();
     if !history.is_empty() {
-        if let Err(err) = sink.send(Message::Binary(history)).await {
+        if let Err(err) = sink.send(Message::Binary(history.into())).await {
             tracing::debug!(?err, "failed to send history; closing");
             return;
         }
@@ -105,7 +107,7 @@ async fn handle(socket: WebSocket, session: std::sync::Arc<pty_manager::PtySessi
         loop {
             match rx.recv().await {
                 Ok(chunk) => {
-                    if sink.send(Message::Binary(chunk)).await.is_err() {
+                    if sink.send(Message::Binary(chunk.into())).await.is_err() {
                         break;
                     }
                 }
@@ -113,7 +115,7 @@ async fn handle(socket: WebSocket, session: std::sync::Arc<pty_manager::PtySessi
                     // We dropped some chunks; resend the current ring buffer so
                     // the client recovers without an explicit signal.
                     let snap = writer_session.subscribe().0;
-                    if !snap.is_empty() && sink.send(Message::Binary(snap)).await.is_err() {
+                    if !snap.is_empty() && sink.send(Message::Binary(snap.into())).await.is_err() {
                         break;
                     }
                 }
