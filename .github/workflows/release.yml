@@ -68,10 +68,10 @@ jobs:
             target: aarch64-apple-darwin
             archive: tar.gz
             use_cross: false
-          - os: macos-13
-            target: x86_64-apple-darwin
-            archive: tar.gz
-            use_cross: false
+          # x86_64-apple-darwin temporarily disabled: macos-13 (Intel) hosted
+          # runners frequently sit in "waiting for runner" for many minutes,
+          # blocking release publication. Re-enable once we have a reliable
+          # Intel runner or decide to drop Intel mac support permanently.
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             archive: zip
