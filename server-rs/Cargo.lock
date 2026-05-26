@@ -25,7 +25,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -52,7 +52,7 @@ dependencies = [
  "serde",
  "serde_json",
  "state",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-tungstenite 0.21.0",
  "tower",
@@ -387,7 +387,7 @@ dependencies = [
  "anyhow",
  "config-loader",
  "parking_lot",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]
@@ -417,7 +417,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -806,7 +806,7 @@ version = "0.1.0"
 dependencies = [
  "config-loader",
  "serde",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tracing",
 ]
 
@@ -1538,7 +1538,7 @@ dependencies = [
  "parking_lot",
  "portable-pty",
  "state",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]
@@ -2327,7 +2327,7 @@ dependencies = [
  "config-loader",
  "serde",
  "sqlx",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]
@@ -3458,7 +3458,7 @@ dependencies = [
  "dirs",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tracing",
 ]
 
