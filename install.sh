@@ -92,7 +92,7 @@ main() {
   archive="agent-start-${version}-${target}.tar.gz"
   url="https://github.com/${REPO}/releases/download/${version}/${archive}"
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
+  trap 'rm -rf "${tmp:-}"' EXIT
 
   info "downloading $url"
   $DL "$url" > "$tmp/$archive"
