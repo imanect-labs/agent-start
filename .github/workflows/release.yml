@@ -44,7 +44,7 @@ jobs:
         run: vp build
 
       - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: front-dist
           path: front/dist
@@ -146,7 +146,7 @@ jobs:
           echo "ASSET=dist/$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Upload archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.target }}
           path: ${{ env.ASSET }}
