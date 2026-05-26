@@ -213,10 +213,10 @@ async fn proxy_websocket(req: Request, port: u16, suffix: String) -> Response {
             while let Some(msg) = client_rx.next().await {
                 let Ok(msg) = msg else { break };
                 let frame = match msg {
-                    AxMessage::Text(t) => TgMessage::Text(t),
-                    AxMessage::Binary(b) => TgMessage::Binary(b),
-                    AxMessage::Ping(p) => TgMessage::Ping(p),
-                    AxMessage::Pong(p) => TgMessage::Pong(p),
+                    AxMessage::Text(t) => TgMessage::Text(t.to_string()),
+                    AxMessage::Binary(b) => TgMessage::Binary(b.to_vec()),
+                    AxMessage::Ping(p) => TgMessage::Ping(p.to_vec()),
+                    AxMessage::Pong(p) => TgMessage::Pong(p.to_vec()),
                     AxMessage::Close(_) => {
                         let _ = up_tx.send(TgMessage::Close(None)).await;
                         break;
@@ -232,10 +232,10 @@ async fn proxy_websocket(req: Request, port: u16, suffix: String) -> Response {
             while let Some(msg) = up_rx.next().await {
                 let Ok(msg) = msg else { break };
                 let frame = match msg {
-                    TgMessage::Text(t) => AxMessage::Text(t),
-                    TgMessage::Binary(b) => AxMessage::Binary(b),
-                    TgMessage::Ping(p) => AxMessage::Ping(p),
-                    TgMessage::Pong(p) => AxMessage::Pong(p),
+                    TgMessage::Text(t) => AxMessage::Text(t.into()),
+                    TgMessage::Binary(b) => AxMessage::Binary(b.into()),
+                    TgMessage::Ping(p) => AxMessage::Ping(p.into()),
+                    TgMessage::Pong(p) => AxMessage::Pong(p.into()),
                     TgMessage::Close(_) => {
                         let _ = client_tx.send(AxMessage::Close(None)).await;
                         break;
