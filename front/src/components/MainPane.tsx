@@ -60,7 +60,7 @@ export function MainPane({
   onOpenDiff,
 }: Props) {
   if (!session || !tabs) {
-    return <WelcomeBanner />;
+    return <WelcomeBanner onToggleSidebar={onToggleSidebar} />;
   }
 
   const active = tabs.tabs.find((t) => t.id === tabs.activeTabId) ?? null;
@@ -606,23 +606,43 @@ function MenuButton({
   );
 }
 
-function WelcomeBanner() {
+function WelcomeBanner({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
   return (
-    <div className="h-full w-full flex items-center justify-center bg-app">
-      <div className="text-center max-w-md px-6">
-        <div className="mx-auto w-14 h-14 rounded-xl bg-surface-muted border border-line flex items-center justify-center text-fg-subtle">
-          <IconTerminal className="w-6 h-6" />
+    <div className="h-full w-full flex flex-col bg-app">
+      {/* Mobile/tablet still needs a way to open the sidebar before any
+          session exists — otherwise the user is stranded on the welcome
+          screen with no entry point. Desktop hides this bar via lg:hidden. */}
+      {onToggleSidebar && (
+        <div className="lg:hidden flex items-center gap-2 px-3 py-2 border-b border-line bg-surface min-h-[52px]">
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label="サイドバーを開く"
+            className="-ml-1 w-10 h-10 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted"
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M3 5h14v2H3V5Zm0 4h14v2H3V9Zm0 4h14v2H3v-2Z" />
+            </svg>
+          </button>
+          <span className="text-sm font-semibold tracking-tight text-fg">agent-start</span>
         </div>
-        <h2 className="mt-4 text-base font-semibold text-fg">セッションが選択されていません</h2>
-        <p className="mt-1 text-sm text-fg-subtle">
-          左のサイドバーからプロジェクトを選び、 <span className="font-mono">＋</span>{" "}
-          で新しいセッションを起動するか、稼働中のセッションをクリックしてターミナルを開きます。
-        </p>
-        <p className="mt-3 text-[11px] text-fg-faint inline-flex items-center gap-1">
-          <IconBranch className="inline w-3 h-3" /> = worktree 付き
-          <span className="mx-1">·</span>
-          選択中のセッションには複数のタブとファイル変更ペインを開けます
-        </p>
+      )}
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center max-w-md px-6">
+          <div className="mx-auto w-14 h-14 rounded-xl bg-surface-muted border border-line flex items-center justify-center text-fg-subtle">
+            <IconTerminal className="w-6 h-6" />
+          </div>
+          <h2 className="mt-4 text-base font-semibold text-fg">セッションが選択されていません</h2>
+          <p className="mt-1 text-sm text-fg-subtle">
+            左のサイドバーからプロジェクトを選び、 <span className="font-mono">＋</span>{" "}
+            で新しいセッションを起動するか、稼働中のセッションをクリックしてターミナルを開きます。
+          </p>
+          <p className="mt-3 text-[11px] text-fg-faint inline-flex items-center gap-1">
+            <IconBranch className="inline w-3 h-3" /> = worktree 付き
+            <span className="mx-1">·</span>
+            選択中のセッションには複数のタブとファイル変更ペインを開けます
+          </p>
+        </div>
       </div>
     </div>
   );
