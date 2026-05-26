@@ -225,7 +225,7 @@ export function Terminal({
         const lines = Math.trunc(accum / ROW_PX);
         if (lines !== 0) {
           accum -= lines * ROW_PX;
-          dispatchScroll(ws, -lines);
+          termRef.current?.scrollLines(-lines);
           e.preventDefault();
         }
       };
@@ -370,7 +370,9 @@ export function Terminal({
     if (!term) return;
     const visible = term.rows ?? 10;
     const lines = direction * Math.max(5, visible - 2);
-    dispatchScroll(wsRef.current, lines);
+    // Scroll xterm's local scrollback — the backend has no "scroll"
+    // message handler, so dispatching via WS was silently a no-op.
+    term.scrollLines(lines);
   };
 
   const vkClass =
@@ -460,17 +462,6 @@ function sendInputViaWs(ws: WebSocket | null, data: string) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "input", data }));
   }
-}
-
-function dispatchScroll(ws: WebSocket | null, lines: number) {
-  if (!ws || ws.readyState !== WebSocket.OPEN || lines === 0) return;
-  ws.send(
-    JSON.stringify({
-      type: "scroll",
-      direction: lines < 0 ? -1 : 1,
-      count: Math.abs(lines),
-    }),
-  );
 }
 
 type KeyDef =
