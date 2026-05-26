@@ -29,7 +29,7 @@ state          = { path = "crates/state" }
 workspace-manager = { path = "crates/workspace-manager" }
 
 anyhow = "1"
-thiserror = "1"
+thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
