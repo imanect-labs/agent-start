@@ -66,7 +66,9 @@ async fn handle_stopped(socket: WebSocket, history: Vec<u8>) {
     if history.is_empty() {
         let _ = sink
             .send(Message::Binary(
-                b"\r\n(no terminal history saved for this session)\r\n".to_vec().into(),
+                b"\r\n(no terminal history saved for this session)\r\n"
+                    .to_vec()
+                    .into(),
             ))
             .await;
     } else {
