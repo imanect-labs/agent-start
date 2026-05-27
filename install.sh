@@ -37,6 +37,34 @@ need() {
   command -v "$1" >/dev/null 2>&1 || err "missing required command: $1"
 }
 
+have() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+check_runtime_deps() {
+  # agent-start-host shells out to these at runtime. They are not required
+  # to *install* the binary, but the host will fail to do useful work
+  # without them. Warn rather than abort so users can install the missing
+  # pieces on their own schedule.
+  local missing=() optional_missing=()
+
+  have git         || missing+=("git (required for worktree / project ops)")
+  have code-server || missing+=("code-server (required for the in-browser editor — https://github.com/coder/code-server)")
+
+  if ! have claude && ! have codex; then
+    optional_missing+=("an agent CLI: 'claude' (https://docs.anthropic.com/en/docs/claude-code) and/or 'codex' (https://github.com/openai/codex) — at least one is needed to launch sessions")
+  fi
+
+  if [ ${#missing[@]} -gt 0 ] || [ ${#optional_missing[@]} -gt 0 ]; then
+    printf '\n'
+    warn "agent-start-host installed, but some runtime dependencies are missing:"
+    for m in "${missing[@]}" "${optional_missing[@]}"; do
+      printf '  - %s\n' "$m" >&2
+    done
+    printf '\nInstall the missing tools before starting agent-start-host.\n' >&2
+  fi
+}
+
 need uname
 need tar
 if command -v curl >/dev/null 2>&1; then
@@ -224,6 +252,8 @@ Then reopen the shell or run: source <that file>
 EOF
       ;;
   esac
+
+  check_runtime_deps
 
   if [ "$SERVICE" = "1" ] || [ "$SERVICE" = "true" ]; then
     os="$(uname -s)"
