@@ -1,7 +1,7 @@
 use anyhow::Result;
 use axum::http::{header, StatusCode, Uri};
 use axum::response::IntoResponse;
-use axum::routing::{any, delete, get, put};
+use axum::routing::{any, delete, get, post, put};
 use axum::Router;
 use code_server_manager::CodeServerManager;
 use novnc_manager::NovncManager;
@@ -255,6 +255,24 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         .route("/api/git/diff", get(crate::http::git_diff))
         .route("/api/projects/issues", get(crate::http::list_issues))
         .route("/api/projects/issue", get(crate::http::view_issue))
+        .route("/api/git/stage", post(crate::http::git_stage))
+        .route("/api/git/unstage", post(crate::http::git_unstage))
+        .route("/api/git/commit", post(crate::http::git_commit))
+        .route("/api/git/discard", post(crate::http::git_discard))
+        .route(
+            "/api/git/branches",
+            get(crate::http::git_branches).post(crate::http::git_create_branch),
+        )
+        .route(
+            "/api/git/branches/delete",
+            post(crate::http::git_delete_branch),
+        )
+        .route("/api/git/checkout", post(crate::http::git_checkout))
+        .route("/api/git/fetch", post(crate::http::git_fetch))
+        .route("/api/git/pull", post(crate::http::git_pull))
+        .route("/api/git/push", post(crate::http::git_push))
+        .route("/api/git/log", get(crate::http::git_log))
+        .route("/api/git/tree", get(crate::http::git_tree))
         .route(
             "/api/sessions/{name}/code-server",
             axum::routing::post(crate::http::open_code_server)
