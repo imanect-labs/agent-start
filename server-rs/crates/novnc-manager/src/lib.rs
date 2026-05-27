@@ -331,10 +331,7 @@ mod tests {
 
     #[test]
     fn resolve_missing_websockify_errors() {
-        std::env::set_var(
-            "AGENT_START_WEBSOCKIFY_BIN",
-            "/nonexistent/websockify-xyz",
-        );
+        std::env::set_var("AGENT_START_WEBSOCKIFY_BIN", "/nonexistent/websockify-xyz");
         let r = resolve_websockify();
         std::env::remove_var("AGENT_START_WEBSOCKIFY_BIN");
         assert!(matches!(r, Err(NovncError::WebsockifyNotInstalled)));

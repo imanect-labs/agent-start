@@ -271,19 +271,12 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         )
         .route(
             "/api/sessions/{name}/novnc",
-            axum::routing::post(crate::http::open_novnc)
-                .delete(crate::http::close_novnc),
+            axum::routing::post(crate::http::open_novnc).delete(crate::http::close_novnc),
         )
         // Reverse proxy to per-session websockify child. Same shape as
         // the code-server proxy above: root, root-slash, and wildcard.
-        .route(
-            "/vnc/{name}",
-            any(crate::http::novnc_proxy::proxy_handler),
-        )
-        .route(
-            "/vnc/{name}/",
-            any(crate::http::novnc_proxy::proxy_handler),
-        )
+        .route("/vnc/{name}", any(crate::http::novnc_proxy::proxy_handler))
+        .route("/vnc/{name}/", any(crate::http::novnc_proxy::proxy_handler))
         .route(
             "/vnc/{name}/{*rest}",
             any(crate::http::novnc_proxy::proxy_handler),

@@ -46,9 +46,7 @@ pub async fn open_novnc(State(app): State<Shared>, Path(name): Path<String>) -> 
     // `path=websockify` tells noVNC's vnc.html which sub-path under the
     // page origin to upgrade the WebSocket on — matches what websockify
     // exposes when invoked with a target host:port positional argument.
-    let url = format!(
-        "/vnc/{name}/vnc.html?path=vnc/{name}/websockify&autoconnect=1&resize=scale"
-    );
+    let url = format!("/vnc/{name}/vnc.html?path=vnc/{name}/websockify&autoconnect=1&resize=scale");
     Json(OpenResponse {
         url,
         ws_port: instance.ws_port(),
