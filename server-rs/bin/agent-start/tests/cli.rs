@@ -59,10 +59,20 @@ fn project_add_requires_a_source() {
 }
 
 /// Resolve the path to the sibling `agent-start-host` binary in the same
-/// target dir, if it has been built.
+/// target dir, if it has been built. We derive it from this test binary's
+/// own location (`<target>/<profile>/deps/cli-HASH`) rather than
+/// `assert_cmd::cargo::cargo_bin`, which panics for binaries that live in a
+/// different workspace package (its `CARGO_BIN_EXE_*` is unset for them).
 fn host_bin() -> Option<PathBuf> {
-    let p = assert_cmd::cargo::cargo_bin("agent-start-host");
-    p.exists().then_some(p)
+    let exe = std::env::current_exe().ok()?;
+    let profile_dir = exe.parent()?.parent()?; // .../deps -> .../<profile>
+    let name = if cfg!(windows) {
+        "agent-start-host.exe"
+    } else {
+        "agent-start-host"
+    };
+    let candidate = profile_dir.join(name);
+    candidate.exists().then_some(candidate)
 }
 
 fn free_port() -> u16 {
