@@ -6,7 +6,7 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Args;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 const DEFAULT_INSTALL_URL: &str = "https://agentstart.imanect.app/install.sh";
 
@@ -63,25 +63,48 @@ pub fn run(args: UpdateArgs) -> Result<()> {
     }
 
     let downloader = pick_downloader().context("need either curl or wget on PATH")?;
-    let cmd_line = format!("{downloader} {url} | bash");
 
-    let mut shell = Command::new("bash");
-    shell.arg("-c").arg(&cmd_line);
+    // Spawn the downloader and bash as two separate processes and pipe the
+    // installer script over stdin. This avoids interpolating `url` into a
+    // shell string, which would be unsafe if --url / env override ever
+    // contained shell metacharacters.
+    let mut dl_cmd = Command::new(downloader.exe);
+    dl_cmd.args(downloader.args).arg(&url).stdout(Stdio::piped());
+    let mut dl_child = dl_cmd
+        .spawn()
+        .with_context(|| format!("failed to spawn {}", downloader.exe))?;
+    let dl_stdout = dl_child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("failed to capture {} stdout", downloader.exe))?;
+
+    let mut bash_cmd = Command::new("bash");
+    bash_cmd.arg("-s").stdin(Stdio::from(dl_stdout));
     if let Some(v) = args.version {
-        shell.env("AGENT_START_VERSION", v);
+        bash_cmd.env("AGENT_START_VERSION", v);
     }
     if service_mode {
-        shell.env("AGENT_START_SERVICE", "1");
+        bash_cmd.env("AGENT_START_SERVICE", "1");
     }
 
-    let status = shell
+    let bash_status = bash_cmd
         .status()
-        .with_context(|| format!("failed to spawn shell to run installer ({cmd_line})"))?;
+        .context("failed to spawn bash to run installer")?;
+    let dl_status = dl_child
+        .wait()
+        .with_context(|| format!("failed to wait for {}", downloader.exe))?;
 
-    if !status.success() {
+    if !dl_status.success() {
         return Err(anyhow!(
-            "installer exited with status {} — your existing install was not changed if the download failed before the install step",
-            status
+            "downloader {} exited with status {} — your existing install was not changed",
+            downloader.exe,
+            dl_status
+        ));
+    }
+    if !bash_status.success() {
+        return Err(anyhow!(
+            "installer exited with status {} — re-run with --no-service or fix the reported error and try again",
+            bash_status
         ));
     }
 
@@ -94,11 +117,22 @@ pub fn run(args: UpdateArgs) -> Result<()> {
     Ok(())
 }
 
-fn pick_downloader() -> Option<&'static str> {
+struct Downloader {
+    exe: &'static str,
+    args: &'static [&'static str],
+}
+
+fn pick_downloader() -> Option<Downloader> {
     if which("curl") {
-        Some("curl -fsSL")
+        Some(Downloader {
+            exe: "curl",
+            args: &["-fsSL"],
+        })
     } else if which("wget") {
-        Some("wget -qO-")
+        Some(Downloader {
+            exe: "wget",
+            args: &["-qO-"],
+        })
     } else {
         None
     }
