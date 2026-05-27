@@ -255,8 +255,10 @@ install_vnc_stack() {
     dbus-x11 dbus-user-session
     fonts-ubuntu
   )
-  DEBIAN_FRONTEND=noninteractive $SUDO apt-get update -y \
-    && DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y --no-install-recommends "${pkgs[@]}" \
+  # sudo strips env vars by default, so pass DEBIAN_FRONTEND through `env`
+  # *after* sudo rather than as a prefix on the outer command.
+  $SUDO env DEBIAN_FRONTEND=noninteractive apt-get update -y \
+    && $SUDO env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${pkgs[@]}" \
     || { warn "apt install failed; see output above"; return 1; }
   info "VNC stack installed"
 }

@@ -1309,6 +1309,7 @@ dependencies = [
  "config-loader",
  "libc",
  "parking_lot",
+ "shlex",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

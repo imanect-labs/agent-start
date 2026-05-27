@@ -314,17 +314,36 @@ struct DesktopSession {
 fn resolve_desktop_session() -> Option<DesktopSession> {
     if let Some(raw) = std::env::var_os("AGENT_START_DESKTOP_CMD") {
         let s = raw.to_string_lossy().into_owned();
-        let mut parts = s.split_whitespace();
+        // POSIX-shell split so quoted argv elements survive
+        // (e.g. `gnome-session --session="ubuntu xorg"`).
+        let mut parts = match shlex::split(&s) {
+            Some(p) if !p.is_empty() => p.into_iter(),
+            Some(_) => {
+                tracing::warn!("AGENT_START_DESKTOP_CMD is empty; falling back to auto-detect");
+                return fallback_desktop();
+            }
+            None => {
+                tracing::warn!(
+                    cmd = %s,
+                    "AGENT_START_DESKTOP_CMD failed to parse as a shell command \
+                     (unbalanced quotes?); falling back to auto-detect",
+                );
+                return fallback_desktop();
+            }
+        };
         let bin_name = parts.next()?;
-        let bin = which_in_path(bin_name).unwrap_or_else(|| PathBuf::from(bin_name));
+        let bin = which_in_path(&bin_name).unwrap_or_else(|| PathBuf::from(&bin_name));
         return Some(DesktopSession {
             name: "custom",
             bin,
-            args: parts.map(|s| s.to_string()).collect(),
+            args: parts.collect(),
             env: vec![],
         });
     }
+    fallback_desktop()
+}
 
+fn fallback_desktop() -> Option<DesktopSession> {
     if let Some(bin) = which_in_path("gnome-session") {
         return Some(DesktopSession {
             name: "ubuntu-gnome",
@@ -531,14 +550,33 @@ mod tests {
         assert!(matches!(r, Err(NovncError::WebsockifyNotInstalled)));
     }
 
+    // Serializes the two tests below: both mutate the same process-wide
+    // env var and would race under cargo's parallel test runner.
+    static DESKTOP_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn desktop_override_parses_argv() {
+        let _g = DESKTOP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("AGENT_START_DESKTOP_CMD", "/usr/bin/true --foo bar");
         let d = resolve_desktop_session().expect("override should resolve");
         std::env::remove_var("AGENT_START_DESKTOP_CMD");
         assert_eq!(d.name, "custom");
         assert_eq!(d.bin, PathBuf::from("/usr/bin/true"));
         assert_eq!(d.args, vec!["--foo".to_string(), "bar".to_string()]);
+    }
+
+    #[test]
+    fn desktop_override_respects_shell_quoting() {
+        // Quoted arg with an internal space must round-trip as one argv
+        // entry, not get split on the space.
+        let _g = DESKTOP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var(
+            "AGENT_START_DESKTOP_CMD",
+            r#"/usr/bin/true --session="ubuntu xorg""#,
+        );
+        let d = resolve_desktop_session().expect("override should resolve");
+        std::env::remove_var("AGENT_START_DESKTOP_CMD");
+        assert_eq!(d.args, vec!["--session=ubuntu xorg".to_string()]);
     }
 
     #[test]
