@@ -31,7 +31,7 @@ pub use git_write::{
     git_fetch, git_log, git_pull, git_push, git_stage, git_tree, git_unstage,
 };
 pub use issues::{list_issues, view_issue};
-pub use meta::{health, version};
+pub use meta::{health, update_check, version};
 pub use novnc::{close_novnc, open_novnc};
 pub use preferences::{get_preferences, put_preferences};
 pub use projects::list_projects;
