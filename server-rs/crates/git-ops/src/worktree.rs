@@ -18,7 +18,20 @@ pub fn worktree_path_for(session_name: &str) -> PathBuf {
     config_loader::worktree_root().join(session_name)
 }
 
-fn default_branch(repo: &Path) -> String {
+/// The remote's default branch (e.g. `main`), resolved via
+/// `refs/remotes/origin/HEAD`. Returns `None` when no `origin` remote
+/// is configured or its HEAD symref hasn't been set.
+fn remote_default_branch(repo: &Path) -> Option<String> {
+    let out = run(
+        repo,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    )
+    .ok()?;
+    let trimmed = out.trim();
+    trimmed.strip_prefix("origin/").map(|s| s.to_string())
+}
+
+fn current_branch(repo: &Path) -> String {
     match run(repo, &["symbolic-ref", "--short", "HEAD"]) {
         Ok(s) => {
             let trimmed = s.trim();
@@ -30,6 +43,24 @@ fn default_branch(repo: &Path) -> String {
         }
         Err(_) => "HEAD".to_string(),
     }
+}
+
+/// Pick the base ref for a new worktree.
+///
+/// Prefers the remote's default branch (after fetching it so we branch
+/// off the latest upstream commit). Falls back to the orig repo's
+/// current HEAD when there is no usable `origin`.
+fn resolve_base(repo: &Path) -> String {
+    if let Some(branch) = remote_default_branch(repo) {
+        // Best-effort fetch; if it fails (offline, auth, etc.) we still
+        // branch off whatever the local `origin/<branch>` ref points at.
+        let _ = run(repo, &["fetch", "origin", &branch]);
+        let remote_ref = format!("refs/remotes/origin/{branch}");
+        if run(repo, &["rev-parse", "--verify", remote_ref.as_str()]).is_ok() {
+            return format!("origin/{branch}");
+        }
+    }
+    current_branch(repo)
 }
 
 pub fn create_worktree(orig_path: &Path, session_name: &str) -> Result<WorktreeCreated, GitError> {
@@ -44,7 +75,7 @@ pub fn create_worktree(orig_path: &Path, session_name: &str) -> Result<WorktreeC
     if let Some(parent) = wt_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let base = default_branch(orig_path);
+    let base = resolve_base(orig_path);
     let branch = format!("agent-start/{session_name}");
     let wt_str = wt_path.to_str().ok_or_else(|| GitError::Failed {
         cmd: "validate worktree path".into(),
