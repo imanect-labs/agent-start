@@ -27,7 +27,8 @@ pub fn file_tree(repo: &Path, subdir: Option<&str>) -> Result<Vec<TreeEntry>, Gi
         }
         None => None,
     };
-    let mut args: Vec<&str> = vec!["ls-tree", "-z", "HEAD"];
+    // `--` before the pathspec so a `subdir` can never be parsed as a flag.
+    let mut args: Vec<&str> = vec!["ls-tree", "-z", "HEAD", "--"];
     if let Some(ref p) = pathspec {
         args.push(p.as_str());
     }

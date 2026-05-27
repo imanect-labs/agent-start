@@ -81,7 +81,10 @@ pub async fn git_commit(State(app): State<Shared>, Json(req): Json<GitCommitRequ
     }
 }
 
-pub async fn git_discard(State(app): State<Shared>, Json(req): Json<GitDiscardRequest>) -> Response {
+pub async fn git_discard(
+    State(app): State<Shared>,
+    Json(req): Json<GitDiscardRequest>,
+) -> Response {
     let resolved = match repo(&app, &req.path) {
         Ok(p) => p,
         Err(r) => return *r,
@@ -176,7 +179,12 @@ pub async fn git_delete_branch(
 /// it can't stall the async runtime if git negotiates with a remote.
 async fn run_sync<F>(app: Shared, req: GitSyncRequest, op: F) -> Response
 where
-    F: FnOnce(PathBuf, Option<String>, Option<String>, bool) -> Result<git_ops::SyncResult, git_ops::GitError>
+    F: FnOnce(
+            PathBuf,
+            Option<String>,
+            Option<String>,
+            bool,
+        ) -> Result<git_ops::SyncResult, git_ops::GitError>
         + Send
         + 'static,
 {
@@ -190,8 +198,7 @@ where
         set_upstream,
         ..
     } = req;
-    let res =
-        tokio::task::spawn_blocking(move || op(resolved, remote, branch, set_upstream)).await;
+    let res = tokio::task::spawn_blocking(move || op(resolved, remote, branch, set_upstream)).await;
     match res {
         Ok(Ok(r)) => Json(GitSyncResponse {
             stdout: r.stdout,
@@ -199,7 +206,10 @@ where
         })
         .into_response(),
         Ok(Err(e)) => git_err(e),
-        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, format!("join error: {e}")),
+        Err(e) => err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("join error: {e}"),
+        ),
     }
 }
 

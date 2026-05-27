@@ -261,9 +261,10 @@ function CommitBox({
       <textarea
         value={message}
         onChange={(e) => onMessage(e.target.value)}
+        disabled={disabled}
         placeholder="コミットメッセージ"
         rows={2}
-        className="w-full resize-y rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12px] font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+        className="w-full resize-y rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12px] font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:opacity-50"
       />
       <Button
         variant="primary"

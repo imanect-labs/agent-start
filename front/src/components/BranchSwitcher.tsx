@@ -75,15 +75,20 @@ export function BranchSwitcher({
   }
 
   const checkout = (name: string) =>
-    run(() => post("/api/git/checkout", { path: cwd, name })).then(() => setOpen(false));
+    run(async () => {
+      await post("/api/git/checkout", { path: cwd, name });
+      setOpen(false);
+    });
   const del = (name: string) => {
     if (!window.confirm(`ブランチ ${name} を削除しますか？`)) return;
     return run(async () => {
       try {
         await post("/api/git/branches/delete", { path: cwd, name, force: false });
       } catch (e) {
-        // -d refuses unmerged branches; offer the forceful -D path.
-        if (window.confirm(`${name} は未マージです。強制削除しますか？`)) {
+        // `git branch -d` only refuses *unmerged* branches; for any other
+        // failure (auth, not found, …) surface the original error.
+        const unmerged = /not fully merged|not merged/i.test((e as Error).message);
+        if (unmerged && window.confirm(`${name} は未マージです。強制削除しますか？`)) {
           await post("/api/git/branches/delete", { path: cwd, name, force: true });
         } else {
           throw e;
@@ -102,11 +107,16 @@ export function BranchSwitcher({
   };
   const sync = (endpoint: "fetch" | "pull" | "push") =>
     run(async () => {
-      const setUpstream = endpoint === "push" && !current?.upstream;
+      // push/pull need a concrete branch; refuse in detached HEAD rather
+      // than send an ambiguous request (and never set upstream then).
+      if (endpoint !== "fetch" && !current?.name) {
+        throw new Error("現在のブランチが特定できません（detached HEAD）");
+      }
+      const setUpstream = endpoint === "push" && !!current?.name && !current.upstream;
       await post(`/api/git/${endpoint}`, {
         path: cwd,
         remote: "origin",
-        branch: current?.name,
+        branch: endpoint === "fetch" ? undefined : current?.name,
         setUpstream,
       });
     });

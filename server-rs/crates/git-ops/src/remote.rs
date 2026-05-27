@@ -33,7 +33,12 @@ pub fn fetch(repo: &Path, remote: Option<&str>) -> Result<SyncResult, GitError> 
     Ok(SyncResult { stdout, stderr })
 }
 
-pub fn pull(repo: &Path, remote: Option<&str>, branch: Option<&str>) -> Result<SyncResult, GitError> {
+pub fn pull(
+    repo: &Path,
+    remote: Option<&str>,
+    branch: Option<&str>,
+) -> Result<SyncResult, GitError> {
+    require_remote_for_branch(remote, branch)?;
     let mut args = vec!["pull", "--ff-only"];
     if let Some(r) = remote {
         reject_flag_like(r)?;
@@ -47,12 +52,26 @@ pub fn pull(repo: &Path, remote: Option<&str>, branch: Option<&str>) -> Result<S
     Ok(SyncResult { stdout, stderr })
 }
 
+/// `git` only accepts `<branch>` as a positional after `<remote>`; reject
+/// a branch supplied without one rather than silently dropping it.
+fn require_remote_for_branch(remote: Option<&str>, branch: Option<&str>) -> Result<(), GitError> {
+    if branch.is_some() && remote.is_none() {
+        return Err(GitError::Failed {
+            cmd: "validate sync args".into(),
+            code: None,
+            stderr: "a branch was given without a remote".into(),
+        });
+    }
+    Ok(())
+}
+
 pub fn push(
     repo: &Path,
     remote: Option<&str>,
     branch: Option<&str>,
     set_upstream: bool,
 ) -> Result<SyncResult, GitError> {
+    require_remote_for_branch(remote, branch)?;
     let mut args = vec!["push"];
     if set_upstream {
         args.push("-u");
@@ -73,8 +92,8 @@ pub fn push(
 mod tests {
     use super::*;
     use std::fs;
-    use std::process::Command;
     use std::path::Path;
+    use std::process::Command;
 
     fn git(repo: &Path, args: &[&str]) {
         let ok = Command::new("git")
@@ -130,5 +149,13 @@ mod tests {
         fetch(a.path(), Some("origin")).unwrap();
         pull(a.path(), Some("origin"), Some("main")).unwrap();
         assert!(a.path().join("c.txt").exists());
+    }
+
+    #[test]
+    fn branch_without_remote_is_rejected() {
+        let a = tempfile::tempdir().unwrap();
+        init_repo(a.path());
+        assert!(push(a.path(), None, Some("main"), false).is_err());
+        assert!(pull(a.path(), None, Some("main")).is_err());
     }
 }

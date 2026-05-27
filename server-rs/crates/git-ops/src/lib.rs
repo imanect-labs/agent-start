@@ -24,6 +24,6 @@ pub use diff::{git_diff, DiffMode, GitDiff};
 pub use exec::{clone, is_git_repo, GitError};
 pub use log::{log_graph, CommitNode};
 pub use remote::{fetch, pull, push, SyncResult};
-pub use tree::{file_tree, TreeEntry};
 pub use status::{git_status, GitFile, GitStatus};
+pub use tree::{file_tree, TreeEntry};
 pub use worktree::{create_worktree, remove_worktree, worktree_path_for, WorktreeCreated};

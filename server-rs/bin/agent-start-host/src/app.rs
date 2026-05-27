@@ -261,7 +261,10 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
             "/api/git/branches",
             get(crate::http::git_branches).post(crate::http::git_create_branch),
         )
-        .route("/api/git/branches/delete", post(crate::http::git_delete_branch))
+        .route(
+            "/api/git/branches/delete",
+            post(crate::http::git_delete_branch),
+        )
         .route("/api/git/checkout", post(crate::http::git_checkout))
         .route("/api/git/fetch", post(crate::http::git_fetch))
         .route("/api/git/pull", post(crate::http::git_pull))
