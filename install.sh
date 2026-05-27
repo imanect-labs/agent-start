@@ -16,6 +16,10 @@
 #   AGENT_START_SERVICE=1        # also register a systemd-user / launchd unit
 #   AGENT_START_BIND=127.0.0.1   # service bind address (default: 127.0.0.1)
 #   AGENT_START_PORT=3030        # service port (default: 3030)
+#   AGENT_START_INSTALL_VNC=1    # also install TigerVNC + noVNC + Ubuntu
+#                                # GNOME desktop (apt-based distros only;
+#                                # prompts interactively if unset and a
+#                                # TTY is attached). =0 to skip.
 #
 # Windows is not supported by this script — download the .zip from the
 # Releases page or use a package manager.
@@ -28,6 +32,7 @@ VERSION="${AGENT_START_VERSION:-}"
 SERVICE="${AGENT_START_SERVICE:-0}"
 BIND="${AGENT_START_BIND:-127.0.0.1}"
 PORT="${AGENT_START_PORT:-3030}"
+INSTALL_VNC="${AGENT_START_INSTALL_VNC:-}"
 
 err() { printf 'error: %s\n' "$*" >&2; exit 1; }
 info() { printf '==> %s\n' "$*"; }
@@ -53,6 +58,14 @@ check_runtime_deps() {
 
   if ! have claude && ! have codex; then
     optional_missing+=("an agent CLI: 'claude' (https://docs.anthropic.com/en/docs/claude-code) and/or 'codex' (https://github.com/openai/codex) — at least one is needed to launch sessions")
+  fi
+
+  # noVNC tab dependencies. All optional — the host runs fine without
+  # them, the GUI tab just won't be usable.
+  have Xvnc        || optional_missing+=("Xvnc (TigerVNC) — needed for the noVNC desktop tab; on Ubuntu/Debian run 'sudo apt install tigervnc-standalone-server'")
+  have websockify  || optional_missing+=("websockify — needed for the noVNC desktop tab; on Ubuntu/Debian run 'sudo apt install websockify novnc'")
+  if ! have gnome-session && ! have startxfce4 && ! have startlxqt; then
+    optional_missing+=("a desktop session (gnome-session / startxfce4 / startlxqt) — without one the noVNC tab connects but shows a blank screen")
   fi
 
   if [ ${#missing[@]} -gt 0 ] || [ ${#optional_missing[@]} -gt 0 ]; then
@@ -208,6 +221,77 @@ Service ops:
 EOF
 }
 
+install_vnc_stack() {
+  # Installs TigerVNC + noVNC + Ubuntu's GNOME session so the noVNC tab
+  # boots into the regular Ubuntu desktop (Yaru theme + the LTS-mascot
+  # wallpaper) instead of a blank screen. apt-based distros only;
+  # silently skipped elsewhere.
+  command -v apt-get >/dev/null 2>&1 || {
+    info "skipping VNC stack install (apt-get not found — install Xvnc/novnc/desktop manually)"
+    return 0
+  }
+
+  local SUDO=""
+  if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+      SUDO="sudo"
+    else
+      warn "VNC stack install requires root; re-run as root or install 'sudo'"
+      return 1
+    fi
+  fi
+
+  info "installing VNC stack via apt (TigerVNC + noVNC + Ubuntu GNOME)"
+  # ubuntu-session + gnome-shell give the GNOME desktop; gnome-backgrounds
+  # + ubuntu-wallpapers ship the LTS mascot artwork; yaru-theme-* applies
+  # the orange Ubuntu styling; dbus-x11 + dbus-user-session let
+  # gnome-session find a session bus inside Xvnc; fonts-ubuntu rounds out
+  # the look.
+  local pkgs=(
+    tigervnc-standalone-server tigervnc-common
+    novnc websockify
+    ubuntu-session gnome-shell gnome-backgrounds ubuntu-wallpapers
+    yaru-theme-gtk yaru-theme-icon
+    dbus-x11 dbus-user-session
+    fonts-ubuntu
+  )
+  DEBIAN_FRONTEND=noninteractive $SUDO apt-get update -y \
+    && DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y --no-install-recommends "${pkgs[@]}" \
+    || { warn "apt install failed; see output above"; return 1; }
+  info "VNC stack installed"
+}
+
+maybe_install_vnc_stack() {
+  # Three-way gate:
+  #   AGENT_START_INSTALL_VNC=1 / true  → install
+  #   AGENT_START_INSTALL_VNC=0 / false → skip
+  #   unset + apt-get present + TTY     → prompt
+  #   unset + non-interactive           → skip with hint
+  case "${INSTALL_VNC:-}" in
+    1|true|yes|y) install_vnc_stack; return ;;
+    0|false|no|n) return ;;
+  esac
+
+  command -v apt-get >/dev/null 2>&1 || return 0
+
+  if [ ! -t 0 ] || [ ! -t 1 ]; then
+    cat <<EOF
+
+To enable the noVNC desktop tab, re-run with AGENT_START_INSTALL_VNC=1
+(installs TigerVNC + noVNC + the Ubuntu GNOME desktop via apt).
+EOF
+    return 0
+  fi
+
+  printf '\nInstall the VNC stack (TigerVNC + noVNC + Ubuntu GNOME desktop) now? [y/N] '
+  local reply=""
+  read -r reply || reply=""
+  case "$reply" in
+    y|Y|yes|YES) install_vnc_stack ;;
+    *) info "skipping VNC stack install" ;;
+  esac
+}
+
 main() {
   local target version url tmp archive bin os installed_bin
   target="$(detect_target)"
@@ -254,6 +338,10 @@ EOF
   esac
 
   check_runtime_deps
+
+  if [ "$(uname -s)" = "Linux" ]; then
+    maybe_install_vnc_stack
+  fi
 
   if [ "$SERVICE" = "1" ] || [ "$SERVICE" = "true" ]; then
     os="$(uname -s)"

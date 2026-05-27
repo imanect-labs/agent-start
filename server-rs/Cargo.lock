@@ -1307,6 +1307,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "config-loader",
+ "libc",
  "parking_lot",
  "thiserror 1.0.69",
  "tokio",

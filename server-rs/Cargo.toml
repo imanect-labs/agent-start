@@ -51,6 +51,7 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-r
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 portable-pty = "0.9"
+libc = "0.2"
 
 [profile.release]
 lto = "thin"
