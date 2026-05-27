@@ -102,6 +102,8 @@ pub struct Preferences {
     pub extra_args: String,
     #[serde(rename = "createWorktree", default)]
     pub create_worktree: bool,
+    #[serde(rename = "guiOpenInNewTab", default)]
+    pub gui_open_in_new_tab: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,6 +120,8 @@ pub struct PreferencesPatch {
     pub extra_args: Option<String>,
     #[serde(rename = "createWorktree")]
     pub create_worktree: Option<bool>,
+    #[serde(rename = "guiOpenInNewTab")]
+    pub gui_open_in_new_tab: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

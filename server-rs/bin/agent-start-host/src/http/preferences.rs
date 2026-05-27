@@ -12,6 +12,7 @@ pub async fn get_preferences() -> Response {
                 skip_permissions: p.skip_permissions,
                 extra_args: p.extra_args,
                 create_worktree: p.create_worktree,
+                gui_open_in_new_tab: p.gui_open_in_new_tab,
             },
         })
         .into_response(),
@@ -46,6 +47,9 @@ pub async fn put_preferences(Json(body): Json<PreferencesPatch>) -> Response {
     if let Some(cw) = body.create_worktree {
         current.create_worktree = cw;
     }
+    if let Some(v) = body.gui_open_in_new_tab {
+        current.gui_open_in_new_tab = v;
+    }
     if let Err(e) = config_loader::save_preferences(&current) {
         return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
     }
@@ -55,6 +59,7 @@ pub async fn put_preferences(Json(body): Json<PreferencesPatch>) -> Response {
             skip_permissions: current.skip_permissions,
             extra_args: current.extra_args,
             create_worktree: current.create_worktree,
+            gui_open_in_new_tab: current.gui_open_in_new_tab,
         },
     })
     .into_response()

@@ -237,6 +237,77 @@ export function IndexPage() {
     [activeSession],
   );
 
+  const addGuiTab = useCallback(async () => {
+    if (!activeSession) return;
+
+    // Reserve the popup synchronously from the click handler so transient
+    // user activation is still alive when `window.open` runs — Safari and
+    // Firefox treat any `window.open` *after* an `await` as not
+    // user-initiated and silently block it. We close the reservation
+    // below if the preference turns out to be embedded mode.
+    const reservedPopup = window.open("about:blank", "_blank");
+
+    let openInNewTab = false;
+    try {
+      const r = await fetch("/api/preferences");
+      if (r.ok) {
+        const j = (await r.json()) as { preferences?: { guiOpenInNewTab?: boolean } };
+        openInNewTab = !!j.preferences?.guiOpenInNewTab;
+      }
+    } catch {
+      // Fall back to embedded mode on any preferences fetch error.
+    }
+
+    if (openInNewTab) {
+      const popup = reservedPopup;
+      try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(activeSession)}/novnc`, {
+          method: "POST",
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(body?.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { url: string };
+        if (popup) {
+          popup.location.href = data.url;
+        } else {
+          window.location.href = data.url;
+        }
+      } catch (e) {
+        if (popup) popup.close();
+        toast({
+          title: "GUI を開けませんでした",
+          description: e instanceof Error ? e.message : String(e),
+          color: "danger",
+        });
+      }
+      return;
+    }
+
+    // Embedded mode — release the reservation.
+    if (reservedPopup) reservedPopup.close();
+
+    const id = makeTabId();
+    setPerSession((prev) => {
+      const cur = prev[activeSession];
+      if (!cur) return prev;
+      // Single-instance: focus the existing GUI tab if one is already open.
+      const existing = cur.tabs.find((t) => t.kind === "gui");
+      if (existing) {
+        return {
+          ...prev,
+          [activeSession]: { ...cur, activeTabId: existing.id },
+        };
+      }
+      const tab: Tab = { id, kind: "gui" };
+      return {
+        ...prev,
+        [activeSession]: { tabs: [...cur.tabs, tab], activeTabId: id },
+      };
+    });
+  }, [activeSession, toast]);
+
   const addFilesTab = useCallback(() => {
     if (!activeSession) return;
     const id = makeTabId();
@@ -489,6 +560,7 @@ export function IndexPage() {
       onCloseTab={closeTab}
       onAddTerminal={addTerminalTab}
       onAddFiles={addFilesTab}
+      onAddGui={addGuiTab}
       onStopSession={(s) =>
         setDeleteTarget({
           name: s.name,

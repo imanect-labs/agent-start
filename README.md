@@ -220,6 +220,44 @@ When you tick "delete the worktree too" on session stop:
 - `git worktree remove --force` tears down the tree.
 - The `agent-start/*` branch is deleted.
 
+## GUI display (noVNC)
+
+Adding a "GUI" tab to a session asks `agent-start-host` to launch a per-session
+virtual X desktop (`Xvnc`) and a `websockify` proxy, then renders them via
+noVNC in the browser. Launching a GUI app from the session terminal with
+`DISPLAY=:<N> firefox &` makes it visible in the iframe (`<N>` is shown at
+the top of the GUI tab).
+
+> **Supported only on Linux / WSL.** macOS is not supported as a host
+> for the GUI feature: the Homebrew `tiger-vnc` formula ships only the
+> viewer, not the `Xvnc` server (which needs X.Org), and macOS GUI
+> apps run on Quartz rather than X11, so a virtual X desktop cannot
+> host them anyway. Run `agent-start-host` on a Linux box (bare metal,
+> WSL, or a Linux Docker container) when you need this tab.
+
+Install the dependencies on the Linux host:
+
+```bash
+# Debian/Ubuntu
+sudo apt install tigervnc-standalone-server novnc websockify
+
+# Fedora / RHEL
+sudo dnf install tigervnc-server novnc python3-websockify
+
+# Arch
+sudo pacman -S tigervnc novnc python-websockify
+```
+
+Override binary locations if autodetection fails:
+
+- `AGENT_START_XVNC_BIN=/path/to/Xvnc`
+- `AGENT_START_WEBSOCKIFY_BIN=/path/to/websockify`
+- `AGENT_START_NOVNC_DIR=/path/to/novnc`  (directory containing `vnc.html`)
+
+Security: both `Xvnc` and `websockify` bind only `127.0.0.1`, so they are
+reachable through the same tailnet boundary as the host itself (mirroring
+the code-server posture).
+
 ## Run as a daemon (systemd user)
 
 The fastest path is to let the installer do it for you:

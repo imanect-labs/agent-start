@@ -12,6 +12,7 @@ type Preferences = {
   skipPermissions: boolean;
   extraArgs: string;
   createWorktree: boolean;
+  guiOpenInNewTab: boolean;
 };
 type CliInfo = {
   key: string;
@@ -43,6 +44,7 @@ type FormState = {
   skipPermissions: boolean;
   extraArgs: string;
   createWorktree: boolean;
+  guiOpenInNewTab: boolean;
   // config
   roots: string;
   sessionPrefix: string;
@@ -57,6 +59,7 @@ const empty: FormState = {
   skipPermissions: false,
   extraArgs: "",
   createWorktree: true,
+  guiOpenInNewTab: false,
   roots: "",
   sessionPrefix: "cc-",
   shell: "/bin/bash",
@@ -87,6 +90,7 @@ export function SettingsPage() {
       skipPermissions: prefData.preferences.skipPermissions,
       extraArgs: prefData.preferences.extraArgs,
       createWorktree: prefData.preferences.createWorktree ?? true,
+      guiOpenInNewTab: prefData.preferences.guiOpenInNewTab ?? false,
       roots: cfgData.roots.join("\n"),
       sessionPrefix: cfgData.sessionPrefix,
       shell: cfgData.shell,
@@ -162,6 +166,7 @@ export function SettingsPage() {
           skipPermissions: form.skipPermissions,
           extraArgs: form.extraArgs,
           createWorktree: form.createWorktree,
+          guiOpenInNewTab: form.guiOpenInNewTab,
         }),
       });
       const prefJson = await prefRes.json();
@@ -297,6 +302,16 @@ export function SettingsPage() {
                     <Toggle
                       checked={form.createWorktree}
                       onChange={(v) => update("createWorktree", v)}
+                    />
+                  </Row>
+
+                  <Row
+                    title="GUI を新しいタブで全画面表示"
+                    hint="OFF のときはアプリ内 iframe で表示"
+                  >
+                    <Toggle
+                      checked={form.guiOpenInNewTab}
+                      onChange={(v) => update("guiOpenInNewTab", v)}
                     />
                   </Row>
 
