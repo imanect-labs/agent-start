@@ -20,10 +20,13 @@ pub struct OpenResponse {
 }
 
 pub async fn open_novnc(State(app): State<Shared>, Path(name): Path<String>) -> Response {
-    // Confirm the session exists so we don't spawn an orphan backend for
-    // a typo'd name.
-    if !app.sessions.read().contains_key(&name) {
-        return err(StatusCode::NOT_FOUND, "session not found");
+    // Confirm the session exists *and* is currently live. `sessions` also
+    // holds rehydrated stopped entries — spawning Xvnc for one of those
+    // would leave an orphan GUI with no agent behind it.
+    match app.sessions.read().get(&name) {
+        Some(s) if s.live => {}
+        Some(_) => return err(StatusCode::CONFLICT, "session is not running"),
+        None => return err(StatusCode::NOT_FOUND, "session not found"),
     }
 
     let instance = match app.novnc.ensure(&name).await {

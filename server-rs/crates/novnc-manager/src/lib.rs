@@ -68,6 +68,12 @@ impl Instance {
 #[derive(Default)]
 pub struct NovncManager {
     instances: Mutex<HashMap<String, Arc<Instance>>>,
+    /// Serializes spawns so two concurrent `ensure()` calls for the same
+    /// session can't both pass the existence check, race on
+    /// `allocate_port()` / `allocate_display()`, and leak duplicate
+    /// children. Held across the awaits in `ensure`, so it must be a
+    /// `tokio::sync::Mutex`.
+    spawn_lock: tokio::sync::Mutex<()>,
 }
 
 impl NovncManager {
@@ -86,6 +92,14 @@ impl NovncManager {
     /// Idempotent spawn. Returns the running instance, starting both
     /// child processes only if no instance exists for this session.
     pub async fn ensure(&self, session: &str) -> Result<Arc<Instance>, NovncError> {
+        // Fast path: already running.
+        if let Some(existing) = self.instances.lock().get(session).cloned() {
+            return Ok(existing);
+        }
+        // Serialize spawns. Re-check under the lock so the second waiter
+        // doesn't allocate ports again after the first one inserted the
+        // instance.
+        let _guard = self.spawn_lock.lock().await;
         if let Some(existing) = self.instances.lock().get(session).cloned() {
             return Ok(existing);
         }

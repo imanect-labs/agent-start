@@ -240,9 +240,13 @@ export function IndexPage() {
   const addGuiTab = useCallback(async () => {
     if (!activeSession) return;
 
-    // Pick popup-or-embed up front: must read the preference BEFORE the
-    // first `await`, and (when popup) reserve `window.open` synchronously
-    // from this user gesture or Safari/Firefox will block it.
+    // Reserve the popup synchronously from the click handler so transient
+    // user activation is still alive when `window.open` runs — Safari and
+    // Firefox treat any `window.open` *after* an `await` as not
+    // user-initiated and silently block it. We close the reservation
+    // below if the preference turns out to be embedded mode.
+    const reservedPopup = window.open("about:blank", "_blank");
+
     let openInNewTab = false;
     try {
       const r = await fetch("/api/preferences");
@@ -255,7 +259,7 @@ export function IndexPage() {
     }
 
     if (openInNewTab) {
-      const popup = window.open("about:blank", "_blank");
+      const popup = reservedPopup;
       try {
         const res = await fetch(`/api/sessions/${encodeURIComponent(activeSession)}/novnc`, {
           method: "POST",
@@ -280,6 +284,9 @@ export function IndexPage() {
       }
       return;
     }
+
+    // Embedded mode — release the reservation.
+    if (reservedPopup) reservedPopup.close();
 
     const id = makeTabId();
     setPerSession((prev) => {

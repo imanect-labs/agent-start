@@ -164,6 +164,10 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
                 let name = name.to_string();
                 tokio::spawn(async move {
                     state.sessions.write().remove(&name);
+                    // Kill any noVNC backend tied to this session so Xvnc
+                    // and websockify don't linger as zombies after the
+                    // PTY they were paired with dies.
+                    state.novnc.kill(&name).await;
                     if let Err(e) = state::mark_dead(&state.db, &name).await {
                         tracing::warn!(error = %e, session = %name, "failed to mark dead");
                     }
