@@ -167,16 +167,37 @@ Config files and runtime data live under **`~/.agent-start/`** (legacy XDG paths
 
 ## CLI
 
+The installer drops a thin-client `agent-start` CLI next to `agent-start-host`
+(both ship in the release archive). It talks to a running host over HTTP, so you
+can also `cargo install --path server-rs/bin/agent-start` it on a laptop to drive
+a remote host across a tailnet.
+
 ```bash
-cargo install --path server-rs/bin/agent-start
-agent-start status                # host version
-agent-start projects              # list projects via host
-agent-start sessions              # list sessions via host
-agent-start start --port 3030     # spawn host in the foreground
-agent-start stop                  # SIGTERM via manifest.json
+# host lifecycle
+agent-start start --port 3030     # spawn the host in the foreground
+agent-start start --daemon        # spawn it in the background, return immediately
+agent-start stop                  # SIGTERM the host via runtime/manifest.json
+agent-start status                # host version + "update available" check
+
+# projects
+agent-start project list
+agent-start project add --clone https://github.com/you/repo
+agent-start project add --import /path/to/local/dir
+agent-start project remove <name>
+
+# sessions
+agent-start session list
+agent-start session create --project /path/to/project --cli claude [--worktree] [--skip-permissions]
+agent-start session stop <name>
+
+# upgrade in place (re-runs the official installer)
+agent-start update [--version v0.2.0]
 ```
 
-Across a tailnet, pass `--url http://server:3030`.
+Global flags: `--url http://server:3030` (target a remote host; defaults to the
+local manifest), `--json` (machine-readable output), `--quiet` (suppress
+success chatter). A newer release also surfaces as a dismissible banner in the
+web UI.
 
 ## Configuration (UI)
 
@@ -222,7 +243,7 @@ Add a new CLI (e.g. `aider`, `opencode`) by appending another entry to `clis`. T
 
 When you tick "create a git worktree" on the start sheet:
 
-1. Run `git -C <project> worktree add -b agent-start/<session> ~/.cache/agent-start/worktrees/<session> HEAD`.
+1. Run `git -C <project> worktree add -b agent-start/<session> ~/.agent-start/worktrees/<session> HEAD`.
 2. Start the PTY session with that worktree as `cwd`.
 
 When you tick "delete the worktree too" on session stop:
