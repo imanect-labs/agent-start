@@ -83,18 +83,21 @@ async fn fetch_latest() -> Option<(String, String)> {
     Some((tag, html_url))
 }
 
-/// Compare two version strings (with optional leading `v`) by their
-/// dot-separated numeric components. Returns true when `latest` is strictly
-/// greater than `current`. Non-numeric / missing components compare as 0,
-/// so `v0.2` > `v0.1.5` and unparsable tags simply don't trigger an update.
+/// Compare two version strings (with optional leading `v`/`V`) by their
+/// dot-separated numeric components. Returns true only when `latest` is
+/// strictly greater than `current`. If either string has a segment that
+/// isn't a plain integer, the parse fails and we decline to flag an update —
+/// a malformed tag should never trigger a false "update available".
 fn is_newer(latest: &str, current: &str) -> bool {
-    let parse = |s: &str| -> Vec<u64> {
-        s.trim_start_matches('v')
+    let parse = |s: &str| -> Option<Vec<u64>> {
+        s.trim_start_matches(['v', 'V'])
             .split('.')
-            .map(|p| p.trim().parse::<u64>().unwrap_or(0))
+            .map(|p| p.trim().parse::<u64>().ok())
             .collect()
     };
-    let (l, c) = (parse(latest), parse(current));
+    let (Some(l), Some(c)) = (parse(latest), parse(current)) else {
+        return false;
+    };
     let n = l.len().max(c.len());
     for i in 0..n {
         let lv = l.get(i).copied().unwrap_or(0);

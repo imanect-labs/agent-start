@@ -391,13 +391,28 @@ fn stop_host(quiet: bool) -> Result<()> {
         .get("pid")
         .and_then(|p| p.as_i64())
         .ok_or_else(|| anyhow!("manifest has no pid"))?;
-    let status = std::process::Command::new("kill")
-        .args(["-TERM", &pid.to_string()])
-        .status()?;
+
+    // Terminate via the platform's process tool. The host installs a SIGTERM
+    // handler on Unix; Windows has no SIGTERM, so use taskkill.
+    #[cfg(unix)]
+    let (tool, status) = (
+        "kill",
+        std::process::Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status()?,
+    );
+    #[cfg(windows)]
+    let (tool, status) = (
+        "taskkill",
+        std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status()?,
+    );
+
     if !status.success() {
-        return Err(anyhow!("kill -TERM {pid} failed: {status}"));
+        return Err(anyhow!("{tool} for pid {pid} failed: {status}"));
     }
-    info(quiet, format!("sent SIGTERM to pid {pid}"));
+    info(quiet, format!("terminated host pid {pid}"));
     Ok(())
 }
 
