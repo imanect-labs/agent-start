@@ -67,8 +67,12 @@ export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
       {...rest}
     >
       {loading && (
-        <span aria-hidden className="absolute inset-0 inline-flex items-center justify-center">
-          <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-current border-r-transparent animate-spin" />
+        <span className="absolute inset-0 inline-flex items-center justify-center">
+          <span
+            aria-label="読み込み中"
+            role="status"
+            className="inline-block h-3.5 w-3.5 rounded-full border-2 border-current border-r-transparent animate-spin"
+          />
         </span>
       )}
       <span

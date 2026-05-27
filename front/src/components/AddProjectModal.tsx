@@ -53,6 +53,10 @@ export function AddProjectModal({ open, onClose }: Props) {
       });
       // Optimistically surface a pending row (with its spinner) right away so
       // the sidebar reflects the in-flight clone/import before the next poll.
+      // Keep revalidate:false so the optimistic row isn't wiped by a refetch
+      // that races ahead of the backend registering the pending state — the
+      // pending.length>0 polling in routes/index.tsx then picks up the real
+      // state on its own.
       const pendingName = (json.name as string) || body.name || (isClone ? url.trim() : src.trim());
       mutate(
         "/api/projects",
@@ -65,7 +69,7 @@ export function AddProjectModal({ open, onClose }: Props) {
             pending: already ? existing : [...existing, { name: pendingName, path: "", kind }],
           };
         },
-        { revalidate: true },
+        { revalidate: false },
       );
       reset();
       onClose();
