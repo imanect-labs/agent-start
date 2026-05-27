@@ -10,6 +10,7 @@ mod app;
 mod http;
 mod manifest;
 mod sessions;
+mod update;
 mod ws;
 
 #[derive(Debug, Parser)]
@@ -40,6 +41,8 @@ enum Cmd {
     Start,
     /// Print server version + build info.
     Version,
+    /// Upgrade agent-start-host in place by re-running the official installer.
+    Update(update::UpdateArgs),
 }
 
 #[tokio::main]
@@ -79,6 +82,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Cmd::Start => app::run(bind, port, frontend_dist).await,
+        Cmd::Update(args) => update::run(args),
     }
 }
 

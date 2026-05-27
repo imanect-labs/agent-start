@@ -276,6 +276,10 @@ Next steps:
   agent-start-host --bind 0.0.0.0 --port ${PORT}   # expose to tailnet/LAN
   open http://localhost:${PORT}
 
+Upgrade later:
+  agent-start-host update                          # in-place upgrade
+  agent-start-host update --version v0.2.0         # pin a release
+
 Register as a daemon (systemd on Linux, launchd on macOS):
   curl -fsSL https://agentstart.imanect.app/install.sh | AGENT_START_SERVICE=1 bash
   # Add AGENT_START_BIND=0.0.0.0 for tailnet access.
