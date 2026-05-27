@@ -39,7 +39,10 @@ pub async fn list_issues(State(app): State<Shared>, Query(q): Query<ListQuery>) 
     if !git_ops::is_git_repo(&resolved) {
         return err(StatusCode::BAD_REQUEST, "not a git repo");
     }
-    let limit = q.limit.unwrap_or(ISSUE_LIST_DEFAULT).clamp(1, ISSUE_LIST_MAX);
+    let limit = q
+        .limit
+        .unwrap_or(ISSUE_LIST_DEFAULT)
+        .clamp(1, ISSUE_LIST_MAX);
     match git_ops::list_issues(&resolved, limit, q.search.as_deref()) {
         Ok(issues) => Json(IssuesBody {
             issues: issues

@@ -113,7 +113,11 @@ fn login(author: Option<RawAuthor>) -> String {
 /// `gh` has no cursor/page model, so the UI paginates by re-requesting a
 /// larger `limit`. An optional `search` string is forwarded verbatim to
 /// `gh issue list --search` (a GitHub issue search query).
-pub fn list_issues(repo: &Path, limit: u32, search: Option<&str>) -> Result<Vec<IssueSummary>, GitError> {
+pub fn list_issues(
+    repo: &Path,
+    limit: u32,
+    search: Option<&str>,
+) -> Result<Vec<IssueSummary>, GitError> {
     let limit = limit.to_string();
     let mut args: Vec<&str> = vec![
         "issue",
