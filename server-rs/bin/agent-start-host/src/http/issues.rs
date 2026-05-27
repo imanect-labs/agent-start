@@ -43,8 +43,15 @@ pub async fn list_issues(State(app): State<Shared>, Query(q): Query<ListQuery>) 
         .limit
         .unwrap_or(ISSUE_LIST_DEFAULT)
         .clamp(1, ISSUE_LIST_MAX);
-    match git_ops::list_issues(&resolved, limit, q.search.as_deref()) {
-        Ok(issues) => Json(IssuesBody {
+    // `gh` shells out and hits the network — offload it so it doesn't block
+    // a Tokio worker thread (mirrors the git_write sync handlers).
+    let search = q.search;
+    let res = tokio::task::spawn_blocking(move || {
+        git_ops::list_issues(&resolved, limit, search.as_deref())
+    })
+    .await;
+    match res {
+        Ok(Ok(issues)) => Json(IssuesBody {
             issues: issues
                 .into_iter()
                 .map(|i| ApiIssueSummary {
@@ -58,7 +65,11 @@ pub async fn list_issues(State(app): State<Shared>, Query(q): Query<ListQuery>) 
                 .collect(),
         })
         .into_response(),
-        Err(e) => err(StatusCode::BAD_GATEWAY, e.to_string()),
+        Ok(Err(e)) => err(StatusCode::BAD_GATEWAY, e.to_string()),
+        Err(e) => err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("join error: {e}"),
+        ),
     }
 }
 
@@ -75,6 +86,9 @@ pub async fn view_issue(State(app): State<Shared>, Query(q): Query<ViewQuery>) -
     let Some(number) = q.number else {
         return err(StatusCode::BAD_REQUEST, "number is required");
     };
+    if number < 1 {
+        return err(StatusCode::BAD_REQUEST, "number must be >= 1");
+    }
     let resolved = match assert_allowed_repo_path(&app, &path) {
         Ok(p) => p,
         Err(resp) => return *resp,
@@ -82,8 +96,9 @@ pub async fn view_issue(State(app): State<Shared>, Query(q): Query<ViewQuery>) -
     if !git_ops::is_git_repo(&resolved) {
         return err(StatusCode::BAD_REQUEST, "not a git repo");
     }
-    match git_ops::view_issue(&resolved, number) {
-        Ok(i) => Json(IssueDetailBody {
+    let res = tokio::task::spawn_blocking(move || git_ops::view_issue(&resolved, number)).await;
+    match res {
+        Ok(Ok(i)) => Json(IssueDetailBody {
             issue: ApiIssueDetail {
                 number: i.number,
                 title: i.title,
@@ -95,6 +110,10 @@ pub async fn view_issue(State(app): State<Shared>, Query(q): Query<ViewQuery>) -
             },
         })
         .into_response(),
-        Err(e) => err(StatusCode::BAD_GATEWAY, e.to_string()),
+        Ok(Err(e)) => err(StatusCode::BAD_GATEWAY, e.to_string()),
+        Err(e) => err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("join error: {e}"),
+        ),
     }
 }
