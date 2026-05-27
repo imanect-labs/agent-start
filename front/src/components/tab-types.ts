@@ -52,7 +52,23 @@ export type GuiTab = {
   label?: string;
 };
 
-export type Tab = TerminalTab | FilesTab | EditorTab | DiffTab | GuiTab;
+export type GraphTab = {
+  id: string;
+  kind: "graph";
+  /** Session cwd whose commit graph this tab renders. */
+  cwd: string;
+  label?: string;
+};
+
+export type TreeTab = {
+  id: string;
+  kind: "tree";
+  /** Session cwd whose file tree this tab renders. */
+  cwd: string;
+  label?: string;
+};
+
+export type Tab = TerminalTab | FilesTab | EditorTab | DiffTab | GuiTab | GraphTab | TreeTab;
 
 export type SessionTabs = {
   tabs: Tab[];

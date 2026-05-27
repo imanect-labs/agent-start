@@ -102,7 +102,7 @@ pub async fn git_diff(State(app): State<Shared>, Query(q): Query<DiffQuery>) -> 
 /// `roots` entry, under the worktree root, or the cwd/worktreePath/origPath
 /// of a live session (covers worktrees whose root was reconfigured
 /// after the session started).
-fn assert_allowed_repo_path(app: &Shared, cwd: &str) -> Result<PathBuf, Box<Response>> {
+pub(crate) fn assert_allowed_repo_path(app: &Shared, cwd: &str) -> Result<PathBuf, Box<Response>> {
     let resolved = std::fs::canonicalize(cwd).unwrap_or_else(|_| PathBuf::from(cwd));
     let cfg = config_loader::load_config()
         .map_err(|e| Box::new(err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())))?;

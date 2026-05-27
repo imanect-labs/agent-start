@@ -503,6 +503,34 @@ export function IndexPage() {
   const activeCwd =
     activeSessionObj?.worktreePath || activeSessionObj?.path || activeSessionObj?.origPath || "";
 
+  // Graph / Tree tabs snapshot the cwd at open time (like diff tabs) and
+  // are single-instance per session.
+  const addGraphTab = useCallback(() => {
+    if (!activeSession || !activeCwd) return;
+    setPerSession((prev) => {
+      const cur = prev[activeSession];
+      if (!cur) return prev;
+      const existing = cur.tabs.find((t) => t.kind === "graph");
+      if (existing) return { ...prev, [activeSession]: { ...cur, activeTabId: existing.id } };
+      const id = makeTabId();
+      const tab: Tab = { id, kind: "graph", cwd: activeCwd };
+      return { ...prev, [activeSession]: { tabs: [...cur.tabs, tab], activeTabId: id } };
+    });
+  }, [activeSession, activeCwd]);
+
+  const addTreeTab = useCallback(() => {
+    if (!activeSession || !activeCwd) return;
+    setPerSession((prev) => {
+      const cur = prev[activeSession];
+      if (!cur) return prev;
+      const existing = cur.tabs.find((t) => t.kind === "tree");
+      if (existing) return { ...prev, [activeSession]: { ...cur, activeTabId: existing.id } };
+      const id = makeTabId();
+      const tab: Tab = { id, kind: "tree", cwd: activeCwd };
+      return { ...prev, [activeSession]: { tabs: [...cur.tabs, tab], activeTabId: id } };
+    });
+  }, [activeSession, activeCwd]);
+
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const rightPanelRef = useRef<ImperativePanelHandle>(null);
 
@@ -561,6 +589,9 @@ export function IndexPage() {
       onAddTerminal={addTerminalTab}
       onAddFiles={addFilesTab}
       onAddGui={addGuiTab}
+      onAddGraph={addGraphTab}
+      onAddTree={addTreeTab}
+      onOpenFile={openEditorTab}
       onStopSession={(s) =>
         setDeleteTarget({
           name: s.name,

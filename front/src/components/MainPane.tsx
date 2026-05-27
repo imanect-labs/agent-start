@@ -14,6 +14,8 @@ import { FilesView } from "@/components/FilesView";
 import { EditorTab as EditorView } from "@/components/EditorTab";
 import { DiffTabView } from "@/components/DiffTabView";
 import { GuiView } from "@/components/GuiView";
+import { CommitGraphView } from "@/components/CommitGraphView";
+import { RepoTreeView } from "@/components/RepoTreeView";
 import type { TmuxSession } from "@/components/Sidebar";
 import type { DiffMode, SessionTabs, Tab } from "@/components/tab-types";
 import { useToast } from "@/components/Toast";
@@ -32,6 +34,8 @@ type Props = {
   onAddTerminal: () => void;
   onAddFiles: () => void;
   onAddGui: () => void;
+  onAddGraph: () => void;
+  onAddTree: () => void;
   onStopSession: (s: TmuxSession) => void;
   onRestartSession: (s: TmuxSession) => void;
   restarting?: boolean;
@@ -43,6 +47,8 @@ type Props = {
   onToggleSidebar?: () => void;
   /** Open a diff for a changed file as a tab. */
   onOpenDiff?: (file: string, mode: DiffMode) => void;
+  /** Open a file (absolute path) in an editor tab — used by the tree view. */
+  onOpenFile?: (absPath: string) => void;
 };
 
 export function MainPane({
@@ -53,6 +59,8 @@ export function MainPane({
   onAddTerminal,
   onAddFiles,
   onAddGui,
+  onAddGraph,
+  onAddTree,
   onStopSession,
   onRestartSession,
   restarting,
@@ -61,6 +69,7 @@ export function MainPane({
   onUpdateTab,
   onToggleSidebar,
   onOpenDiff,
+  onOpenFile,
 }: Props) {
   if (!session || !tabs) {
     return <WelcomeBanner onToggleSidebar={onToggleSidebar} />;
@@ -232,6 +241,8 @@ export function MainPane({
         onAddTerminal={onAddTerminal}
         onAddFiles={onAddFiles}
         onAddGui={onAddGui}
+        onAddGraph={onAddGraph}
+        onAddTree={onAddTree}
         canAddFiles={!!cwd}
       />
 
@@ -264,6 +275,7 @@ export function MainPane({
               cwd={cwd}
               onUpdateTab={onUpdateTab}
               onOpenDiff={onOpenDiff}
+              onOpenFile={onOpenFile}
             />
           </div>
         ))}
@@ -280,6 +292,8 @@ function TabBar({
   onAddTerminal,
   onAddFiles,
   onAddGui,
+  onAddGraph,
+  onAddTree,
   canAddFiles,
 }: {
   tabs: Tab[];
@@ -289,6 +303,8 @@ function TabBar({
   onAddTerminal: () => void;
   onAddFiles: () => void;
   onAddGui: () => void;
+  onAddGraph: () => void;
+  onAddTree: () => void;
   canAddFiles: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -340,6 +356,12 @@ function TabBar({
                 Δ
               </span>
             );
+          } else if (t.kind === "graph") {
+            label = label ?? "Graph";
+            icon = <IconBranch className="w-3.5 h-3.5 shrink-0 text-fg-faint" />;
+          } else if (t.kind === "tree") {
+            label = label ?? "Tree";
+            icon = <IconFolder className="w-3.5 h-3.5 shrink-0 text-fg-faint" />;
           } else {
             const base = t.path.split("/").pop() || t.path;
             label = label ?? base;
@@ -431,6 +453,28 @@ function TabBar({
             >
               GUI (noVNC)
             </MenuItem>
+            <MenuItem
+              icon={<IconBranch className="w-3.5 h-3.5" />}
+              disabled={!canAddFiles}
+              onClick={() => {
+                setMenuOpen(false);
+                onAddGraph();
+              }}
+            >
+              コミットグラフ
+              {!canAddFiles && <span className="ml-1 text-fg-faint text-[10px]">(cwd 不明)</span>}
+            </MenuItem>
+            <MenuItem
+              icon={<IconFolder className="w-3.5 h-3.5" />}
+              disabled={!canAddFiles}
+              onClick={() => {
+                setMenuOpen(false);
+                onAddTree();
+              }}
+            >
+              ファイルツリー
+              {!canAddFiles && <span className="ml-1 text-fg-faint text-[10px]">(cwd 不明)</span>}
+            </MenuItem>
           </div>
         )}
       </div>
@@ -474,6 +518,7 @@ function TabContent({
   cwd,
   onUpdateTab,
   onOpenDiff,
+  onOpenFile,
 }: {
   tab: Tab;
   sessionName: string;
@@ -483,6 +528,7 @@ function TabContent({
   cwd: string;
   onUpdateTab: (id: string, patch: Partial<Tab>) => void;
   onOpenDiff?: (file: string, mode: DiffMode) => void;
+  onOpenFile?: (absPath: string) => void;
 }) {
   if (tab.kind === "terminal") {
     return (
@@ -510,6 +556,12 @@ function TabContent({
   }
   if (tab.kind === "gui") {
     return <GuiView sessionName={sessionName} />;
+  }
+  if (tab.kind === "graph") {
+    return <CommitGraphView cwd={tab.cwd} />;
+  }
+  if (tab.kind === "tree") {
+    return <RepoTreeView cwd={tab.cwd} onOpenFile={onOpenFile} />;
   }
   if (tab.kind === "diff") {
     return (
