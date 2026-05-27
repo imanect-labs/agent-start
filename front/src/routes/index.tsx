@@ -22,6 +22,21 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const STORAGE_KEY = "agent-start:tabs:v1";
 
+type PendingSession = {
+  /** Temporary client id ("pending:…"); used as the session name until the
+   *  host returns the real one. */
+  tempId: string;
+  /** Project path, for grouping in the sidebar. */
+  projectPath: string;
+  cli: string;
+  createWorktree: boolean;
+  createdAt: number;
+};
+
+function makePendingId(): string {
+  return `pending:${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 type StoredTabs = {
   perSession: Record<string, SessionTabs>;
   activeSession: string | null;
@@ -81,7 +96,10 @@ export function IndexPage() {
     number: number;
     title: string;
   } | null>(null);
-  const [launching, setLaunching] = useState(false);
+  // Optimistic placeholders for sessions whose POST /api/sessions is still in
+  // flight. The host assigns the real name, so we track these by a temporary
+  // id and reconcile when the response arrives.
+  const [pendingSessions, setPendingSessions] = useState<PendingSession[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -124,7 +142,25 @@ export function IndexPage() {
 
   const projects = projData?.projects ?? [];
   const pendingProjects = projData?.pending ?? [];
-  const sessions = sessData?.sessions ?? [];
+  const realSessions = sessData?.sessions ?? [];
+
+  // Merge optimistic placeholders into the session list so the sidebar and
+  // main pane reflect a launch the instant the user confirms it, before the
+  // host has finished creating the PTY (and worktree).
+  const sessions = useMemo<TmuxSession[]>(() => {
+    if (pendingSessions.length === 0) return realSessions;
+    const placeholders: TmuxSession[] = pendingSessions.map((p) => ({
+      name: p.tempId,
+      path: p.projectPath,
+      createdAt: p.createdAt,
+      attached: false,
+      cli: p.cli,
+      worktreePath: "",
+      origPath: "",
+      pending: true,
+    }));
+    return [...placeholders, ...realSessions];
+  }, [realSessions, pendingSessions]);
 
   // Note: we deliberately do not auto-prune perSession against
   // /api/sessions. Both delete flows (handleStopConfirm, manual close)
@@ -135,6 +171,10 @@ export function IndexPage() {
 
   const openSession = useCallback((name: string) => {
     setActiveSession(name);
+    // Pending placeholders have no real PTY/tabs yet — the main pane renders a
+    // skeleton from the session's `pending` flag. Don't seed a tab entry that
+    // would orphan in localStorage once the real session takes over.
+    if (name.startsWith("pending:")) return;
     setPerSession((prev) => {
       if (prev[name]) return prev;
       // First open: terminal tab on window 0. For stopped sessions the
@@ -161,26 +201,50 @@ export function IndexPage() {
 
   const addTerminalTab = useCallback(async () => {
     if (!activeSession) return;
+    const sessionName = activeSession;
+    // Optimistically add a pending terminal tab (skeleton) and focus it; the
+    // real tmux window index is filled in once the host creates the window.
+    const id = makeTabId();
+    setPerSession((prev) => {
+      const cur = prev[sessionName];
+      if (!cur) return prev;
+      const tab: Tab = { id, kind: "terminal", windowId: -1, pending: true };
+      return {
+        ...prev,
+        [sessionName]: { tabs: [...cur.tabs, tab], activeTabId: id },
+      };
+    });
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(activeSession)}/windows`, {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/windows`, {
         method: "POST",
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      const id = makeTabId();
+      // Bind the placeholder to the real window — the Terminal key includes
+      // windowId so it mounts onto the live PTY here.
       setPerSession((prev) => {
-        const cur = prev[activeSession];
+        const cur = prev[sessionName];
         if (!cur) return prev;
-        const tab: Tab = { id, kind: "terminal", windowId: json.index };
-        return {
-          ...prev,
-          [activeSession]: {
-            tabs: [...cur.tabs, tab],
-            activeTabId: id,
-          },
-        };
+        const nextTabs = cur.tabs.map((t) =>
+          t.id === id ? ({ ...t, windowId: json.index, pending: false } as Tab) : t,
+        );
+        return { ...prev, [sessionName]: { ...cur, tabs: nextTabs } };
       });
     } catch (e) {
+      // Drop the placeholder tab on failure, restoring focus to a sibling.
+      setPerSession((prev) => {
+        const cur = prev[sessionName];
+        if (!cur) return prev;
+        const idx = cur.tabs.findIndex((t) => t.id === id);
+        if (idx === -1) return prev;
+        const nextTabs = cur.tabs.filter((t) => t.id !== id);
+        if (nextTabs.length === 0) return prev;
+        const nextActive =
+          cur.activeTabId === id
+            ? nextTabs[Math.min(idx, nextTabs.length - 1)].id
+            : cur.activeTabId;
+        return { ...prev, [sessionName]: { tabs: nextTabs, activeTabId: nextActive } };
+      });
       toast({
         title: "ターミナルタブ追加失敗",
         description: (e as Error).message,
@@ -387,18 +451,36 @@ export function IndexPage() {
 
   const handleLaunch = async (o: LaunchOverrides) => {
     if (!launchTarget) return;
-    setLaunching(true);
+    const projectPath = launchTarget.path;
+    // Optimistically insert a placeholder and switch to it immediately: the
+    // sidebar shows a spinner row and the main pane a terminal skeleton while
+    // the host creates the PTY (and, slowest, the worktree).
+    const tempId = makePendingId();
+    setPendingSessions((prev) => [
+      ...prev,
+      {
+        tempId,
+        projectPath,
+        cli: o.cli,
+        createWorktree: o.createWorktree,
+        createdAt: Date.now(),
+      },
+    ]);
+    setActiveSession(tempId);
+    setLaunchTarget(null);
+    setPendingIssue(null);
+    const issuePrompt = pendingIssue?.prompt;
     try {
       const res = await fetch("/api/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          projectPath: launchTarget.path,
+          projectPath,
           cli: o.cli,
           skipPermissions: o.skipPermissions,
           extraArgs: o.extraArgs,
           createWorktree: o.createWorktree,
-          prompt: pendingIssue?.prompt,
+          prompt: issuePrompt,
         }),
       });
       const json = await res.json();
@@ -408,24 +490,40 @@ export function IndexPage() {
         description: json.name,
         color: "success",
       });
-      setLaunchTarget(null);
-      setPendingIssue(null);
+      // Pull in the real session, then switch the active session to it before
+      // dropping the placeholder so the main pane never flashes the welcome
+      // screen during the swap.
       await mutate("/api/sessions");
       if (typeof json.name === "string") openSession(json.name);
+      setPendingSessions((prev) => prev.filter((p) => p.tempId !== tempId));
     } catch (e) {
+      // Roll back the placeholder and leave the user where they were.
+      setPendingSessions((prev) => prev.filter((p) => p.tempId !== tempId));
+      setActiveSession((cur) => (cur === tempId ? null : cur));
       toast({
         title: "起動失敗",
         description: (e as Error).message,
         color: "danger",
       });
-    } finally {
-      setLaunching(false);
     }
   };
 
   const handleRestartSession = useCallback(
     async (name: string) => {
       setRestarting(name);
+      // Optimistically flip `stopped` → live so the terminal remounts and
+      // shows its own "接続中…" overlay right away. The Terminal tab key
+      // includes the stopped flag, so this remounts onto the (soon) fresh PTY;
+      // if the WS races ahead of the PTY it auto-retries with backoff.
+      mutate(
+        "/api/sessions",
+        (cur?: { sessions: TmuxSession[] }) => ({
+          sessions: (cur?.sessions ?? []).map((s) =>
+            s.name === name ? { ...s, stopped: false } : s,
+          ),
+        }),
+        { revalidate: false },
+      );
       try {
         const res = await fetch(`/api/sessions/${encodeURIComponent(name)}/restart`, {
           method: "POST",
@@ -433,8 +531,7 @@ export function IndexPage() {
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
         toast({ title: "再開しました", description: name, color: "success" });
-        // Refresh /api/sessions so `stopped` flips to false; the Terminal
-        // tab key includes that flag and will remount onto the fresh PTY.
+        // Sync with the server's authoritative state.
         await mutate("/api/sessions");
       } catch (e) {
         toast({
@@ -442,6 +539,8 @@ export function IndexPage() {
           description: (e as Error).message,
           color: "danger",
         });
+        // Roll back the optimistic flip to the server's real state.
+        mutate("/api/sessions");
       } finally {
         setRestarting(null);
       }
@@ -708,7 +807,6 @@ export function IndexPage() {
           setPendingIssue(null);
         }}
         onLaunch={handleLaunch}
-        launching={launching}
       />
 
       <DeleteConfirmSheet
