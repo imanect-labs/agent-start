@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { Button, Spinner } from "@/components/ui";
 import { useTheme } from "@/components/ThemeProvider";
+import { useToast } from "./Toast";
 
 type Props = {
   sessionName: string;
@@ -83,6 +84,7 @@ export function Terminal({
     stoppedRef.current = stopped;
   }, [stopped]);
   const { resolved } = useTheme();
+  const toast = useToast();
   const containerRef = useRef<HTMLDivElement | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const termRef = useRef<any>(null);
@@ -93,6 +95,13 @@ export function Terminal({
   const [attempt, setAttempt] = useState(0);
   const ctrlPendingRef = useRef(false);
   const [ctrlActive, setCtrlActive] = useState(false);
+  // Select mode: while active, single-finger touch drags drive xterm text
+  // selection (via synthetic mouse events) instead of scrolling, so mobile
+  // users can copy. The ref mirrors the state for the touch handlers, which
+  // capture it once inside the bootstrap effect's closure.
+  const selectModeRef = useRef(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
 
   const theme = useMemo(
     () => (resolved === "dark" ? DARK_TERM_THEME : LIGHT_TERM_THEME),
@@ -174,6 +183,14 @@ export function Terminal({
         }
       });
 
+      // Fresh instance starts with no selection — clear any state left over
+      // from a previous terminal (reconnect / session switch) so the copy
+      // button isn't stuck enabled until the next selection event.
+      setHasSelection(false);
+      term.onSelectionChange(() => {
+        setHasSelection(!!termRef.current?.hasSelection?.());
+      });
+
       const doFit = () => {
         try {
           fit.fit();
@@ -204,6 +221,29 @@ export function Terminal({
         vv?.removeEventListener("scroll", onVvResize);
       };
 
+      // xterm renders to a canvas, so there's no selectable DOM text and
+      // native long-press selection never reaches it. Its selection service
+      // only listens for mouse events, so in select mode we translate
+      // single-finger touch gestures into synthetic mouse events to drive
+      // selection on touch devices.
+      const dispatchSyntheticMouse = (type: string, t: Touch, detail = 0) => {
+        const target = document.elementFromPoint(t.clientX, t.clientY) ?? containerRef.current;
+        target?.dispatchEvent(
+          new MouseEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            clientX: t.clientX,
+            clientY: t.clientY,
+            screenX: t.screenX,
+            screenY: t.screenY,
+            button: 0,
+            buttons: type === "mouseup" ? 0 : 1,
+            detail,
+          }),
+        );
+      };
+
       // Touch-swipe scroll: vertical pan inside terminal viewport.
       const ROW_PX = 22;
       let touchY: number | null = null;
@@ -213,11 +253,23 @@ export function Terminal({
           touchY = null;
           return;
         }
+        if (selectModeRef.current) {
+          // detail:1 marks a single click, which anchors the selection start.
+          dispatchSyntheticMouse("mousedown", e.touches[0], 1);
+          touchY = null;
+          return;
+        }
         touchY = e.touches[0].clientY;
         accum = 0;
       };
       const onTouchMove = (e: TouchEvent) => {
-        if (touchY == null || e.touches.length !== 1) return;
+        if (e.touches.length !== 1) return;
+        if (selectModeRef.current) {
+          dispatchSyntheticMouse("mousemove", e.touches[0]);
+          e.preventDefault();
+          return;
+        }
+        if (touchY == null) return;
         const y = e.touches[0].clientY;
         const dy = y - touchY;
         touchY = y;
@@ -229,7 +281,11 @@ export function Terminal({
           e.preventDefault();
         }
       };
-      const onTouchEnd = () => {
+      const onTouchEnd = (e: TouchEvent) => {
+        if (selectModeRef.current) {
+          const t = e.changedTouches[0];
+          if (t) dispatchSyntheticMouse("mouseup", t);
+        }
         touchY = null;
       };
       containerRef.current.addEventListener("touchstart", onTouchStart, {
@@ -375,6 +431,36 @@ export function Terminal({
     term.scrollLines(lines);
   };
 
+  const toggleSelectMode = () => {
+    const next = !selectModeRef.current;
+    selectModeRef.current = next;
+    setSelectMode(next);
+    if (!next) termRef.current?.clearSelection?.();
+  };
+
+  const handleCopy = async () => {
+    const sel: string = termRef.current?.getSelection?.() ?? "";
+    if (!sel) {
+      toast({ title: "選択範囲がありません", color: "danger" });
+      return;
+    }
+    const ok = await copyToClipboard(sel);
+    if (ok) {
+      toast({ title: "コピーしました", color: "success" });
+      termRef.current?.clearSelection?.();
+      selectModeRef.current = false;
+      setSelectMode(false);
+    } else {
+      toast({ title: "コピーに失敗しました", color: "danger" });
+    }
+  };
+
+  const handlePaste = async () => {
+    const text = await readClipboard();
+    if (text) sendInputViaWs(wsRef.current, text);
+    focusTerm();
+  };
+
   const vkClass =
     virtualKeys === "always"
       ? "flex"
@@ -463,7 +549,16 @@ export function Terminal({
       </div>
 
       <div className={`${vkClass} gap-1.5 overflow-x-auto -mx-1 px-1 pt-1 pb-3 sm:pb-1`}>
-        <VirtualKeys onKey={handleVirtualKey} onScroll={handleScroll} ctrlActive={ctrlActive} />
+        <VirtualKeys
+          onKey={handleVirtualKey}
+          onScroll={handleScroll}
+          onCopy={handleCopy}
+          onPaste={handlePaste}
+          onToggleSelect={toggleSelectMode}
+          ctrlActive={ctrlActive}
+          selectMode={selectMode}
+          hasSelection={hasSelection}
+        />
       </div>
     </div>
   );
@@ -475,23 +570,87 @@ function sendInputViaWs(ws: WebSocket | null, data: string) {
   }
 }
 
+// The async Clipboard API only exists in secure contexts. agent-start is
+// commonly served over plain HTTP across a tailnet, where
+// `navigator.clipboard` is undefined — so both copy and paste need
+// fallbacks that work without it.
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to the execCommand path
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    // Keep it off-screen but still focusable/selectable.
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "0";
+    ta.style.opacity = "0";
+    ta.setAttribute("readonly", "");
+    document.body.appendChild(ta);
+    try {
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      return document.execCommand("copy");
+    } finally {
+      document.body.removeChild(ta);
+    }
+  } catch {
+    return false;
+  }
+}
+
+async function readClipboard(): Promise<string | null> {
+  try {
+    if (navigator.clipboard?.readText) {
+      return await navigator.clipboard.readText();
+    }
+  } catch {
+    // permission denied or unavailable — fall back to a manual prompt
+  }
+  // No programmatic clipboard read outside a secure context; let the user
+  // paste into a native prompt (long-press → ペースト on mobile).
+  return window.prompt("貼り付ける内容(長押しでペースト)") ?? null;
+}
+
 type KeyDef =
   | { kind: "send"; label: string; data: string }
   | { kind: "toggle"; label: string; active: boolean }
+  | { kind: "selectToggle"; label: string; active: boolean }
+  | { kind: "copy"; label: string }
+  | { kind: "paste"; label: string }
   | { kind: "scroll"; label: string; direction: -1 | 1; tone: "scroll" };
 
 function VirtualKeys({
   onKey,
   onScroll,
+  onCopy,
+  onPaste,
+  onToggleSelect,
   ctrlActive,
+  selectMode,
+  hasSelection,
 }: {
   onKey: (data: string) => void;
   onScroll: (direction: -1 | 1) => void;
+  onCopy: () => void;
+  onPaste: () => void;
+  onToggleSelect: () => void;
   ctrlActive: boolean;
+  selectMode: boolean;
+  hasSelection: boolean;
 }) {
   const keys: KeyDef[] = [
     { kind: "scroll", label: "↥", direction: -1, tone: "scroll" },
     { kind: "scroll", label: "↧", direction: 1, tone: "scroll" },
+    { kind: "selectToggle", label: "選択", active: selectMode },
+    { kind: "copy", label: "コピー" },
+    { kind: "paste", label: "貼り付け" },
     { kind: "send", label: "Esc", data: "\x1b" },
     { kind: "send", label: "Tab", data: "\t" },
     { kind: "toggle", label: "Ctrl", active: ctrlActive },
@@ -504,21 +663,41 @@ function VirtualKeys({
   return (
     <>
       {keys.map((k, i) => {
-        const active = k.kind === "toggle" && k.active;
+        const active = (k.kind === "toggle" && k.active) || (k.kind === "selectToggle" && k.active);
+        const disabled = k.kind === "copy" && !hasSelection;
         return (
           <button
             key={i}
             type="button"
+            disabled={disabled}
             onClick={() => {
-              if (k.kind === "send") onKey(k.data);
-              else if (k.kind === "toggle") onKey("__ctrl__");
-              else onScroll(k.direction);
+              switch (k.kind) {
+                case "send":
+                  onKey(k.data);
+                  break;
+                case "toggle":
+                  onKey("__ctrl__");
+                  break;
+                case "selectToggle":
+                  onToggleSelect();
+                  break;
+                case "copy":
+                  onCopy();
+                  break;
+                case "paste":
+                  onPaste();
+                  break;
+                case "scroll":
+                  onScroll(k.direction);
+                  break;
+              }
             }}
             className={[
               "shrink-0 inline-flex items-center justify-center",
               "min-h-9 px-3 rounded-md text-xs font-medium",
               "border transition-colors",
               "select-none touch-manipulation",
+              "disabled:opacity-40 disabled:pointer-events-none",
               active
                 ? "bg-accent text-accent-fg border-accent"
                 : "bg-surface text-fg-muted border-line hover:bg-surface-muted",
