@@ -49,6 +49,15 @@ This fetches the latest release, picks the right target for your OS/arch, and dr
 
 - `AGENT_START_VERSION=v0.1.0` — pin a specific release instead of latest.
 - `INSTALL_DIR=/usr/local/bin` — install somewhere else (you may need `sudo`).
+- `AGENT_START_SERVICE=1` — also register a systemd-user unit (Linux) or launchd agent (macOS) so the host runs on boot. See [Run as a daemon](#run-as-a-daemon-systemd-user).
+- `AGENT_START_BIND=0.0.0.0` / `AGENT_START_PORT=3030` — bind / port baked into the service unit (default `127.0.0.1` / `3030`).
+
+One-liner that installs **and** daemonizes for tailnet access:
+
+```bash
+curl -fsSL https://agentstart.imanect.app/install.sh | \
+  AGENT_START_SERVICE=1 AGENT_START_BIND=0.0.0.0 bash
+```
 
 After install:
 
@@ -213,9 +222,24 @@ When you tick "delete the worktree too" on session stop:
 
 ## Run as a daemon (systemd user)
 
-The recommended way to keep the host alive across SSH disconnects and reboots on Linux is a **systemd user service**. Adjust `ExecStart` if you installed somewhere other than `~/.local/bin/`.
+The fastest path is to let the installer do it for you:
 
-1. Write the unit file:
+```bash
+curl -fsSL https://agentstart.imanect.app/install.sh | AGENT_START_SERVICE=1 bash
+# add AGENT_START_BIND=0.0.0.0 if you want to reach it from another machine
+```
+
+That writes the unit file, runs `daemon-reload`, and starts the service. Then run **once** to keep the service alive past logout / across reboots:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+If you'd rather configure it manually, the steps below are what the installer does.
+
+### Manual setup
+
+1. Write the unit file (adjust `ExecStart` if you installed somewhere other than `~/.local/bin/`):
 
 ```ini
 # ~/.config/systemd/user/agent-start.service
