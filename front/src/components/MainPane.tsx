@@ -13,6 +13,7 @@ import { Terminal } from "@/components/Terminal";
 import { FilesView } from "@/components/FilesView";
 import { EditorTab as EditorView } from "@/components/EditorTab";
 import { DiffTabView } from "@/components/DiffTabView";
+import { GuiView } from "@/components/GuiView";
 import type { TmuxSession } from "@/components/Sidebar";
 import type { DiffMode, SessionTabs, Tab } from "@/components/tab-types";
 import { useToast } from "@/components/Toast";
@@ -30,6 +31,7 @@ type Props = {
   onCloseTab: (tabId: string) => void;
   onAddTerminal: () => void;
   onAddFiles: () => void;
+  onAddGui: () => void;
   onStopSession: (s: TmuxSession) => void;
   onRestartSession: (s: TmuxSession) => void;
   restarting?: boolean;
@@ -50,6 +52,7 @@ export function MainPane({
   onCloseTab,
   onAddTerminal,
   onAddFiles,
+  onAddGui,
   onStopSession,
   onRestartSession,
   restarting,
@@ -228,6 +231,7 @@ export function MainPane({
         }}
         onAddTerminal={onAddTerminal}
         onAddFiles={onAddFiles}
+        onAddGui={onAddGui}
         canAddFiles={!!cwd}
       />
 
@@ -275,6 +279,7 @@ function TabBar({
   onClose,
   onAddTerminal,
   onAddFiles,
+  onAddGui,
   canAddFiles,
 }: {
   tabs: Tab[];
@@ -283,6 +288,7 @@ function TabBar({
   onClose: (id: string) => void;
   onAddTerminal: () => void;
   onAddFiles: () => void;
+  onAddGui: () => void;
   canAddFiles: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -319,6 +325,13 @@ function TabBar({
           } else if (t.kind === "files") {
             label = label ?? "Files";
             icon = <IconFolder className="w-3.5 h-3.5 shrink-0 text-fg-faint" />;
+          } else if (t.kind === "gui") {
+            label = label ?? "GUI";
+            icon = (
+              <span className="w-3.5 h-3.5 inline-flex items-center justify-center text-[10px] text-fg-faint">
+                ▢
+              </span>
+            );
           } else if (t.kind === "diff") {
             const base = t.file.split("/").pop() || t.file;
             label = label ?? `${base} (diff)`;
@@ -405,6 +418,19 @@ function TabBar({
               ファイル変更
               {!canAddFiles && <span className="ml-1 text-fg-faint text-[10px]">(cwd 不明)</span>}
             </MenuItem>
+            <MenuItem
+              icon={
+                <span className="w-3.5 h-3.5 inline-flex items-center justify-center text-[10px]">
+                  ▢
+                </span>
+              }
+              onClick={() => {
+                setMenuOpen(false);
+                onAddGui();
+              }}
+            >
+              GUI (noVNC)
+            </MenuItem>
           </div>
         )}
       </div>
@@ -481,6 +507,9 @@ function TabContent({
         <FilesView cwd={cwd} fullWidth onOpenDiff={onOpenDiff} />
       </div>
     );
+  }
+  if (tab.kind === "gui") {
+    return <GuiView sessionName={sessionName} />;
   }
   if (tab.kind === "diff") {
     return (

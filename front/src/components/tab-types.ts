@@ -46,7 +46,13 @@ export type DiffTab = {
   label?: string;
 };
 
-export type Tab = TerminalTab | FilesTab | EditorTab | DiffTab;
+export type GuiTab = {
+  id: string;
+  kind: "gui";
+  label?: string;
+};
+
+export type Tab = TerminalTab | FilesTab | EditorTab | DiffTab | GuiTab;
 
 export type SessionTabs = {
   tabs: Tab[];

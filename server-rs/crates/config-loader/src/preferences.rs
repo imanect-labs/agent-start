@@ -19,6 +19,10 @@ pub struct Preferences {
     /// by default. Defaults to `true`.
     #[serde(rename = "createWorktree", default = "yes")]
     pub create_worktree: bool,
+    /// When true, the "GUI" tab opens noVNC in a new browser window
+    /// (full-screen) instead of embedding it as an in-app iframe tab.
+    #[serde(rename = "guiOpenInNewTab", default)]
+    pub gui_open_in_new_tab: bool,
 }
 
 fn yes() -> bool {
@@ -36,6 +40,7 @@ impl Preferences {
             skip_permissions: true,
             extra_args: String::new(),
             create_worktree: true,
+            gui_open_in_new_tab: false,
         }
     }
 }

@@ -4,6 +4,7 @@ use axum::response::IntoResponse;
 use axum::routing::{any, delete, get, put};
 use axum::Router;
 use code_server_manager::CodeServerManager;
+use novnc_manager::NovncManager;
 use parking_lot::RwLock;
 use pty_manager::PtyManager;
 use rust_embed::RustEmbed;
@@ -28,6 +29,7 @@ pub struct AppState {
     pub db: Db,
     pub pty: Arc<PtyManager>,
     pub code_server: Arc<CodeServerManager>,
+    pub novnc: Arc<NovncManager>,
     /// In-memory mirror of session metadata. Persisted on insert via SQLite.
     pub sessions: Arc<RwLock<HashMap<String, SessionDirectory>>>,
 }
@@ -67,6 +69,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
     let db = state::open().await?;
     let pty = Arc::new(PtyManager::new());
     let code_server = Arc::new(CodeServerManager::new());
+    let novnc = Arc::new(NovncManager::new());
     let sessions = Arc::new(RwLock::new(HashMap::new()));
 
     // Stale rows from the previous boot point at dead children/ports.
@@ -140,6 +143,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         db,
         pty,
         code_server,
+        novnc,
         sessions,
     });
 
@@ -265,6 +269,25 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
             "/v/{name}/{*rest}",
             any(crate::http::code_server_proxy::proxy_handler),
         )
+        .route(
+            "/api/sessions/{name}/novnc",
+            axum::routing::post(crate::http::open_novnc)
+                .delete(crate::http::close_novnc),
+        )
+        // Reverse proxy to per-session websockify child. Same shape as
+        // the code-server proxy above: root, root-slash, and wildcard.
+        .route(
+            "/vnc/{name}",
+            any(crate::http::novnc_proxy::proxy_handler),
+        )
+        .route(
+            "/vnc/{name}/",
+            any(crate::http::novnc_proxy::proxy_handler),
+        )
+        .route(
+            "/vnc/{name}/{*rest}",
+            any(crate::http::novnc_proxy::proxy_handler),
+        )
         // WebSocket — same URL the UI already uses.
         .route("/ws/terminal", get(crate::ws::ws_terminal))
         .with_state(app_state.clone());
@@ -339,7 +362,9 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
     let shutdown_state = app_state.clone();
     tokio::spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
-        tracing::info!("shutdown signal received; flushing PTY snapshots");
+        tracing::info!("shutdown signal received; killing noVNC children");
+        shutdown_state.novnc.kill_all().await;
+        tracing::info!("flushing PTY snapshots");
         let snapshots = shutdown_state.pty.snapshot_all();
         tracing::info!(count = snapshots.len(), "snapshot_all collected");
         for (name, window, bytes) in snapshots {
@@ -375,6 +400,7 @@ fn is_api_path(path: &str) -> bool {
         || path.starts_with("/v1/")
         || path.starts_with("/ws/")
         || path.starts_with("/v/")
+        || path.starts_with("/vnc/")
 }
 
 async fn serve_embedded_index(uri: Uri) -> axum::response::Response {

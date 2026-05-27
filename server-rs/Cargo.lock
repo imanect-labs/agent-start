@@ -44,6 +44,7 @@ dependencies = [
  "futures-util",
  "git-ops",
  "mime_guess",
+ "novnc-manager",
  "once_cell",
  "parking_lot",
  "pty-manager",
@@ -1298,6 +1299,18 @@ dependencies = [
  "cfg-if",
  "cfg_aliases 0.1.1",
  "libc",
+]
+
+[[package]]
+name = "novnc-manager"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "config-loader",
+ "parking_lot",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
