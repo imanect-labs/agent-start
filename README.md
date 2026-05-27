@@ -53,9 +53,17 @@ This fetches the latest release, picks the right target for your OS/arch, and dr
 After install:
 
 ```bash
-agent-start-host --port 3030      # binds 127.0.0.1 by default
+agent-start-host --port 3030                  # localhost only (default 127.0.0.1)
 # open http://localhost:3030
+
+# Reach it from another machine over a tailnet / VPN / firewalled LAN:
+agent-start-host --bind 0.0.0.0 --port 3030
+# open http://<host-name-or-ip>:3030
 ```
+
+> ⚠️ `--bind 0.0.0.0` exposes the host on every interface. Only use it behind tailscale / WireGuard / a LAN firewall. Read [SECURITY.md](./SECURITY.md) first — there is no built-in auth.
+
+To keep the host running after you log out, see [Run as a daemon](#run-as-a-daemon-systemd-user) below.
 
 ### Manual download
 
@@ -203,29 +211,87 @@ When you tick "delete the worktree too" on session stop:
 - `git worktree remove --force` tears down the tree.
 - The `agent-start/*` branch is deleted.
 
-## Keeping the host running after SSH disconnect
+## Run as a daemon (systemd user)
 
-Run the host as a systemd-user service:
+The recommended way to keep the host alive across SSH disconnects and reboots on Linux is a **systemd user service**. Adjust `ExecStart` if you installed somewhere other than `~/.local/bin/`.
+
+1. Write the unit file:
 
 ```ini
 # ~/.config/systemd/user/agent-start.service
 [Unit]
 Description=agent-start host
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-ExecStart=%h/.cargo/bin/agent-start-host --bind 0.0.0.0 --port 3030
+Type=simple
+ExecStart=%h/.local/bin/agent-start-host --bind 0.0.0.0 --port 3030
 Restart=on-failure
+RestartSec=3
+# Optional: pin runtime data dir / extra env
+# Environment=AGENT_START_HOME=%h/.agent-start
 
 [Install]
 WantedBy=default.target
 ```
+
+2. Enable lingering so the service starts at boot and survives logout (without this the user manager exits when you log out and the host dies with it):
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+3. Reload, enable, and start:
 
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable --now agent-start
 ```
 
-If the host crashes, running `cc-*` sessions keep their PIDs and scrollback in SQLite, so reconnecting from the UI just works. Child processes reparent to PID 1 — running under systemd-user lets it reap them cleanly.
+4. Useful operations:
+
+```bash
+systemctl --user status agent-start          # current state
+journalctl --user -u agent-start -f          # tail logs
+systemctl --user restart agent-start         # after upgrading the binary
+systemctl --user stop agent-start            # stop the host (PTYs survive — see below)
+```
+
+Upgrading the binary in-place (e.g. re-running the install one-liner) does not interrupt running sessions — restart the service afterwards to pick up the new version.
+
+If the host crashes or is restarted, running `cc-*` sessions keep their PIDs and scrollback in SQLite, so reconnecting from the UI just works. Child processes reparent to PID 1 — running under systemd-user lets it reap them cleanly.
+
+### macOS (launchd)
+
+On macOS the equivalent is a launchd user agent at `~/Library/LaunchAgents/app.agent-start.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>app.agent-start</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOU/.local/bin/agent-start-host</string>
+    <string>--bind</string><string>0.0.0.0</string>
+    <string>--port</string><string>3030</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/tmp/agent-start.out.log</string>
+  <key>StandardErrorPath</key><string>/tmp/agent-start.err.log</string>
+</dict>
+</plist>
+```
+
+Then:
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/app.agent-start.plist
+launchctl kickstart -k gui/$(id -u)/app.agent-start
+```
 
 ## Contributing & community
 
