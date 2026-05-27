@@ -807,7 +807,6 @@ export function IndexPage() {
           setPendingIssue(null);
         }}
         onLaunch={handleLaunch}
-        launching={false}
       />
 
       <DeleteConfirmSheet

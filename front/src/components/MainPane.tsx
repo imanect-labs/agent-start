@@ -733,7 +733,7 @@ function PendingSessionView({
   onToggleSidebar?: () => void;
 }) {
   return (
-    <div className="h-full w-full min-w-0 flex flex-col bg-app">
+    <div className="h-full w-full min-w-0 flex flex-col bg-app" aria-live="polite" aria-busy="true">
       <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 border-b border-line bg-surface min-h-[52px]">
         {onToggleSidebar && (
           <button

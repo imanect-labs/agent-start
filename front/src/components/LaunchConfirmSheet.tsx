@@ -36,7 +36,6 @@ type Props = {
   issueContext?: { number: number; title: string };
   onClose: () => void;
   onLaunch: (overrides: LaunchOverrides) => Promise<void>;
-  launching: boolean;
 };
 
 export function LaunchConfirmSheet({
@@ -47,7 +46,6 @@ export function LaunchConfirmSheet({
   issueContext,
   onClose,
   onLaunch,
-  launching,
 }: Props) {
   const { data: prefData, isLoading: prefLoading } = useSWR<{
     preferences: Preferences;
@@ -174,19 +172,12 @@ export function LaunchConfirmSheet({
         )}
       </SheetBody>
       <SheetFooter>
-        <Button
-          variant="secondary"
-          size="lg"
-          onClick={onClose}
-          disabled={launching}
-          className="flex-1"
-        >
+        <Button variant="secondary" size="lg" onClick={onClose} className="flex-1">
           キャンセル
         </Button>
         <Button
           variant="primary"
           size="lg"
-          loading={launching}
           className="flex-1"
           onClick={() =>
             onLaunch({
