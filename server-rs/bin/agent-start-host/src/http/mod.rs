@@ -12,6 +12,7 @@ mod config;
 mod fs;
 mod git;
 mod git_write;
+mod issues;
 mod meta;
 mod novnc;
 pub mod novnc_proxy;
@@ -29,6 +30,7 @@ pub use git_write::{
     git_branches, git_checkout, git_commit, git_create_branch, git_delete_branch, git_discard,
     git_fetch, git_log, git_pull, git_push, git_stage, git_tree, git_unstage,
 };
+pub use issues::{list_issues, view_issue};
 pub use meta::{health, version};
 pub use novnc::{close_novnc, open_novnc};
 pub use preferences::{get_preferences, put_preferences};

@@ -32,6 +32,8 @@ type Props = {
   projectName: string;
   projectPath: string;
   isGit: boolean;
+  /** When launching from a GitHub issue, the issue this session targets. */
+  issueContext?: { number: number; title: string };
   onClose: () => void;
   onLaunch: (overrides: LaunchOverrides) => Promise<void>;
   launching: boolean;
@@ -42,6 +44,7 @@ export function LaunchConfirmSheet({
   projectName,
   projectPath,
   isGit,
+  issueContext,
   onClose,
   onLaunch,
   launching,
@@ -83,6 +86,12 @@ export function LaunchConfirmSheet({
     <Sheet open={isOpen} onClose={onClose} maxWidth="lg">
       <SheetHeader title={projectName} subtitle={projectPath} onClose={onClose} />
       <SheetBody>
+        {issueContext && (
+          <div className="rounded-md border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-fg">
+            <span className="font-medium">issue #{issueContext.number}</span> に取り組みます
+            <div className="text-fg-subtle truncate mt-0.5">{issueContext.title}</div>
+          </div>
+        )}
         {prefLoading ? (
           <div className="flex justify-center py-8">
             <Spinner size="md" />

@@ -65,6 +65,12 @@ export const IconTerminal = (p: P) => (
     <path d="M13 15h4" />
   </svg>
 );
+export const IconIssue = (p: P) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="2.5" />
+  </svg>
+);
 export const IconTrash = (p: P) => (
   <svg {...base(p)}>
     <path d="M3 6h18" />

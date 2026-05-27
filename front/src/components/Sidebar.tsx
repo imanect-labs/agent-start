@@ -7,6 +7,7 @@ import {
   IconChevronRight,
   IconFolder,
   IconGear,
+  IconIssue,
   IconPlus,
   IconRefresh,
   IconSearch,
@@ -68,6 +69,7 @@ export function Sidebar({
   loadingSessions,
   activeSession,
   onLaunchProject,
+  onBrowseIssues,
   onOpenSession,
   onStopSession,
   onRefresh,
@@ -84,6 +86,7 @@ export function Sidebar({
   loadingSessions: boolean;
   activeSession: string | null;
   onLaunchProject: (p: Project) => void;
+  onBrowseIssues?: (p: Project) => void;
   onOpenSession: (name: string) => void;
   onStopSession: (s: TmuxSession) => void;
   onRefresh: () => void;
@@ -270,6 +273,9 @@ export function Sidebar({
                   onToggle={() => setCollapsed((prev) => ({ ...prev, [g.key]: !prev[g.key] }))}
                   activeSession={activeSession}
                   onLaunch={g.project ? () => onLaunchProject(g.project!) : null}
+                  onBrowseIssues={
+                    g.project && onBrowseIssues ? () => onBrowseIssues(g.project!) : null
+                  }
                   onOpenSession={onOpenSession}
                   onStopSession={onStopSession}
                   onDeleteProject={onDeleteProject}
@@ -333,6 +339,7 @@ function GroupRow({
   onToggle,
   activeSession,
   onLaunch,
+  onBrowseIssues,
   onOpenSession,
   onStopSession,
   onDeleteProject,
@@ -342,6 +349,7 @@ function GroupRow({
   onToggle: () => void;
   activeSession: string | null;
   onLaunch: (() => void) | null;
+  onBrowseIssues: (() => void) | null;
   onOpenSession: (name: string) => void;
   onStopSession: (s: TmuxSession) => void;
   onDeleteProject?: (name: string) => void;
@@ -411,6 +419,17 @@ function GroupRow({
             className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev opacity-0 group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100 transition-opacity"
           >
             <span className="text-base leading-none">⋯</span>
+          </button>
+        )}
+        {onBrowseIssues && isGit && (
+          <button
+            type="button"
+            onClick={onBrowseIssues}
+            aria-label={`${name} の issue 一覧`}
+            title="issue から起動"
+            className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-elev"
+          >
+            <IconIssue className="w-3.5 h-3.5" />
           </button>
         )}
         {onLaunch && (
