@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR, { mutate } from "swr";
 import { useBlocker, useNavigate } from "@tanstack/react-router";
 import { Toggle } from "./Toggle";
@@ -80,7 +80,10 @@ export function SettingsPage() {
   const { data: cfgData, isLoading: cfgLoading } = useSWR<ConfigInfo>("/api/config", fetcher);
 
   const [form, setForm] = useState<FormState>(empty);
-  const initialRef = useRef<FormState>(empty);
+  // The last-saved snapshot. Kept in state (not a ref) so that updating it
+  // after a successful save re-renders and recomputes `dirty` — a ref mutation
+  // wouldn't, leaving the UI stuck on "未保存".
+  const [saved, setSaved] = useState<FormState>(empty);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -99,12 +102,12 @@ export function SettingsPage() {
       defaultCli: cfgData.defaultCli,
     };
     setForm(next);
-    initialRef.current = next;
+    setSaved(next);
   }, [prefData, cfgData]);
 
   const dirty = useMemo(() => {
-    return JSON.stringify(form) !== JSON.stringify(initialRef.current);
-  }, [form]);
+    return JSON.stringify(form) !== JSON.stringify(saved);
+  }, [form, saved]);
 
   // Block in-app navigation when dirty
   useBlocker({
@@ -175,7 +178,7 @@ export function SettingsPage() {
       toast({ title: "保存しました", color: "success" });
       mutate("/api/preferences");
       mutate("/api/config");
-      initialRef.current = form;
+      setSaved(form);
     } catch (e) {
       toast({ title: "保存失敗", description: (e as Error).message, color: "danger" });
     } finally {
@@ -191,7 +194,7 @@ export function SettingsPage() {
   const loading = prefLoading || cfgLoading;
 
   return (
-    <div className="min-h-[var(--app-h)] bg-app text-fg flex flex-col">
+    <div className="h-[var(--app-h)] bg-app text-fg flex flex-col">
       <header className="sticky top-0 z-10 bg-surface border-b border-line safe-top">
         <div className="max-w-5xl mx-auto w-full px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-3">
           <button
@@ -224,7 +227,7 @@ export function SettingsPage() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 min-h-0 overflow-y-auto">
         <div className="max-w-5xl mx-auto w-full px-4 py-6 space-y-8">
           {loading ? (
             <div className="flex justify-center py-12">
