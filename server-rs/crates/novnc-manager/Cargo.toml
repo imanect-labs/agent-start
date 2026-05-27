@@ -11,3 +11,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
+shlex = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
