@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { Button } from "@/components/ui";
+import { Button, Spinner } from "@/components/ui";
 import { useTheme } from "@/components/ThemeProvider";
 
 type Props = {
@@ -431,6 +431,17 @@ export function Terminal({
             background: theme.background,
           }}
         />
+        {!stopped && status === "connecting" && (
+          // Loading overlay shown while the WS is still connecting — most
+          // visible right after a session is created/launched, when the
+          // terminal pane is otherwise an empty black rectangle.
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="flex items-center gap-2 rounded-md border border-line bg-surface-elev/90 px-3 py-2 text-xs text-fg-subtle shadow-sm backdrop-blur-sm">
+              <Spinner size="sm" />
+              接続中…
+            </div>
+          </div>
+        )}
         {stopped && onRestart && (
           // Overlay anchored to the bottom of the terminal pane. Using
           // an overlay (rather than replacing the terminal) keeps the

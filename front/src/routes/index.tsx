@@ -369,7 +369,17 @@ export function IndexPage() {
 
   const handleStopConfirm = async (deleteWorktree: boolean) => {
     if (!deleteTarget) return;
+    const targetName = deleteTarget.name;
     setDeleting(true);
+    // Optimistically drop the session from the list so the sidebar reflects
+    // the removal immediately instead of waiting for the next poll.
+    mutate(
+      "/api/sessions",
+      (cur?: { sessions: TmuxSession[] }) => ({
+        sessions: (cur?.sessions ?? []).filter((s) => s.name !== targetName),
+      }),
+      { revalidate: false },
+    );
     try {
       const url = `/api/sessions/${encodeURIComponent(deleteTarget.name)}${
         deleteWorktree ? "?deleteWorktree=1" : ""
@@ -402,6 +412,8 @@ export function IndexPage() {
         description: (e as Error).message,
         color: "danger",
       });
+      // Restore the optimistically removed session on failure.
+      mutate("/api/sessions");
     } finally {
       setDeleting(false);
     }

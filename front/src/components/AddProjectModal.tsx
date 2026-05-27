@@ -51,7 +51,22 @@ export function AddProjectModal({ open, onClose }: Props) {
         description: json.name,
         color: "info",
       });
-      mutate("/api/projects");
+      // Optimistically surface a pending row (with its spinner) right away so
+      // the sidebar reflects the in-flight clone/import before the next poll.
+      const pendingName = (json.name as string) || body.name || (isClone ? url.trim() : src.trim());
+      mutate(
+        "/api/projects",
+        (cur?: { projects: unknown[]; pending?: { name: string; kind: string }[] }) => {
+          const kind = isClone ? "clone" : "import";
+          const existing = cur?.pending ?? [];
+          const already = existing.some((p) => p.name === pendingName && p.kind === kind);
+          return {
+            ...(cur ?? { projects: [] }),
+            pending: already ? existing : [...existing, { name: pendingName, path: "", kind }],
+          };
+        },
+        { revalidate: true },
+      );
       reset();
       onClose();
     } catch (e) {

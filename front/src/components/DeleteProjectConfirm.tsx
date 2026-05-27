@@ -16,6 +16,13 @@ export function DeleteProjectConfirm({ open, name, onClose }: Props) {
 
   const submit = async () => {
     setBusy(true);
+    // Optimistically drop the project so the sidebar updates instantly.
+    mutate(
+      "/api/projects",
+      (cur?: { projects: { name: string }[]; pending?: unknown[] }) =>
+        cur ? { ...cur, projects: (cur.projects ?? []).filter((p) => p.name !== name) } : cur,
+      { revalidate: false },
+    );
     try {
       const res = await fetch(`/api/projects/${encodeURIComponent(name)}`, {
         method: "DELETE",
@@ -27,6 +34,8 @@ export function DeleteProjectConfirm({ open, name, onClose }: Props) {
       onClose();
     } catch (e) {
       toast({ title: "削除失敗", description: (e as Error).message, color: "danger" });
+      // Restore the optimistically removed project on failure.
+      mutate("/api/projects");
     } finally {
       setBusy(false);
     }
