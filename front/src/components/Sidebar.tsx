@@ -190,7 +190,8 @@ export function Sidebar({
         ].join(" ")}
       >
         <div className="px-3 py-2.5 flex items-center gap-2 border-b border-line">
-          <div className="flex items-baseline gap-2 flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <img src="/logo.png" alt="" className="w-5 h-5 shrink-0" />
             <span className="text-sm font-semibold tracking-tight text-fg">agent-start</span>
           </div>
           <button

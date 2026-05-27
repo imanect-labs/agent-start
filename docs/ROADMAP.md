@@ -2,35 +2,35 @@
 
 ## ゴール
 
-agent-start を **Web で動く、セルフホスト可能な superset 代替** に作り直す。
+agent-start を **Web で動く、セルフホスト可能なエージェント開発ハブ** に作り直す。
 
-superset.sh は macOS Desktop アプリ。agent-start はそれを **Linux サーバ上で常駐させ、tailnet 経由でブラウザ (PC / スマホ) から使う** ことを前提にした OSS Web 実装を目指す。superset の機能セット (workspace = worktree、agent 並列実行、永続ターミナル、ポート自動検出、diff viewer 等) を Web UI で享受できれば良い。
+参考にした macOS Desktop アプリがあるが、agent-start はそれを **Linux サーバ上で常駐させ、tailnet 経由でブラウザ (PC / スマホ) から使う** ことを前提にした OSS Web 実装を目指す。同等の機能セット (workspace = worktree、agent 並列実行、永続ターミナル、ポート自動検出、diff viewer 等) を Web UI で享受できれば良い。
 
 設計上の判断:
 
-- **superset.sh とのワイヤ互換 (CLI / HTTP API / `~/.superset/` ファイルレイアウト) は追わない**。superset のソースは Elastic License 2.0 で借用に制約があり、また superset SDK / MCP / `superset` CLI スクリプトとの互換性を維持するメリットも薄い。
+- **Desktop 製品とのワイヤ互換 (CLI / HTTP API / レガシーホームディレクトリ) は追わない**。参考にした Desktop 製品のソースは Elastic License 2.0 で借用に制約があり、また Desktop 製品の SDK / MCP / CLI スクリプトとの互換性を維持するメリットも薄い。
 - **Rust バックエンド**: 速度・メモリ安全性・小さな静的バイナリでの配布を理由に Node/Next.js の API・サーバ部を置換する。CLI とサーバは **別バイナリ** (`agent-start` と `agent-start-host`) として分離 (理由は §2.0)。
 - **tmux 撤廃**: PTY 多重化と「切断後も生存」を Rust ホストプロセス内で完結 (`portable-pty` + 自前永続化)。tmux 外部依存をなくす。
 - **/front 分離**: 既存 Next.js を捨て、`/front` に Vite + React の薄い SPA を新規構築。バックエンドとは HTTP/WebSocket だけで会話する。
-- **モバイル/タブレットでの利用品質**を superset Desktop と差別化のキモにする (superset 自体は macOS Desktop のみ)。
+- **モバイル/タブレットでの利用品質**を差別化のキモにする (既存 Desktop 製品は macOS Desktop のみ)。
 
 ## 1. 機能スコープ
 
-superset.sh (docs.superset.sh) の機能セットを参考にしつつ、Web セルフホスト前提で取捨選択する。`★` = v1 必須 / `☆` = v2 / `−` = 非スコープ。
+参考にする Desktop 製品の機能セットを下敷きにしつつ、Web セルフホスト前提で取捨選択する。`★` = v1 必須 / `☆` = v2 / `−` = 非スコープ。
 
 ### 1.1 提供形態
 
-| superset の形態 | agent-start での扱い |
+| 参考とする Desktop 製品の形態 | agent-start での扱い |
 | --- | --- |
 | Desktop IDE (macOS Electron) | − 採らない。 |
-| Host Server (`superset start --daemon`、127.0.0.1) | ★ Rust 常駐プロセス。既定は `127.0.0.1`、tailnet/LAN 公開は `--bind` 明示。 |
-| CLI (`superset` バイナリ) | ★ Rust 製 `agent-start` CLI。サブコマンドは superset を模さず、本ツール独自の語彙で揃える。 |
-| Superset Relay (リモートワークスペース横断) | − tailnet で代替。 |
+| Host Server (`<参考 daemon>`、127.0.0.1) | ★ Rust 常駐プロセス。既定は `127.0.0.1`、tailnet/LAN 公開は `--bind` 明示。 |
+| CLI (参考の単一バイナリ) | ★ Rust 製 `agent-start` CLI。サブコマンドは参考 CLI を模さず、本ツール独自の語彙で揃える。 |
+| リモートワークスペース横断 (参考 Relay 機能) | − tailnet で代替。 |
 | MCP server デプロイ | ☆ v2 で検討。 |
 
-### 1.2 機能 (superset.sh から取り込む項目)
+### 1.2 機能 (参考 Desktop 製品から取り込む項目)
 
-`★` = v1 必須 / `☆` = v2 / `−` = 非スコープ。superset.sh の機能を可能な限り粒度を揃えて列挙する。
+`★` = v1 必須 / `☆` = v2 / `−` = 非スコープ。参考 Desktop 製品の機能を可能な限り粒度を揃えて列挙する。
 
 #### 1.2.1 Project (リポジトリ) 管理
 
@@ -82,7 +82,7 @@ superset.sh (docs.superset.sh) の機能セットを参考にしつつ、Web セ
 | 機能 | 必須度 | 備考 |
 | --- | --- | --- |
 | Preset: Claude Code / Codex / Cursor Agent / Gemini CLI / OpenCode / Pi / Amp Code | ★ | §1.6。 |
-| **Auto-run トグル** (即時 exec か、コマンド入力欄にステージするだけか) | ★ | superset の "Auto-run Command"。 |
+| **Auto-run トグル** (即時 exec か、コマンド入力欄にステージするだけか) | ★ | 参考 Desktop の "Auto-run Command"。 |
 | **prompt-aware command variant** (prompt の有無で起動引数を切替) | ★ | preset の `args_template_with_prompt` を別途持つ。 |
 | **task prompt テンプレート** (タスク連携起動時のテンプレ文字列) | ☆ | |
 | **モデル override** (preset ごとに `--model` 等を上書き) | ★ | UI の「設定→Agents」から。 |
@@ -98,7 +98,7 @@ superset.sh (docs.superset.sh) の機能セットを参考にしつつ、Web セ
 | **setup** は workspace 作成時にブロックして実行 | ★ | 失敗時は作成中止 + worktree クリーン。 |
 | **teardown** は workspace 削除時に実行 | ★ | 失敗しても削除は完遂。 |
 | **run** は on-demand (UI の「Run」ボタン)、専用 terminal pane で表示、**再起動可能** | ★ | dev server 想定。 |
-| **`.agent-start/config.local.json`** (gitignore 推奨) で setup/teardown/run を `before` / `after` で拡張 or 全置換 | ★ | superset 互換相当の挙動。 |
+| **`.agent-start/config.local.json`** (gitignore 推奨) で setup/teardown/run を `before` / `after` で拡張 or 全置換 | ★ | 参考 Desktop 互換相当の挙動。 |
 | **`~/.agent-start/projects/<projectId>/config.json`** でユーザ override | ★ | リポを汚さずに setup を差し替え。 |
 
 #### 1.2.6 Diff Viewer
@@ -156,7 +156,7 @@ superset.sh (docs.superset.sh) の機能セットを参考にしつつ、Web セ
 
 | 機能 | 必須度 | 備考 |
 | --- | --- | --- |
-| キーボードショートカット (新規 workspace / 開く / tab 操作 / コマンドパレット) | ★ | superset の `⌘O / ⌘T / ⌘W / ⌘1-9` 相当を Web で。 |
+| キーボードショートカット (新規 workspace / 開く / tab 操作 / コマンドパレット) | ★ | 参考 Desktop の `⌘O / ⌘T / ⌘W / ⌘1-9` 相当を Web で。 |
 | **コマンドパレット** (`Ctrl+K` / `Cmd+K`) | ★ | 新規 workspace / agent run / open in code-server を即起動。 |
 | テーマ (既存 ThemeProvider 継続、light/dark) | ★ | |
 | Toast / 確認シート | ★ | 既存を `/front` で再現 (UX 改善ありき)。 |
@@ -167,8 +167,8 @@ superset.sh (docs.superset.sh) の機能セットを参考にしつつ、Web セ
 
 | 項目 | 理由 |
 | --- | --- |
-| superset.sh CLI / HTTP API / `~/.superset/` ファイル互換 | 互換維持のメリットが薄く ELv2 制約もあるため。 |
-| Superset Relay (リモート横断) | tailnet で代替。 |
+| 参考 Desktop の CLI / HTTP API / ホームディレクトリ互換 | 互換維持のメリットが薄く ELv2 制約もあるため。 |
+| 参考 Desktop Relay (リモート横断) | tailnet で代替。 |
 | 内部 Tasks トラッカー | Linear / GitHub Issues 連携が前提。 |
 | Organization / Multi-host / OAuth | セルフホスト単機運用。 |
 | Auto-update | cargo-dist / GitHub Releases に委ねる。 |
@@ -176,7 +176,7 @@ superset.sh (docs.superset.sh) の機能セットを参考にしつつ、Web セ
 
 ### 1.3 agent-start CLI (独自設計)
 
-`superset` CLI は模倣しない。本ツール独自の薄い CLI を提供する。原則: ローカルの host server に HTTP で問い合わせるシンクライアント (詳細は §2.0)。
+参考 Desktop の CLI は模倣しない。本ツール独自の薄い CLI を提供する。原則: ローカルの host server に HTTP で問い合わせるシンクライアント (詳細は §2.0)。
 
 ```
 agent-start start    [--bind <addr>] [--port <n>] [--daemon]   ホスト起動
@@ -551,7 +551,7 @@ UI からの override は `~/.agent-start/presets/<id>.toml` に書き出し、r
 
 `imanect-labs/agent-start` に起票済み:
 
-1. #4  [Epic] セルフホスト型 superset 代替の構築
+1. #4  [Epic] セルフホスト型 Web IDE の構築
 2. #5  Rust バックエンドへの置換 (axum + tokio)
 3. #6  tmux 撤廃: 自前 PTY マネージャ (portable-pty + 永続化)
 4. #7  Next.js → /front (Vite + React) への分離
@@ -565,7 +565,7 @@ UI からの override は `~/.agent-start/presets/<id>.toml` に書き出し、r
 
 ## 6. リスクと未確定事項
 
-- **superset Desktop に追いつくのは Web UI の表現力**。Electron 専用機能 (グローバルショートカット、OS ネイティブ通知、Finder/Explorer 連携) は諦めるか PWA でカバー
+- **参考 Desktop に追いつくのは Web UI の表現力**。Electron 専用機能 (グローバルショートカット、OS ネイティブ通知、Finder/Explorer 連携) は諦めるか PWA でカバー
 - **PTY 永続化の冪等性**。host server クラッシュ時の子プロセス孤児化を防ぐ運用 (systemd-user 推奨) をドキュメント化
 - **マイグレーション**。`~/.config/agent-start/config.json` 利用者のために 1 リリースだけ自動 import を残す
 - **モバイル UX**。既存スマホ UI の見た目には縛られない (むしろ作り直す) が、片手操作・ソフトキーボード共存・タブ切替の踏みやすさ等は新 UI の合意点としてレビューで担保する
