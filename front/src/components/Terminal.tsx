@@ -183,6 +183,10 @@ export function Terminal({
         }
       });
 
+      // Fresh instance starts with no selection — clear any state left over
+      // from a previous terminal (reconnect / session switch) so the copy
+      // button isn't stuck enabled until the next selection event.
+      setHasSelection(false);
       term.onSelectionChange(() => {
         setHasSelection(!!termRef.current?.hasSelection?.());
       });
@@ -589,11 +593,13 @@ async function copyToClipboard(text: string): Promise<boolean> {
     ta.style.opacity = "0";
     ta.setAttribute("readonly", "");
     document.body.appendChild(ta);
-    ta.select();
-    ta.setSelectionRange(0, text.length);
-    const ok = document.execCommand("copy");
-    document.body.removeChild(ta);
-    return ok;
+    try {
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      return document.execCommand("copy");
+    } finally {
+      document.body.removeChild(ta);
+    }
   } catch {
     return false;
   }
