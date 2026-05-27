@@ -11,6 +11,7 @@ pub mod code_server_proxy;
 mod config;
 mod fs;
 mod git;
+mod git_write;
 mod meta;
 mod novnc;
 pub mod novnc_proxy;
@@ -24,6 +25,10 @@ pub use code_server::{close_code_server, open_code_server};
 pub use config::{get_config, put_config};
 pub use fs::{fs_read, fs_tree, fs_write};
 pub use git::{git_diff, git_status};
+pub use git_write::{
+    git_branches, git_checkout, git_commit, git_create_branch, git_delete_branch, git_discard,
+    git_fetch, git_log, git_pull, git_push, git_stage, git_tree, git_unstage,
+};
 pub use meta::{health, version};
 pub use novnc::{close_novnc, open_novnc};
 pub use preferences::{get_preferences, put_preferences};

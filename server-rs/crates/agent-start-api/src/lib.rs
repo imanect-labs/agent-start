@@ -304,6 +304,125 @@ pub struct GitDiffBody {
     pub is_untracked: bool,
 }
 
+/// Shared body for `stage` / `unstage`: a repo path plus the files to act
+/// on. An empty `files` list means "all".
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitPathsRequest {
+    pub path: String,
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitCommitRequest {
+    pub path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitCommitResponse {
+    pub sha: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitDiscardRequest {
+    pub path: String,
+    pub files: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitBranch {
+    pub name: String,
+    pub current: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+    #[serde(rename = "isRemote")]
+    pub is_remote: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitBranchesBody {
+    pub branches: Vec<GitBranch>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitCreateBranchRequest {
+    pub path: String,
+    pub name: String,
+    #[serde(default)]
+    pub base: Option<String>,
+    #[serde(default)]
+    pub checkout: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitCheckoutRequest {
+    pub path: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitDeleteBranchRequest {
+    pub path: String,
+    pub name: String,
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitSyncRequest {
+    pub path: String,
+    #[serde(default)]
+    pub remote: Option<String>,
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(rename = "setUpstream", default)]
+    pub set_upstream: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitSyncResponse {
+    pub stdout: String,
+    pub stderr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitCommitNode {
+    pub sha: String,
+    #[serde(rename = "shortSha")]
+    pub short_sha: String,
+    pub parents: Vec<String>,
+    pub subject: String,
+    #[serde(rename = "authorName")]
+    pub author_name: String,
+    #[serde(rename = "authorEmail")]
+    pub author_email: String,
+    #[serde(rename = "authoredAt")]
+    pub authored_at: i64,
+    pub refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitLogBody {
+    pub commits: Vec<GitCommitNode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitTreeEntry {
+    pub path: String,
+    pub name: String,
+    #[serde(rename = "isDir")]
+    pub is_dir: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitTreeBody {
+    pub entries: Vec<GitTreeEntry>,
+}
+
 /// WebSocket protocol messages — JSON over `/ws/terminal?session=<name>`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
