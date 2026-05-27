@@ -16,9 +16,15 @@ const VARIANT: Record<Variant, string> = {
 };
 
 const SIZE: Record<Size, string> = {
-  sm: "h-8 px-3 text-xs rounded-md gap-1.5",
-  md: "h-10 px-3.5 text-sm rounded-md gap-2",
-  lg: "h-11 px-4 text-sm rounded-md gap-2",
+  sm: "h-8 px-3 text-xs rounded-md",
+  md: "h-10 px-3.5 text-sm rounded-md",
+  lg: "h-11 px-4 text-sm rounded-md",
+};
+
+const GAP: Record<Size, string> = {
+  sm: "gap-1.5",
+  md: "gap-2",
+  lg: "gap-2",
 };
 
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -49,7 +55,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
       type={type}
       disabled={isDisabled}
       className={[
-        "inline-flex items-center justify-center whitespace-nowrap font-medium",
+        "relative inline-flex items-center justify-center whitespace-nowrap font-medium",
         "transition-colors duration-150",
         "outline-none focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1 focus-visible:ring-offset-surface",
         "disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none",
@@ -60,15 +66,21 @@ export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
       ].join(" ")}
       {...rest}
     >
-      {loading ? (
-        <span
-          aria-hidden
-          className="inline-block h-3.5 w-3.5 rounded-full border-2 border-current border-r-transparent animate-spin"
-        />
-      ) : (
-        leftIcon
+      {loading && (
+        <span className="absolute inset-0 inline-flex items-center justify-center">
+          <span
+            aria-label="読み込み中"
+            role="status"
+            className="inline-block h-3.5 w-3.5 rounded-full border-2 border-current border-r-transparent animate-spin"
+          />
+        </span>
       )}
-      {children}
+      <span
+        className={["inline-flex items-center", GAP[size], loading ? "invisible" : ""].join(" ")}
+      >
+        {leftIcon}
+        {children}
+      </span>
     </button>
   );
 });

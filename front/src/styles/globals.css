@@ -93,8 +93,12 @@
 html,
 body {
   height: 100%;
+  /* The app shell is sized to the viewport (`--app-h`) and manages its own
+   * inner scroll regions, so the document itself must never scroll. Without
+   * this the root page rubber-bands ("バインバイン") on touch/trackpad. */
+  overflow: hidden;
   -webkit-tap-highlight-color: transparent;
-  overscroll-behavior-y: contain;
+  overscroll-behavior: none;
   background: rgb(var(--app));
   color: rgb(var(--fg));
 }

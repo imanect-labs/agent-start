@@ -170,7 +170,7 @@ export function EditorTab({ path, view, onViewChange, onDirtyChange }: Props) {
           onClick={save}
           disabled={!dirty || saving}
           className={[
-            "h-7 px-2.5 text-[12px] rounded-md border transition-colors",
+            "h-7 min-w-[68px] inline-flex items-center justify-center px-2.5 text-[12px] rounded-md border transition-colors",
             !dirty || saving
               ? "border-line text-fg-faint cursor-not-allowed"
               : "border-accent bg-accent text-accent-fg hover:opacity-90",
