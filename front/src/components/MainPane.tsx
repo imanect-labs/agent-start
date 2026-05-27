@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Badge, Button } from "@/components/ui";
+import { Badge, Button, Skeleton, Spinner } from "@/components/ui";
 import {
   IconBranch,
   IconChevronRight,
@@ -71,6 +71,17 @@ export function MainPane({
   onOpenDiff,
   onOpenFile,
 }: Props) {
+  // Optimistic placeholder while the host is still creating the session
+  // (POST /api/sessions in flight). The real PTY/name doesn't exist yet, so
+  // we can't mount a Terminal — show a skeleton shaped like the eventual
+  // layout so the launch feels instant.
+  if (session?.pending) {
+    // The temp id ("pending:…") isn't user-facing — show the project's
+    // basename while the real session name is being assigned.
+    const label = session.path.split("/").filter(Boolean).pop() || "セッション";
+    return <PendingSessionView name={label} onToggleSidebar={onToggleSidebar} />;
+  }
+
   if (!session || !tabs) {
     return <WelcomeBanner onToggleSidebar={onToggleSidebar} />;
   }
@@ -531,6 +542,16 @@ function TabContent({
   onOpenFile?: (absPath: string) => void;
 }) {
   if (tab.kind === "terminal") {
+    // Optimistic terminal tab: the tmux window is still being created on the
+    // host. Show a skeleton until the real windowId arrives and the tab
+    // remounts onto a live PTY.
+    if (tab.pending || tab.windowId < 0) {
+      return (
+        <div className="flex-1 min-h-0 p-3">
+          <TerminalSkeleton />
+        </div>
+      );
+    }
     return (
       <div className="flex-1 min-h-0 p-3">
         <Terminal
@@ -684,6 +705,68 @@ function MenuButton({
     >
       {children}
     </button>
+  );
+}
+
+/** Terminal-shaped skeleton: a status line plus a large dark rectangle that
+ *  mirrors the xterm pane, used while a PTY/window is being created. */
+function TerminalSkeleton() {
+  return (
+    <div className="flex flex-col gap-2 h-full min-h-0">
+      <div className="flex items-center gap-1.5 text-xs">
+        <Spinner size="sm" />
+        <span className="text-fg-subtle">起動中…</span>
+      </div>
+      <Skeleton className="flex-1 min-h-0 rounded-md" />
+    </div>
+  );
+}
+
+/** Full-pane placeholder shown while POST /api/sessions is in flight: a
+ *  header with the project name and a spinner, a skeleton tab bar, and a
+ *  terminal-shaped skeleton body. */
+function PendingSessionView({
+  name,
+  onToggleSidebar,
+}: {
+  name: string;
+  onToggleSidebar?: () => void;
+}) {
+  return (
+    <div className="h-full w-full min-w-0 flex flex-col bg-app">
+      <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 border-b border-line bg-surface min-h-[52px]">
+        {onToggleSidebar && (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label="サイドバーを開く"
+            className="lg:hidden -ml-1 w-10 h-10 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted"
+          >
+            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path d="M3 5h14v2H3V5Zm0 4h14v2H3V9Zm0 4h14v2H3v-2Z" />
+            </svg>
+          </button>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <Spinner size="sm" />
+            <span className="font-mono text-sm text-fg-muted truncate">{name}</span>
+            <Badge tone="amber">起動中…</Badge>
+          </div>
+          <div className="text-[11px] text-fg-subtle mt-0.5">セッションを準備しています</div>
+        </div>
+      </div>
+      {/* Skeleton tab bar */}
+      <div className="flex items-stretch min-w-0 border-b border-line bg-surface-muted">
+        <div className="shrink-0 flex items-center gap-2 pl-3 pr-4 py-2.5 sm:py-2 border-r border-line">
+          <Skeleton className="w-3.5 h-3.5 rounded" />
+          <Skeleton className="w-16 h-3 rounded" />
+        </div>
+      </div>
+      <div className="flex-1 min-h-0 p-3">
+        <TerminalSkeleton />
+      </div>
+    </div>
   );
 }
 

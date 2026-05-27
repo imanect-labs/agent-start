@@ -42,6 +42,10 @@ export type TmuxSession = {
   cli: string;
   worktreePath: string;
   origPath: string;
+  /** Optimistic placeholder: the session is still being created on the
+   * host. Rendered with a spinner and no stop button until the real
+   * session arrives from /api/sessions. */
+  pending?: boolean;
 };
 
 const CLI_LABEL: Record<string, string> = {
@@ -510,6 +514,7 @@ function SessionRow({
 }) {
   const hasWorktree = !!session.worktreePath;
   const cliLabel = CLI_LABEL[session.cli] || session.cli || "claude";
+  const pending = !!session.pending;
   return (
     <li
       className={[
@@ -519,13 +524,19 @@ function SessionRow({
       ].join(" ")}
       onClick={onOpen}
     >
-      <span
-        aria-hidden
-        className={[
-          "mt-1.5 inline-block w-1.5 h-1.5 rounded-full shrink-0",
-          session.stopped ? "bg-warn" : session.attached ? "bg-success" : "bg-fg-faint",
-        ].join(" ")}
-      />
+      {pending ? (
+        <span className="mt-1 inline-flex w-2 h-2 items-center justify-center shrink-0">
+          <Spinner size="xs" />
+        </span>
+      ) : (
+        <span
+          aria-hidden
+          className={[
+            "mt-1.5 inline-block w-1.5 h-1.5 rounded-full shrink-0",
+            session.stopped ? "bg-warn" : session.attached ? "bg-success" : "bg-fg-faint",
+          ].join(" ")}
+        />
+      )}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           {hasWorktree ? (
@@ -536,33 +547,44 @@ function SessionRow({
           <span
             className={[
               "text-[12px] font-mono truncate",
-              session.stopped ? "text-fg-subtle" : "",
+              session.stopped || pending ? "text-fg-subtle" : "",
             ].join(" ")}
           >
-            {session.name}
+            {pending ? session.path.split("/").filter(Boolean).pop() || "セッション" : session.name}
           </span>
-          {session.stopped && (
+          {session.stopped && !pending && (
             <span className="text-[9px] uppercase tracking-wider text-warn shrink-0">stopped</span>
           )}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-fg-faint">
           <span>{cliLabel}</span>
-          <span>·</span>
-          <span>{formatRelative(session.createdAt)}</span>
+          {pending ? (
+            <>
+              <span>·</span>
+              <span className="text-warn">起動中…</span>
+            </>
+          ) : (
+            <>
+              <span>·</span>
+              <span>{formatRelative(session.createdAt)}</span>
+            </>
+          )}
         </div>
       </div>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onStop();
-        }}
-        aria-label="停止"
-        title="停止"
-        className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded text-fg-faint hover:text-danger hover:bg-danger/10"
-      >
-        <IconX className="w-3.5 h-3.5" />
-      </button>
+      {!pending && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onStop();
+          }}
+          aria-label="停止"
+          title="停止"
+          className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded text-fg-faint hover:text-danger hover:bg-danger/10"
+        >
+          <IconX className="w-3.5 h-3.5" />
+        </button>
+      )}
     </li>
   );
 }
