@@ -351,8 +351,20 @@ fn prepare_start(body: &StartSessionRequest) -> Erred<Prepared> {
         ));
     }
 
-    let command = config_loader::build_launch_command(cli_conf, skip, &extra)
+    let mut command = config_loader::build_launch_command(cli_conf, skip, &extra)
         .map_err(|e| bad(e.to_string()))?;
+
+    // An initial prompt (e.g. launching from a GitHub issue) is handed to
+    // the agent CLI as a positional argument. Skip it for the bare-shell
+    // CLI (empty command) which has no prompt argument.
+    if let Some(prompt) = body.prompt.as_deref() {
+        let trimmed = prompt.trim();
+        if !trimmed.is_empty() && !command.is_empty() {
+            let capped: String = trimmed.chars().take(MAX_PROMPT_CHARS).collect();
+            command.push(' ');
+            command.push_str(&shell_single_quote(&capped));
+        }
+    }
 
     Ok(Prepared {
         cfg,
@@ -377,6 +389,28 @@ fn maybe_create_worktree(
     }
 }
 
+/// Upper bound on the initial-prompt length we forward to the CLI. Issue
+/// bodies can be long; this keeps the spawned command line well within
+/// `ARG_MAX` while preserving enough context to be useful.
+const MAX_PROMPT_CHARS: usize = 8000;
+
+/// Wrap `s` in single quotes for safe inclusion in the `bash -lc <cmd>`
+/// command string, escaping embedded single quotes as `'\''`. The result
+/// is passed verbatim to the CLI as one positional argument.
+fn shell_single_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
 fn launch_env(orig: &StdPath, name: &str, cwd: &StdPath) -> Vec<(String, String)> {
     vec![
         (
@@ -390,4 +424,29 @@ fn launch_env(orig: &StdPath, name: &str, cwd: &StdPath) -> Vec<(String, String)
         ),
         ("TERM".into(), "xterm-256color".into()),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shell_single_quote;
+
+    #[test]
+    fn quotes_plain_text() {
+        assert_eq!(shell_single_quote("hello world"), "'hello world'");
+    }
+
+    #[test]
+    fn escapes_embedded_single_quotes() {
+        // bash sees: 'it'\''s' -> concatenated literal `it's`
+        assert_eq!(shell_single_quote("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn neutralizes_shell_metacharacters() {
+        let q = shell_single_quote("$(rm -rf /); `whoami` && echo \"x\"");
+        // Everything stays inside one quoted span (no unescaped quote breaks out).
+        assert!(q.starts_with('\''));
+        assert!(q.ends_with('\''));
+        assert!(q.contains("$(rm -rf /)"));
+    }
 }

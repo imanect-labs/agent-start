@@ -8,10 +8,12 @@
 
 mod diff;
 mod exec;
+mod github;
 mod status;
 mod worktree;
 
 pub use diff::{git_diff, DiffMode, GitDiff};
 pub use exec::{clone, is_git_repo, GitError};
+pub use github::{list_issues, view_issue, IssueDetail, IssueSummary};
 pub use status::{git_status, GitFile, GitStatus};
 pub use worktree::{create_worktree, remove_worktree, worktree_path_for, WorktreeCreated};

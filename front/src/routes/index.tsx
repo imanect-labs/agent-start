@@ -11,6 +11,7 @@ import { Sidebar, type PendingProject, type Project, type TmuxSession } from "@/
 import { MainPane } from "@/components/MainPane";
 import { RightPane } from "@/components/RightPane";
 import { LaunchConfirmSheet, type LaunchOverrides } from "@/components/LaunchConfirmSheet";
+import { IssuesSheet } from "@/components/IssuesSheet";
 import { DeleteConfirmSheet, type DeleteTarget } from "@/components/DeleteConfirmSheet";
 import { AddProjectModal } from "@/components/AddProjectModal";
 import { DeleteProjectConfirm } from "@/components/DeleteProjectConfirm";
@@ -72,6 +73,14 @@ export function IndexPage() {
   const toast = useToast();
 
   const [launchTarget, setLaunchTarget] = useState<Project | null>(null);
+  const [issuesTarget, setIssuesTarget] = useState<Project | null>(null);
+  // When launching from an issue, the issue context to forward as the
+  // agent's initial prompt (and to show in the launch sheet banner).
+  const [pendingIssue, setPendingIssue] = useState<{
+    prompt: string;
+    number: number;
+    title: string;
+  } | null>(null);
   const [launching, setLaunching] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -389,6 +398,7 @@ export function IndexPage() {
           skipPermissions: o.skipPermissions,
           extraArgs: o.extraArgs,
           createWorktree: o.createWorktree,
+          prompt: pendingIssue?.prompt,
         }),
       });
       const json = await res.json();
@@ -399,6 +409,7 @@ export function IndexPage() {
         color: "success",
       });
       setLaunchTarget(null);
+      setPendingIssue(null);
       await mutate("/api/sessions");
       if (typeof json.name === "string") openSession(json.name);
     } catch (e) {
@@ -535,6 +546,10 @@ export function IndexPage() {
         setSidebarOpen(false);
         setLaunchTarget(p);
       }}
+      onBrowseIssues={(p) => {
+        setSidebarOpen(false);
+        setIssuesTarget(p);
+      }}
       onOpenSession={(n) => {
         setSidebarOpen(false);
         openSession(n);
@@ -636,12 +651,31 @@ export function IndexPage() {
         </>
       )}
 
+      <IssuesSheet
+        isOpen={!!issuesTarget}
+        projectName={issuesTarget?.name ?? ""}
+        projectPath={issuesTarget?.path ?? ""}
+        onClose={() => setIssuesTarget(null)}
+        onLaunchIssue={(prompt, number, title) => {
+          const project = issuesTarget;
+          setIssuesTarget(null);
+          setPendingIssue({ prompt, number, title });
+          setLaunchTarget(project);
+        }}
+      />
+
       <LaunchConfirmSheet
         isOpen={!!launchTarget}
         projectName={launchTarget?.name ?? ""}
         projectPath={launchTarget?.path ?? ""}
         isGit={!!launchTarget?.isGit}
-        onClose={() => setLaunchTarget(null)}
+        issueContext={
+          pendingIssue ? { number: pendingIssue.number, title: pendingIssue.title } : undefined
+        }
+        onClose={() => {
+          setLaunchTarget(null);
+          setPendingIssue(null);
+        }}
         onLaunch={handleLaunch}
         launching={launching}
       />

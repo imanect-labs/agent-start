@@ -231,6 +231,11 @@ pub struct StartSessionRequest {
     pub extra_args: Option<String>,
     #[serde(rename = "createWorktree")]
     pub create_worktree: Option<bool>,
+    /// Optional initial prompt handed to the agent CLI as a positional
+    /// argument (e.g. launching a session from a GitHub issue). Ignored
+    /// for the bare-shell CLI.
+    #[serde(default)]
+    pub prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -302,6 +307,40 @@ pub struct GitDiffBody {
     pub truncated: bool,
     #[serde(rename = "isUntracked")]
     pub is_untracked: bool,
+}
+
+/// One GitHub issue row in the project's issue list.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueSummary {
+    pub number: u64,
+    pub title: String,
+    pub state: String,
+    pub labels: Vec<String>,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    pub author: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssuesBody {
+    pub issues: Vec<IssueSummary>,
+}
+
+/// Full GitHub issue, including the markdown body.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueDetail {
+    pub number: u64,
+    pub title: String,
+    pub body: String,
+    pub state: String,
+    pub labels: Vec<String>,
+    pub url: String,
+    pub author: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueDetailBody {
+    pub issue: IssueDetail,
 }
 
 /// WebSocket protocol messages — JSON over `/ws/terminal?session=<name>`.

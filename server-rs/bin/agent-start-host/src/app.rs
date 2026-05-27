@@ -253,6 +253,8 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         )
         .route("/api/git/status", get(crate::http::git_status))
         .route("/api/git/diff", get(crate::http::git_diff))
+        .route("/api/projects/issues", get(crate::http::list_issues))
+        .route("/api/projects/issue", get(crate::http::view_issue))
         .route(
             "/api/sessions/{name}/code-server",
             axum::routing::post(crate::http::open_code_server)
