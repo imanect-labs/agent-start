@@ -22,7 +22,11 @@ pub fn worktree_path_for(session_name: &str) -> PathBuf {
 /// `refs/remotes/origin/HEAD`. Returns `None` when no `origin` remote
 /// is configured or its HEAD symref hasn't been set.
 fn remote_default_branch(repo: &Path) -> Option<String> {
-    let out = run(repo, &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).ok()?;
+    let out = run(
+        repo,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    )
+    .ok()?;
     let trimmed = out.trim();
     trimmed.strip_prefix("origin/").map(|s| s.to_string())
 }
@@ -51,7 +55,10 @@ fn resolve_base(repo: &Path) -> String {
         // Best-effort fetch; if it fails (offline, auth, etc.) we still
         // branch off whatever the local `origin/<branch>` ref points at.
         let _ = run(repo, &["fetch", "origin", &branch]);
-        return format!("origin/{branch}");
+        let remote_ref = format!("refs/remotes/origin/{branch}");
+        if run(repo, &["rev-parse", "--verify", remote_ref.as_str()]).is_ok() {
+            return format!("origin/{branch}");
+        }
     }
     current_branch(repo)
 }
