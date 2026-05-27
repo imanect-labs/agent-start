@@ -219,23 +219,23 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
             "/api/projects/import",
             axum::routing::post(crate::http::import_project),
         )
-        .route("/api/projects/:name", delete(crate::http::delete_project))
+        .route("/api/projects/{name}", delete(crate::http::delete_project))
         .route("/api/sessions", get(crate::http::list_sessions))
         .route(
             "/api/sessions",
             axum::routing::post(crate::http::start_session),
         )
-        .route("/api/sessions/:name", delete(crate::http::delete_session))
+        .route("/api/sessions/{name}", delete(crate::http::delete_session))
         .route(
-            "/api/sessions/:name/restart",
+            "/api/sessions/{name}/restart",
             axum::routing::post(crate::http::restart_session),
         )
         .route(
-            "/api/sessions/:name/windows",
+            "/api/sessions/{name}/windows",
             get(crate::http::list_windows).post(crate::http::create_window),
         )
         .route(
-            "/api/sessions/:name/windows/:index",
+            "/api/sessions/{name}/windows/{index}",
             delete(crate::http::delete_window),
         )
         .route("/api/fs/tree", get(crate::http::fs_tree))
@@ -246,7 +246,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         .route("/api/git/status", get(crate::http::git_status))
         .route("/api/git/diff", get(crate::http::git_diff))
         .route(
-            "/api/sessions/:name/code-server",
+            "/api/sessions/{name}/code-server",
             axum::routing::post(crate::http::open_code_server)
                 .delete(crate::http::close_code_server),
         )
@@ -254,15 +254,15 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         // root and any sub-path so VSCode's static assets, API, and WS
         // upgrades all route to the right child.
         .route(
-            "/v/:name",
+            "/v/{name}",
             any(crate::http::code_server_proxy::proxy_handler),
         )
         .route(
-            "/v/:name/",
+            "/v/{name}/",
             any(crate::http::code_server_proxy::proxy_handler),
         )
         .route(
-            "/v/:name/*rest",
+            "/v/{name}/{*rest}",
             any(crate::http::code_server_proxy::proxy_handler),
         )
         // WebSocket — same URL the UI already uses.
@@ -316,7 +316,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
     } else {
         tracing::info!("serving front-end SPA from embedded assets");
         api_router
-            .route("/assets/*path", get(serve_embedded_asset))
+            .route("/assets/{*path}", get(serve_embedded_asset))
             .fallback(serve_embedded_index)
     };
 
