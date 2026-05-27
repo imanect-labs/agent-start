@@ -228,18 +228,24 @@ noVNC in the browser. Launching a GUI app from the session terminal with
 `DISPLAY=:<N> firefox &` makes it visible in the iframe (`<N>` is shown at
 the top of the GUI tab).
 
-Install the dependencies:
+> **Supported only on Linux / WSL.** macOS is not supported as a host
+> for the GUI feature: the Homebrew `tiger-vnc` formula ships only the
+> viewer, not the `Xvnc` server (which needs X.Org), and macOS GUI
+> apps run on Quartz rather than X11, so a virtual X desktop cannot
+> host them anyway. Run `agent-start-host` on a Linux box (bare metal,
+> WSL, or a Linux Docker container) when you need this tab.
+
+Install the dependencies on the Linux host:
 
 ```bash
 # Debian/Ubuntu
 sudo apt install tigervnc-standalone-server novnc websockify
 
-# macOS. Homebrew ships Xvnc; websockify is a Python package and
-# noVNC's web assets live in a git repo — set both up manually.
-brew install tiger-vnc
-pipx install websockify           # or `python3 -m pip install --user websockify`
-git clone --depth=1 https://github.com/novnc/noVNC.git ~/.local/share/novnc
-export AGENT_START_NOVNC_DIR=~/.local/share/novnc
+# Fedora / RHEL
+sudo dnf install tigervnc-server novnc python3-websockify
+
+# Arch
+sudo pacman -S tigervnc novnc python-websockify
 ```
 
 Override binary locations if autodetection fails:

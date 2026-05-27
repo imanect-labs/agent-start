@@ -76,20 +76,20 @@ export function GuiView({ sessionName }: Props) {
           <p className="mt-2 text-fg-muted">{state.message}</p>
           {state.dependency && (
             <div className="mt-4 rounded-md border border-line bg-surface-muted p-4 text-fg-muted">
-              <p className="font-medium text-fg">必要な依存をインストールしてください</p>
+              <p className="font-medium text-fg">
+                対応 OS は Linux / WSL のみです (macOS の host では動作しません)
+              </p>
+              <p className="mt-2 text-xs">Linux 側で以下を入れてから host を再起動してください:</p>
               <pre className="mt-2 text-xs whitespace-pre-wrap">
                 {`# Debian/Ubuntu
 sudo apt install tigervnc-standalone-server novnc websockify
 
-# macOS
-brew install tiger-vnc
-pipx install websockify
-git clone --depth=1 https://github.com/novnc/noVNC.git ~/.local/share/novnc
-export AGENT_START_NOVNC_DIR=~/.local/share/novnc`}
+# Fedora / RHEL
+sudo dnf install tigervnc-server novnc python3-websockify
+
+# Arch
+sudo pacman -S tigervnc novnc python-websockify`}
               </pre>
-              <p className="mt-3 text-xs">
-                インストール後、host を再起動してこのタブをもう一度開いてください。
-              </p>
             </div>
           )}
         </div>
