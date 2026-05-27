@@ -44,10 +44,7 @@ pub fn run(args: UpdateArgs) -> Result<()> {
 
     println!("==> updating agent-start-host");
     println!("    installer: {}", url);
-    println!(
-        "    current:   {}",
-        env!("CARGO_PKG_VERSION")
-    );
+    println!("    current:   {}", env!("CARGO_PKG_VERSION"));
     if let Some(ref v) = args.version {
         println!("    target:    {}", v);
     } else {
@@ -69,7 +66,10 @@ pub fn run(args: UpdateArgs) -> Result<()> {
     // shell string, which would be unsafe if --url / env override ever
     // contained shell metacharacters.
     let mut dl_cmd = Command::new(downloader.exe);
-    dl_cmd.args(downloader.args).arg(&url).stdout(Stdio::piped());
+    dl_cmd
+        .args(downloader.args)
+        .arg(&url)
+        .stdout(Stdio::piped());
     let mut dl_child = dl_cmd
         .spawn()
         .with_context(|| format!("failed to spawn {}", downloader.exe))?;
