@@ -3,8 +3,11 @@ import useSWR from "swr";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Sheet, SheetBody, SheetFooter, SheetHeader } from "./Sheet";
-import { IconChevronRight } from "./icons";
-import { Badge, Button, Spinner } from "@/components/ui";
+import { IconChevronRight, IconSearch } from "./icons";
+import { Badge, Button, Input, Spinner } from "@/components/ui";
+
+/** issues fetched per page; "load more" requests one more page worth. */
+const PAGE = 30;
 
 type IssueSummary = {
   number: number;
@@ -53,21 +56,41 @@ type Props = {
 
 export function IssuesSheet({ isOpen, projectName, projectPath, onClose, onLaunchIssue }: Props) {
   const [selected, setSelected] = useState<number | null>(null);
+  const [query, setQuery] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [limit, setLimit] = useState(PAGE);
 
-  // Reset the drill-down selection whenever the sheet (re)opens.
+  // Reset all list state whenever the sheet (re)opens.
   useEffect(() => {
-    if (!isOpen) setSelected(null);
+    if (!isOpen) {
+      setSelected(null);
+      setQuery("");
+      setDebounced("");
+      setLimit(PAGE);
+    }
   }, [isOpen]);
+
+  // Debounce the search box, and reset paging back to the first page on
+  // every new query so "load more" counts from the top of the new result.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebounced(query.trim());
+      setLimit(PAGE);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
 
   const listKey =
     isOpen && selected === null
-      ? `/api/projects/issues?path=${encodeURIComponent(projectPath)}`
+      ? `/api/projects/issues?path=${encodeURIComponent(projectPath)}&limit=${limit}` +
+        (debounced ? `&search=${encodeURIComponent(debounced)}` : "")
       : null;
   const {
     data: listData,
     error: listError,
     isLoading: listLoading,
-  } = useSWR<{ issues: IssueSummary[] }>(listKey, fetcher);
+    isValidating: listValidating,
+  } = useSWR<{ issues: IssueSummary[] }>(listKey, fetcher, { keepPreviousData: true });
 
   const detailKey =
     isOpen && selected !== null
@@ -81,6 +104,9 @@ export function IssuesSheet({ isOpen, projectName, projectPath, onClose, onLaunc
 
   const issues = listData?.issues ?? [];
   const detail = detailData?.issue ?? null;
+  // gh returns a flat, limit-capped list with no cursor — if we got a full
+  // page back there may be more, so offer to widen the limit.
+  const canLoadMore = issues.length >= limit;
 
   return (
     <Sheet open={isOpen} onClose={onClose} maxWidth="2xl" tall>
@@ -91,40 +117,63 @@ export function IssuesSheet({ isOpen, projectName, projectPath, onClose, onLaunc
       />
       <SheetBody>
         {selected === null ? (
-          listLoading ? (
-            <div className="flex justify-center py-10">
-              <Spinner size="md" />
-            </div>
-          ) : listError ? (
-            <ErrorBox message={(listError as Error).message} />
-          ) : issues.length === 0 ? (
-            <div className="py-10 text-center text-sm text-fg-subtle">
-              open な issue がありません
-            </div>
-          ) : (
-            <ul className="space-y-1">
-              {issues.map((it) => (
-                <li key={it.number}>
-                  <button
-                    type="button"
-                    onClick={() => setSelected(it.number)}
-                    className="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-md border border-line bg-surface hover:bg-surface-muted transition-colors"
+          <div className="space-y-3">
+            <Input
+              type="search"
+              placeholder="issue を検索 (例: bug in:title)"
+              value={query}
+              onValueChange={setQuery}
+              clearable
+              leftSlot={<IconSearch className="w-4 h-4" />}
+            />
+            {listLoading ? (
+              <div className="flex justify-center py-10">
+                <Spinner size="md" />
+              </div>
+            ) : listError ? (
+              <ErrorBox message={(listError as Error).message} />
+            ) : issues.length === 0 ? (
+              <div className="py-10 text-center text-sm text-fg-subtle">
+                {debounced ? "一致する issue がありません" : "open な issue がありません"}
+              </div>
+            ) : (
+              <>
+                <ul className="space-y-1">
+                  {issues.map((it) => (
+                    <li key={it.number}>
+                      <button
+                        type="button"
+                        onClick={() => setSelected(it.number)}
+                        className="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-md border border-line bg-surface hover:bg-surface-muted transition-colors"
+                      >
+                        <span className="text-[11px] font-mono text-fg-faint shrink-0 tabular-nums">
+                          #{it.number}
+                        </span>
+                        <span className="flex-1 min-w-0 text-sm text-fg truncate">{it.title}</span>
+                        {it.labels.slice(0, 2).map((l) => (
+                          <Badge key={l} tone="violet" className="shrink-0">
+                            {l}
+                          </Badge>
+                        ))}
+                        <IconChevronRight className="w-3.5 h-3.5 text-fg-faint shrink-0" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {canLoadMore && (
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    className="w-full"
+                    loading={listValidating}
+                    onClick={() => setLimit((l) => l + PAGE)}
                   >
-                    <span className="text-[11px] font-mono text-fg-faint shrink-0 tabular-nums">
-                      #{it.number}
-                    </span>
-                    <span className="flex-1 min-w-0 text-sm text-fg truncate">{it.title}</span>
-                    {it.labels.slice(0, 2).map((l) => (
-                      <Badge key={l} tone="violet" className="shrink-0">
-                        {l}
-                      </Badge>
-                    ))}
-                    <IconChevronRight className="w-3.5 h-3.5 text-fg-faint shrink-0" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )
+                    もっと読み込む
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
         ) : detailLoading ? (
           <div className="flex justify-center py-10">
             <Spinner size="md" />

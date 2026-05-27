@@ -109,19 +109,26 @@ fn login(author: Option<RawAuthor>) -> String {
 }
 
 /// `gh issue list` for the repo at `repo`, newest first, capped at `limit`.
-pub fn list_issues(repo: &Path, limit: u32) -> Result<Vec<IssueSummary>, GitError> {
+///
+/// `gh` has no cursor/page model, so the UI paginates by re-requesting a
+/// larger `limit`. An optional `search` string is forwarded verbatim to
+/// `gh issue list --search` (a GitHub issue search query).
+pub fn list_issues(repo: &Path, limit: u32, search: Option<&str>) -> Result<Vec<IssueSummary>, GitError> {
     let limit = limit.to_string();
-    let out = run_gh(
-        repo,
-        &[
-            "issue",
-            "list",
-            "--json",
-            "number,title,state,labels,updatedAt,author",
-            "--limit",
-            &limit,
-        ],
-    )?;
+    let mut args: Vec<&str> = vec![
+        "issue",
+        "list",
+        "--json",
+        "number,title,state,labels,updatedAt,author",
+        "--limit",
+        &limit,
+    ];
+    let search = search.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(s) = search {
+        args.push("--search");
+        args.push(s);
+    }
+    let out = run_gh(repo, &args)?;
     let raw: Vec<RawList> = serde_json::from_slice(&out).map_err(|e| GitError::Failed {
         cmd: "gh issue list (parse)".into(),
         code: None,

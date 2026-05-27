@@ -16,12 +16,16 @@ use serde::Deserialize;
 
 use crate::app::Shared;
 
-/// Cap the list so a repo with thousands of issues stays responsive.
-const ISSUE_LIST_LIMIT: u32 = 50;
+/// Default page size, and the hard cap a client may request — keeps a
+/// repo with thousands of issues from spawning an unbounded `gh` fetch.
+const ISSUE_LIST_DEFAULT: u32 = 30;
+const ISSUE_LIST_MAX: u32 = 300;
 
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
     pub path: Option<String>,
+    pub limit: Option<u32>,
+    pub search: Option<String>,
 }
 
 pub async fn list_issues(State(app): State<Shared>, Query(q): Query<ListQuery>) -> Response {
@@ -35,7 +39,8 @@ pub async fn list_issues(State(app): State<Shared>, Query(q): Query<ListQuery>) 
     if !git_ops::is_git_repo(&resolved) {
         return err(StatusCode::BAD_REQUEST, "not a git repo");
     }
-    match git_ops::list_issues(&resolved, ISSUE_LIST_LIMIT) {
+    let limit = q.limit.unwrap_or(ISSUE_LIST_DEFAULT).clamp(1, ISSUE_LIST_MAX);
+    match git_ops::list_issues(&resolved, limit, q.search.as_deref()) {
         Ok(issues) => Json(IssuesBody {
             issues: issues
                 .into_iter()
