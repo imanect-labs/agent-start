@@ -67,6 +67,15 @@ agent-start-host --bind 0.0.0.0 --port 3030
 
 SSH 切断後も常駐させたい場合は、後述の [デーモン化](#デーモン化-systemd-user) を参照。
 
+### アップデート
+
+```bash
+agent-start-host update                   # 最新リリースにその場でアップグレード
+agent-start-host update --version v0.2.0  # 特定リリースに固定
+```
+
+`update` は公式インストーラを再実行します。systemd-user / launchd の常駐サービスが検出された場合は、自動的に再登録 + 再起動されます。スキップしたい場合は `--no-service` を付けてください。
+
 ### 手動ダウンロード
 
 [Releases](https://github.com/imanect-labs/agent-start/releases) から該当プラットフォームのアーカイブをダウンロードして展開し、`agent-start-host` を `PATH` 上に配置してください。

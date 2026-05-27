@@ -74,6 +74,15 @@ agent-start-host --bind 0.0.0.0 --port 3030
 
 To keep the host running after you log out, see [Run as a daemon](#run-as-a-daemon-systemd-user) below.
 
+### Upgrading
+
+```bash
+agent-start-host update                # in-place upgrade to the latest release
+agent-start-host update --version v0.2.0   # pin a specific release
+```
+
+`update` re-runs the official installer. If a user-level service (systemd-user / launchd) is detected, it is re-registered and restarted automatically; pass `--no-service` to skip that.
+
 ### Manual download
 
 Grab the archive that matches your platform from the [Releases page](https://github.com/imanect-labs/agent-start/releases), extract it, and put `agent-start-host` somewhere on your `PATH`:
