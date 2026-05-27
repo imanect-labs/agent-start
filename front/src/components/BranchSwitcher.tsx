@@ -107,16 +107,27 @@ export function BranchSwitcher({
   };
   const sync = (endpoint: "fetch" | "pull" | "push") =>
     run(async () => {
+      const name = current?.name;
       // push/pull need a concrete branch; refuse in detached HEAD rather
-      // than send an ambiguous request (and never set upstream then).
-      if (endpoint !== "fetch" && !current?.name) {
+      // than send an ambiguous request.
+      if (endpoint !== "fetch" && !name) {
         throw new Error("現在のブランチが特定できません（detached HEAD）");
       }
-      const setUpstream = endpoint === "push" && !!current?.name && !current.upstream;
+      const hasUpstream = !!current?.upstream;
+      // The remote half of an "origin/main" upstream — used only to scope
+      // a fetch to the tracked remote.
+      const upstreamRemote = hasUpstream ? current!.upstream!.split("/")[0] : undefined;
+
+      // When an upstream is tracked, send no remote/branch so git uses the
+      // branch's own configuration — correct for both push and pull even
+      // when the local and upstream names differ, and for non-"origin"
+      // remotes. Only a first push (no upstream yet) needs an explicit
+      // target, where "origin" + the local name is the conventional default.
+      const setUpstream = endpoint === "push" && !!name && !hasUpstream;
       await post(`/api/git/${endpoint}`, {
         path: cwd,
-        remote: "origin",
-        branch: endpoint === "fetch" ? undefined : current?.name,
+        remote: endpoint === "fetch" ? upstreamRemote : setUpstream ? "origin" : undefined,
+        branch: endpoint === "fetch" ? undefined : setUpstream ? name : undefined,
         setUpstream,
       });
     });
