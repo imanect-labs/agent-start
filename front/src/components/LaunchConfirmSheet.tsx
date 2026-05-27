@@ -57,6 +57,20 @@ export function LaunchConfirmSheet({
   const [extra, setExtra] = useState("");
   const [createWt, setCreateWt] = useState(true);
   const [showAdv, setShowAdv] = useState(false);
+  // Local guard: the optimistic flow closes the sheet immediately, but a
+  // rapid double-click can fire two click events before the unmount, which
+  // would dispatch duplicate launch mutations. Block the second one.
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleLaunch = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await onLaunch({ cli, skipPermissions: skip, extraArgs: extra, createWorktree: createWt });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // Hydrate form fields from preferences each time the dialog opens.
   useEffect(() => {
@@ -172,21 +186,21 @@ export function LaunchConfirmSheet({
         )}
       </SheetBody>
       <SheetFooter>
-        <Button variant="secondary" size="lg" onClick={onClose} className="flex-1">
+        <Button
+          variant="secondary"
+          size="lg"
+          onClick={onClose}
+          disabled={submitting}
+          className="flex-1"
+        >
           キャンセル
         </Button>
         <Button
           variant="primary"
           size="lg"
+          loading={submitting}
           className="flex-1"
-          onClick={() =>
-            onLaunch({
-              cli,
-              skipPermissions: skip,
-              extraArgs: extra,
-              createWorktree: createWt,
-            })
-          }
+          onClick={handleLaunch}
         >
           起動する
         </Button>
