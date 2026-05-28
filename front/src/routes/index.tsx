@@ -140,6 +140,12 @@ export function IndexPage() {
     sessions: TmuxSession[];
   }>("/api/sessions", fetcher, { refreshInterval: 5000 });
 
+  // Config tells us which CLIs run in chat mode (#34) and the model menu.
+  const { data: configData } = useSWR<{
+    clis: { key: string; mode?: string }[];
+    chat?: { models?: { id: string; label: string }[]; defaultModel?: string | null };
+  }>("/api/config", fetcher);
+
   const projects = projData?.projects ?? [];
   const pendingProjects = projData?.pending ?? [];
   const realSessions = sessData?.sessions ?? [];
@@ -162,6 +168,20 @@ export function IndexPage() {
     return [...placeholders, ...realSessions];
   }, [realSessions, pendingSessions]);
 
+  const chatClis = useMemo(
+    () => new Set((configData?.clis ?? []).filter((c) => c.mode === "chat").map((c) => c.key)),
+    [configData],
+  );
+  const chatModels = configData?.chat?.models ?? [];
+  const chatDefaultModel = configData?.chat?.defaultModel ?? null;
+
+  // Refs so the stable `openSession` callback can read the latest values
+  // without resubscribing (it is created once with an empty dep list).
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const chatClisRef = useRef(chatClis);
+  chatClisRef.current = chatClis;
+
   // Note: we deliberately do not auto-prune perSession against
   // /api/sessions. Both delete flows (handleStopConfirm, manual close)
   // already drop the entry explicitly, and the host now rehydrates
@@ -169,7 +189,7 @@ export function IndexPage() {
   // unexpectedly. Auto-pruning races with restarts and wipes the
   // user's open tabs irreversibly through the localStorage persist.
 
-  const openSession = useCallback((name: string) => {
+  const openSession = useCallback((name: string, cliHint?: string) => {
     setActiveSession(name);
     // Pending placeholders have no real PTY/tabs yet — the main pane renders a
     // skeleton from the session's `pending` flag. Don't seed a tab entry that
@@ -177,11 +197,14 @@ export function IndexPage() {
     if (name.startsWith("pending:")) return;
     setPerSession((prev) => {
       if (prev[name]) return prev;
-      // First open: terminal tab on window 0. For stopped sessions the
-      // server replays the saved scrollback over the WS then closes —
-      // the user sees their last terminal state, just can't type.
+      // First open: the primary tab depends on the session's CLI mode.
+      // A chat-mode CLI (#34, decision 11) opens a ChatTab with no PTY;
+      // everything else opens a terminal on window 0. For stopped
+      // sessions the server replays saved state over the WS.
+      const cli = cliHint ?? sessionsRef.current.find((s) => s.name === name)?.cli;
+      const isChat = cli ? chatClisRef.current.has(cli) : false;
       const id = makeTabId();
-      const tab: Tab = { id, kind: "terminal", windowId: 0 };
+      const tab: Tab = isChat ? { id, kind: "chat" } : { id, kind: "terminal", windowId: 0 };
       return { ...prev, [name]: { tabs: [tab], activeTabId: id } };
     });
   }, []);
@@ -494,7 +517,7 @@ export function IndexPage() {
       // dropping the placeholder so the main pane never flashes the welcome
       // screen during the swap.
       await mutate("/api/sessions");
-      if (typeof json.name === "string") openSession(json.name);
+      if (typeof json.name === "string") openSession(json.name, json.cli);
       setPendingSessions((prev) => prev.filter((p) => p.tempId !== tempId));
     } catch (e) {
       // Roll back the placeholder and leave the user where they were.
@@ -720,6 +743,8 @@ export function IndexPage() {
       onUpdateTab={updateTab}
       onToggleSidebar={() => setSidebarOpen((v) => !v)}
       onOpenDiff={(file, mode) => openDiffTab(activeCwd, file, mode)}
+      chatModels={chatModels}
+      chatDefaultModel={chatDefaultModel}
     />
   );
 

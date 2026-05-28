@@ -20,6 +20,56 @@ pub struct CliConfig {
     pub skip_permissions_flag: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Launch mode: `"pty"` (default — a terminal window) or `"chat"`
+    /// (headless stream-json, rendered as a ChatTab). Absent = pty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+}
+
+impl CliConfig {
+    /// True when this CLI launches the headless chat experience (#34)
+    /// rather than a PTY-backed terminal.
+    pub fn is_chat(&self) -> bool {
+        self.mode.as_deref() == Some("chat")
+    }
+}
+
+/// One selectable model for chat mode (decision 8). `id` is passed to
+/// `claude --model`; `label` is the human-facing name in the picker.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatModel {
+    pub id: String,
+    pub label: String,
+}
+
+/// Chat-mode configuration (#34): the model menu and the default model.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatConfig {
+    pub models: Vec<ChatModel>,
+    #[serde(rename = "defaultModel", skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+}
+
+impl Default for ChatConfig {
+    fn default() -> Self {
+        ChatConfig {
+            models: vec![
+                ChatModel {
+                    id: "opus".into(),
+                    label: "Opus".into(),
+                },
+                ChatModel {
+                    id: "sonnet".into(),
+                    label: "Sonnet".into(),
+                },
+                ChatModel {
+                    id: "haiku".into(),
+                    label: "Haiku".into(),
+                },
+            ],
+            default_model: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +85,8 @@ pub struct Config {
     pub clis: BTreeMap<String, CliConfig>,
     #[serde(rename = "defaultCli")]
     pub default_cli: String,
+    #[serde(default)]
+    pub chat: ChatConfig,
 }
 
 impl Default for Config {
@@ -46,6 +98,16 @@ impl Default for Config {
                 command: "claude".to_string(),
                 skip_permissions_flag: Some("--dangerously-skip-permissions".to_string()),
                 label: Some("Claude Code".to_string()),
+                mode: None,
+            },
+        );
+        clis.insert(
+            "claude-chat".to_string(),
+            CliConfig {
+                command: "claude".to_string(),
+                skip_permissions_flag: Some("--dangerously-skip-permissions".to_string()),
+                label: Some("Claude Code (Chat)".to_string()),
+                mode: Some("chat".to_string()),
             },
         );
         clis.insert(
@@ -54,6 +116,7 @@ impl Default for Config {
                 command: "codex".to_string(),
                 skip_permissions_flag: Some("--full-auto".to_string()),
                 label: Some("Codex CLI".to_string()),
+                mode: None,
             },
         );
         clis.insert(
@@ -62,6 +125,7 @@ impl Default for Config {
                 command: String::new(),
                 skip_permissions_flag: None,
                 label: Some("Terminal".to_string()),
+                mode: None,
             },
         );
         Config {
@@ -72,6 +136,7 @@ impl Default for Config {
             git_only: false,
             clis,
             default_cli: "claude".to_string(),
+            chat: ChatConfig::default(),
         }
     }
 }
@@ -127,20 +192,26 @@ fn merge_with_defaults(raw: &str, path: &Path) -> Result<Config, ConfigError> {
     let migrated = migrate_legacy_claude_command(&mut value);
 
     let mut defaults_value = serde_json::to_value(Config::default())?;
+    // Capture the default `clis` *before* the generic overlay clobbers it, so
+    // newly-shipped built-ins (e.g. `claude-chat`) survive even when the
+    // user's file already has its own `clis` object.
+    let default_clis = defaults_value.get("clis").cloned();
     if let (Some(d), Some(u)) = (defaults_value.as_object_mut(), value.as_object()) {
         for (k, v) in u {
             d.insert(k.clone(), v.clone());
         }
     }
-    // Per-key merge for `clis` so users only need to override individual entries.
+    // Per-key merge for `clis` so users only need to override individual
+    // entries: start from the fresh defaults, then overlay the user's keys.
     if let Some(user_clis) = value.get("clis").and_then(|v| v.as_object()) {
-        if let Some(merged_clis) = defaults_value
-            .get_mut("clis")
-            .and_then(|v| v.as_object_mut())
-        {
-            for (k, v) in user_clis {
-                merged_clis.insert(k.clone(), v.clone());
-            }
+        let mut merged = default_clis
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+        for (k, v) in user_clis {
+            merged.insert(k.clone(), v.clone());
+        }
+        if let Some(obj) = defaults_value.as_object_mut() {
+            obj.insert("clis".to_string(), serde_json::Value::Object(merged));
         }
     }
     let cfg: Config = serde_json::from_value(defaults_value)?;
@@ -196,4 +267,38 @@ pub fn is_path_under_roots(cfg: &Config, target: &Path) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+
+    #[test]
+    fn preserves_new_builtin_cli_when_user_has_clis() {
+        // A user config predating `claude-chat` that already customized clis.
+        let raw = r#"{
+            "roots": ["/x"],
+            "clis": {
+                "claude": { "command": "claude" },
+                "codex": { "command": "codex" }
+            }
+        }"#;
+        let cfg = merge_with_defaults(raw, Path::new("/tmp/does-not-matter.json")).unwrap();
+        // The new built-in must survive the merge…
+        assert!(cfg.clis.contains_key("claude-chat"), "claude-chat dropped");
+        assert!(cfg.clis["claude-chat"].is_chat());
+        // …and the user's own entries are still present.
+        assert!(cfg.clis.contains_key("claude"));
+        assert!(cfg.clis.contains_key("codex"));
+        // chat defaults fill in when absent.
+        assert!(!cfg.chat.models.is_empty());
+    }
+
+    #[test]
+    fn user_override_of_builtin_wins() {
+        let raw = r#"{ "roots": ["/x"], "clis": { "claude": { "command": "my-claude" } } }"#;
+        let cfg = merge_with_defaults(raw, Path::new("/tmp/x.json")).unwrap();
+        assert_eq!(cfg.clis["claude"].command, "my-claude");
+        assert!(cfg.clis.contains_key("claude-chat"));
+    }
 }

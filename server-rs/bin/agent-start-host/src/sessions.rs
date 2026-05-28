@@ -7,6 +7,24 @@
 //! work the user shouldn't lose track of.
 
 use agent_start_api::Session;
+use std::path::Path as StdPath;
+
+/// Environment handed to a freshly spawned session process (PTY or chat).
+/// Exposes the worktree/orig paths and session name to the agent CLI.
+pub fn launch_env(orig: &StdPath, name: &str, cwd: &StdPath) -> Vec<(String, String)> {
+    vec![
+        (
+            "AGENT_START_ROOT_PATH".into(),
+            orig.to_string_lossy().into_owned(),
+        ),
+        ("AGENT_START_WORKSPACE_NAME".into(), name.to_string()),
+        (
+            "AGENT_START_WORKSPACE_PATH".into(),
+            cwd.to_string_lossy().into_owned(),
+        ),
+        ("TERM".into(), "xterm-256color".into()),
+    ]
+}
 
 #[derive(Debug, Clone)]
 pub struct SessionDirectory {

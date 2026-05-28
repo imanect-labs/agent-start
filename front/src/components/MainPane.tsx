@@ -10,6 +10,7 @@ import {
   IconX,
 } from "@/components/icons";
 import { Terminal } from "@/components/Terminal";
+import { ChatView, type ChatModelInfo } from "@/components/ChatView";
 import { FilesView } from "@/components/FilesView";
 import { EditorTab as EditorView } from "@/components/EditorTab";
 import { DiffTabView } from "@/components/DiffTabView";
@@ -22,6 +23,7 @@ import { useToast } from "@/components/Toast";
 
 const CLI_LABEL: Record<string, string> = {
   claude: "Claude Code",
+  "claude-chat": "Claude Code (Chat)",
   codex: "Codex CLI",
   shell: "Shell",
 };
@@ -49,6 +51,9 @@ type Props = {
   onOpenDiff?: (file: string, mode: DiffMode) => void;
   /** Open a file (absolute path) in an editor tab — used by the tree view. */
   onOpenFile?: (absPath: string) => void;
+  /** Chat model menu + default for chat-mode sessions (#34). */
+  chatModels?: ChatModelInfo[];
+  chatDefaultModel?: string | null;
 };
 
 export function MainPane({
@@ -70,6 +75,8 @@ export function MainPane({
   onToggleSidebar,
   onOpenDiff,
   onOpenFile,
+  chatModels,
+  chatDefaultModel,
 }: Props) {
   // Optimistic placeholder while the host is still creating the session
   // (POST /api/sessions in flight). The real PTY/name doesn't exist yet, so
@@ -287,6 +294,8 @@ export function MainPane({
               onUpdateTab={onUpdateTab}
               onOpenDiff={onOpenDiff}
               onOpenFile={onOpenFile}
+              chatModels={chatModels ?? []}
+              chatDefaultModel={chatDefaultModel ?? null}
             />
           </div>
         ))}
@@ -373,6 +382,13 @@ function TabBar({
           } else if (t.kind === "tree") {
             label = label ?? "Tree";
             icon = <IconFolder className="w-3.5 h-3.5 shrink-0 text-fg-faint" />;
+          } else if (t.kind === "chat") {
+            label = label ?? "Chat";
+            icon = (
+              <span className="w-3.5 h-3.5 inline-flex items-center justify-center text-[11px] text-fg-faint">
+                ◇
+              </span>
+            );
           } else {
             const base = t.path.split("/").pop() || t.path;
             label = label ?? base;
@@ -530,6 +546,8 @@ function TabContent({
   onUpdateTab,
   onOpenDiff,
   onOpenFile,
+  chatModels,
+  chatDefaultModel,
 }: {
   tab: Tab;
   sessionName: string;
@@ -540,7 +558,20 @@ function TabContent({
   onUpdateTab: (id: string, patch: Partial<Tab>) => void;
   onOpenDiff?: (file: string, mode: DiffMode) => void;
   onOpenFile?: (absPath: string) => void;
+  chatModels: ChatModelInfo[];
+  chatDefaultModel: string | null;
 }) {
+  if (tab.kind === "chat") {
+    return (
+      <ChatView
+        key={sessionName}
+        sessionName={sessionName}
+        cwd={cwd}
+        models={chatModels}
+        defaultModel={chatDefaultModel}
+      />
+    );
+  }
   if (tab.kind === "terminal") {
     // Optimistic terminal tab: the tmux window is still being created on the
     // host. Show a skeleton until the real windowId arrives and the tab

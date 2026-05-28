@@ -17,7 +17,8 @@ mod preferences;
 pub mod safety;
 
 pub use config::{
-    invalidate_cache, is_path_under_roots, load_config, save_config, CliConfig, Config,
+    invalidate_cache, is_path_under_roots, load_config, save_config, ChatConfig, ChatModel,
+    CliConfig, Config,
 };
 pub use error::ConfigError;
 pub use migrate::migrate_legacy_layout;

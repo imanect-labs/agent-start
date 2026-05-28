@@ -14,6 +14,7 @@ agent-start-api = { workspace = true }
 config-loader  = { workspace = true }
 git-ops        = { workspace = true }
 pty-manager    = { workspace = true }
+chat-manager   = { workspace = true }
 code-server-manager = { workspace = true }
 novnc-manager = { workspace = true }
 state          = { workspace = true }

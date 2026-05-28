@@ -34,6 +34,10 @@ pub struct SessionRow {
     pub orig_path: String,
     pub pid: Option<i64>,
     pub status: String,
+    /// Claude's resumable conversation id for chat-mode sessions. Empty
+    /// for PTY sessions or before the first `system:init` arrives.
+    #[serde(default)]
+    pub claude_session_id: String,
 }
 
 impl SessionRow {
@@ -48,8 +52,19 @@ impl SessionRow {
             orig_path: row.get("orig_path"),
             pid: row.try_get("pid").ok(),
             status: row.get("status"),
+            claude_session_id: row.try_get("claude_session_id").unwrap_or_default(),
         }
     }
+}
+
+/// One persisted chat message (logical granularity: user / assistant /
+/// result). `content_json` is the serialized block array the UI renders.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessageRow {
+    pub seq: i64,
+    pub role: String,
+    pub content_json: String,
+    pub created_at_ms: i64,
 }
 
 impl From<&SessionRow> for agent_start_api::Session {
@@ -124,7 +139,7 @@ pub async fn insert_session(db: &Db, s: NewSession<'_>) -> Result<(), StateError
 pub async fn list_sessions(db: &Db, prefix: &str) -> Result<Vec<SessionRow>, StateError> {
     let like = format!("{prefix}%");
     let rows = sqlx::query(
-        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status \
+        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id \
          FROM sessions \
          WHERE status = 'running' AND name LIKE ? \
          ORDER BY created_at_ms DESC",
@@ -139,7 +154,7 @@ pub async fn list_sessions(db: &Db, prefix: &str) -> Result<Vec<SessionRow>, Sta
 /// sessions whose worktree still exists on disk.
 pub async fn list_all_sessions(db: &Db) -> Result<Vec<SessionRow>, StateError> {
     let rows = sqlx::query(
-        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status \
+        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id \
          FROM sessions ORDER BY created_at_ms DESC",
     )
     .fetch_all(db)
@@ -149,7 +164,7 @@ pub async fn list_all_sessions(db: &Db) -> Result<Vec<SessionRow>, StateError> {
 
 pub async fn get_session(db: &Db, name: &str) -> Result<Option<SessionRow>, StateError> {
     let row = sqlx::query(
-        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status \
+        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id \
          FROM sessions WHERE name = ?",
     )
     .bind(name)
@@ -319,5 +334,86 @@ pub async fn trim_history(db: &Db, name: &str, keep_last: i64) -> Result<(), Sta
     .bind(name)
     .execute(db)
     .await?;
+    Ok(())
+}
+
+// ---- Chat-mode (#34) persistence ------------------------------------------
+
+/// Persist Claude's resumable conversation id so a host restart / crash can
+/// `--resume` the same conversation. Called when a chat session's
+/// `system:init` arrives (or changes).
+pub async fn set_claude_session_id(db: &Db, name: &str, sid: &str) -> Result<(), StateError> {
+    sqlx::query("UPDATE sessions SET claude_session_id = ? WHERE name = ?")
+        .bind(sid)
+        .bind(name)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// Append one logical chat message (user / assistant / result). `seq` is the
+/// monotonically increasing per-session ordinal; callers obtain the next
+/// value from `next_chat_seq`. Idempotent on (session_name, seq).
+pub async fn append_chat_message(
+    db: &Db,
+    name: &str,
+    seq: i64,
+    role: &str,
+    content_json: &str,
+) -> Result<(), StateError> {
+    let now = Utc::now().timestamp_millis();
+    sqlx::query(
+        "INSERT OR REPLACE INTO chat_messages (session_name, seq, role, content_json, created_at_ms) \
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(name)
+    .bind(seq)
+    .bind(role)
+    .bind(content_json)
+    .bind(now)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// The next free per-session message ordinal (max existing + 1, or 0).
+pub async fn next_chat_seq(db: &Db, name: &str) -> Result<i64, StateError> {
+    let row =
+        sqlx::query("SELECT COALESCE(MAX(seq), -1) AS m FROM chat_messages WHERE session_name = ?")
+            .bind(name)
+            .fetch_one(db)
+            .await?;
+    let max: i64 = row.get("m");
+    Ok(max + 1)
+}
+
+/// Full transcript for a chat session in `seq` order — replayed read-only
+/// when a client reconnects to a stopped/restarted chat session.
+pub async fn load_chat_messages(db: &Db, name: &str) -> Result<Vec<ChatMessageRow>, StateError> {
+    let rows = sqlx::query(
+        "SELECT seq, role, content_json, created_at_ms FROM chat_messages \
+         WHERE session_name = ? ORDER BY seq ASC",
+    )
+    .bind(name)
+    .fetch_all(db)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| ChatMessageRow {
+            seq: r.get("seq"),
+            role: r.get("role"),
+            content_json: r.get("content_json"),
+            created_at_ms: r.get("created_at_ms"),
+        })
+        .collect())
+}
+
+/// Wipe a chat session's transcript (used when the user starts fresh after a
+/// failed `--resume`). Session deletion already cascades via the FK.
+pub async fn delete_chat_messages(db: &Db, name: &str) -> Result<(), StateError> {
+    sqlx::query("DELETE FROM chat_messages WHERE session_name = ?")
+        .bind(name)
+        .execute(db)
+        .await?;
     Ok(())
 }

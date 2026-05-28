@@ -72,7 +72,26 @@ export type TreeTab = {
   label?: string;
 };
 
-export type Tab = TerminalTab | FilesTab | EditorTab | DiffTab | GuiTab | GraphTab | TreeTab;
+/**
+ * The headless-`claude` chat surface (#34). Unlike a terminal tab it has no
+ * PTY window — it drives the session's chat conversation over `/ws/chat`.
+ * It is the primary tab for sessions launched with a chat-mode CLI.
+ */
+export type ChatTab = {
+  id: string;
+  kind: "chat";
+  label?: string;
+};
+
+export type Tab =
+  | TerminalTab
+  | FilesTab
+  | EditorTab
+  | DiffTab
+  | GuiTab
+  | GraphTab
+  | TreeTab
+  | ChatTab;
 
 export type SessionTabs = {
   tabs: Tab[];

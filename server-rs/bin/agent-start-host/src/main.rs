@@ -7,11 +7,13 @@ use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
 
 mod app;
+mod chat;
 mod http;
 mod manifest;
 mod sessions;
 mod update;
 mod ws;
+mod ws_chat;
 
 #[derive(Debug, Parser)]
 #[command(name = "agent-start-host", version, about = "agent-start host daemon")]

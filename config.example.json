@@ -11,10 +11,23 @@
       "skipPermissionsFlag": "--dangerously-skip-permissions",
       "label": "Claude Code"
     },
+    "claude-chat": {
+      "command": "claude",
+      "skipPermissionsFlag": "--dangerously-skip-permissions",
+      "label": "Claude Code (Chat)",
+      "mode": "chat"
+    },
     "codex": {
       "command": "codex",
       "skipPermissionsFlag": "--full-auto",
       "label": "Codex CLI"
     }
+  },
+  "chat": {
+    "models": [
+      { "id": "opus", "label": "Opus" },
+      { "id": "sonnet", "label": "Sonnet" },
+      { "id": "haiku", "label": "Haiku" }
+    ]
   }
 }

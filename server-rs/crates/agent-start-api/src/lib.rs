@@ -54,6 +54,25 @@ pub struct CliInfo {
     pub has_skip_flag: bool,
     #[serde(rename = "skipFlag")]
     pub skip_flag: String,
+    /// Launch mode: `"pty"` (default) or `"chat"`. The UI uses this to
+    /// open a ChatTab instead of a terminal (#34).
+    #[serde(default)]
+    pub mode: String,
+}
+
+/// One selectable chat model exposed to the UI (#34, decision 8).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatModelInfo {
+    pub id: String,
+    pub label: String,
+}
+
+/// Chat-mode config surfaced to the UI: the model menu + default.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ChatConfigBody {
+    pub models: Vec<ChatModelInfo>,
+    #[serde(rename = "defaultModel", skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +111,8 @@ pub struct CliConfigPatch {
     pub skip_permissions_flag: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -108,6 +129,8 @@ pub struct ConfigBody {
     #[serde(rename = "gitOnly")]
     pub git_only: bool,
     pub paths: ConfigPaths,
+    #[serde(default)]
+    pub chat: ChatConfigBody,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -499,4 +522,35 @@ pub enum ClientMessage {
         #[allow(dead_code)]
         count: Option<u32>,
     },
+}
+
+/// One inline image attached to a chat user message (#34). `data` is the
+/// raw base64 payload (no `data:` URL prefix).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChatImageInput {
+    #[serde(rename = "mediaType")]
+    pub media_type: String,
+    pub data: String,
+    /// Small downscaled thumbnail (data URL) for display in the transcript.
+    /// Kept tiny so it can be persisted with the message without bloat.
+    #[serde(default)]
+    pub thumb: Option<String>,
+}
+
+/// WebSocket protocol messages from the browser — JSON over
+/// `/ws/chat?session=<name>` (#34, decision 3).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ChatClientMessage {
+    /// Submit a user turn (text + optional inline images).
+    UserMessage {
+        #[serde(default)]
+        text: String,
+        #[serde(default)]
+        images: Vec<ChatImageInput>,
+    },
+    /// Best-effort interrupt of the in-flight generation.
+    Interrupt,
+    /// Switch the active model (respawns the conversation with `--resume`).
+    SetModel { model: String },
 }
