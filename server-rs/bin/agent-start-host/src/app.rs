@@ -424,7 +424,13 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         let assets_dir = dist.join("assets");
         tracing::info!(path = %dist.display(), "serving front-end SPA from dist (filesystem override)");
 
-        let serve_root = dist.clone();
+        // Canonicalize the dist root once so the per-request check can use
+        // `starts_with` instead of string heuristics. Falling back to the
+        // un-canonicalized path if the dir somehow isn't resolvable yet is
+        // fine — the per-request canonicalize below will then fail closed.
+        let serve_root = tokio::fs::canonicalize(&dist)
+            .await
+            .unwrap_or_else(|_| dist.clone());
         let serve_index = any(move |uri: Uri| {
             let index_path = index_path.clone();
             let serve_root = serve_root.clone();
@@ -435,26 +441,32 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
                 // Mirror the embedded branch: serve a real file from the dist
                 // root (logo.png, favicon.png, …) when the request maps to one,
                 // otherwise fall through to index.html for SPA routes (#89).
-                // Reject `..` so a crafted path can't escape the dist dir.
+                //
+                // Traversal defense: canonicalize the joined path and require
+                // it to stay under `serve_root`. This catches plain `..`,
+                // percent-encoded `%2e%2e` (`uri.path()` doesn't decode, but
+                // even if a future layer did), and any symlink that points
+                // outside the dist tree — all of which a bare
+                // `split('/').any(== "..")` check would miss.
                 let rel = uri.path().trim_start_matches('/');
-                if !rel.is_empty()
-                    && rel != "index.html"
-                    && !rel.split('/').any(|seg| seg == "..")
-                {
+                if !rel.is_empty() && rel != "index.html" {
                     let candidate = serve_root.join(rel);
-                    if tokio::fs::metadata(&candidate)
-                        .await
-                        .map(|m| m.is_file())
-                        .unwrap_or(false)
-                    {
-                        if let Ok(body) = tokio::fs::read(&candidate).await {
-                            let mime = mime_guess::from_path(&candidate).first_or_octet_stream();
-                            return (
-                                StatusCode::OK,
-                                [(header::CONTENT_TYPE, mime.as_ref().to_string())],
-                                body,
-                            )
-                                .into_response();
+                    if let Ok(real) = tokio::fs::canonicalize(&candidate).await {
+                        if real.starts_with(&serve_root)
+                            && tokio::fs::metadata(&real)
+                                .await
+                                .map(|m| m.is_file())
+                                .unwrap_or(false)
+                        {
+                            if let Ok(body) = tokio::fs::read(&real).await {
+                                let mime = mime_guess::from_path(&real).first_or_octet_stream();
+                                return (
+                                    StatusCode::OK,
+                                    [(header::CONTENT_TYPE, mime.as_ref().to_string())],
+                                    body,
+                                )
+                                    .into_response();
+                            }
                         }
                     }
                 }
@@ -551,9 +563,14 @@ async fn serve_embedded_index(uri: Uri) -> axum::response::Response {
     // live alongside index.html, not under /assets. Serve them by path when
     // one matches; otherwise fall through to index.html so client-side routes
     // (e.g. /settings) still hydrate. Without this, `<img src="/logo.png">`
-    // received index.html's HTML and rendered nothing (#89). rust-embed
-    // normalizes the key and can't escape the embed, so no traversal guard
-    // is needed here.
+    // received index.html's HTML and rendered nothing (#89).
+    //
+    // `FrontAssets::get` is an exact lookup against the set of paths captured
+    // at compile time from `front/dist/`; it does not canonicalize the key or
+    // strip `..` segments. No traversal guard is needed here regardless —
+    // anything that isn't a literal embedded key (including `../etc/passwd`
+    // or `%2e%2e/etc/passwd`) simply returns `None` and falls through to the
+    // SPA index.
     let rel = uri.path().trim_start_matches('/');
     if !rel.is_empty() && rel != "index.html" {
         if let Some(file) = FrontAssets::get(rel) {

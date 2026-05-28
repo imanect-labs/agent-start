@@ -9,3 +9,4 @@ server-rs/target/
 .vite
 .vite-plus
 *.tsbuildinfo
+core.*

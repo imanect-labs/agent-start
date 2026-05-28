@@ -43,7 +43,10 @@ pub async fn create_window(State(app): State<Shared>, Path(name): Path<String>) 
     // wrongly 404'd "新規ターミナル" for chat sessions (#90); gate on liveness
     // instead so chat sessions can still open auxiliary terminals.
     if !dir.live {
-        return err(StatusCode::NOT_FOUND, "session is stopped; restart it first");
+        return err(
+            StatusCode::NOT_FOUND,
+            "session is stopped; restart it first",
+        );
     }
     let cfg = match config_loader::load_config() {
         Ok(c) => c,
