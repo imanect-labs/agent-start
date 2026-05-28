@@ -3,6 +3,7 @@ use axum::http::{header, StatusCode, Uri};
 use axum::response::IntoResponse;
 use axum::routing::{any, delete, get, post, put};
 use axum::Router;
+use chat_manager::ChatManager;
 use code_server_manager::CodeServerManager;
 use novnc_manager::NovncManager;
 use parking_lot::RwLock;
@@ -28,6 +29,7 @@ use crate::sessions::SessionDirectory;
 pub struct AppState {
     pub db: Db,
     pub pty: Arc<PtyManager>,
+    pub chat: Arc<ChatManager>,
     pub code_server: Arc<CodeServerManager>,
     pub novnc: Arc<NovncManager>,
     /// In-memory mirror of session metadata. Persisted on insert via SQLite.
@@ -68,6 +70,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
 
     let db = state::open().await?;
     let pty = Arc::new(PtyManager::new());
+    let chat = Arc::new(ChatManager::new());
     let code_server = Arc::new(CodeServerManager::new());
     let novnc = Arc::new(NovncManager::new());
     let sessions = Arc::new(RwLock::new(HashMap::new()));
@@ -142,6 +145,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
     let app_state: Shared = Arc::new(AppState {
         db,
         pty,
+        chat,
         code_server,
         novnc,
         sessions,
@@ -173,6 +177,82 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
                     }
                 });
             }));
+    }
+
+    // Chat conversations (#34) that crash or exit unexpectedly stay
+    // visible as `dead`: the transcript is browsable and the next
+    // `user_message` revives them via `--resume` (decision 12). Unlike the
+    // PTY hook we do NOT remove the directory entry.
+    {
+        let state_for_chat_hook = app_state.clone();
+        app_state.chat.set_exit_hook(Arc::new(move |name: &str| {
+            let state = state_for_chat_hook.clone();
+            let name = name.to_string();
+            tokio::spawn(async move {
+                if let Some(d) = state.sessions.write().get_mut(&name) {
+                    d.live = false;
+                }
+                if let Err(e) = state::mark_dead(&state.db, &name).await {
+                    tracing::warn!(error = %e, session = %name, "failed to mark chat dead");
+                }
+            });
+        }));
+    }
+
+    // Rehydrate chat sessions as dormant so their transcript is browsable
+    // after a restart and the first send can `--resume` the conversation.
+    if let Ok(cfg) = config_loader::load_config() {
+        if let Ok(rows) = state::list_all_sessions(&app_state.db).await {
+            for row in rows {
+                let is_chat = cfg.clis.get(&row.cli).map(|c| c.is_chat()).unwrap_or(false);
+                if !is_chat {
+                    continue;
+                }
+                // Only rehydrate sessions whose directory survived (those
+                // present in the in-memory map populated above).
+                if !app_state.sessions.read().contains_key(&row.name) {
+                    continue;
+                }
+                let cli_conf = cfg.clis.get(&row.cli);
+                let cwd = if !row.worktree_path.is_empty() {
+                    row.worktree_path.clone()
+                } else {
+                    row.cwd.clone()
+                };
+                let orig = if row.orig_path.is_empty() {
+                    cwd.clone()
+                } else {
+                    row.orig_path.clone()
+                };
+                let start_seq = state::next_chat_seq(&app_state.db, &row.name)
+                    .await
+                    .unwrap_or(0);
+                let spec = chat_manager::ChatSpawnSpec {
+                    name: row.name.clone(),
+                    cwd: std::path::PathBuf::from(&cwd),
+                    shell: cfg.shell.clone(),
+                    command: cli_conf
+                        .map(|c| c.command.clone())
+                        .unwrap_or_else(|| "claude".into()),
+                    skip_permissions_flag: cli_conf.and_then(|c| c.skip_permissions_flag.clone()),
+                    extra_args: String::new(),
+                    env: crate::sessions::launch_env(
+                        std::path::Path::new(&orig),
+                        &row.name,
+                        std::path::Path::new(&cwd),
+                    ),
+                    model: cfg.chat.default_model.clone(),
+                    resume: if row.claude_session_id.is_empty() {
+                        None
+                    } else {
+                        Some(row.claude_session_id.clone())
+                    },
+                    start_seq,
+                };
+                let session = app_state.chat.insert_dormant(spec);
+                crate::chat::attach_persistence(app_state.clone(), session);
+            }
+        }
     }
 
     // Periodic flusher: every 5s snapshot every live PTY's ring buffer
@@ -307,6 +387,8 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         )
         // WebSocket — same URL the UI already uses.
         .route("/ws/terminal", get(crate::ws::ws_terminal))
+        // Chat-mode WebSocket (#34).
+        .route("/ws/chat", get(crate::ws_chat::ws_chat))
         .with_state(app_state.clone());
 
     // SPA wiring. API routes already registered above take precedence.

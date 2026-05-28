@@ -207,16 +207,41 @@ The bottom-left **"Add project"** button lets you clone a git repo or import a l
       "skipPermissionsFlag": "--dangerously-skip-permissions",
       "label": "Claude Code"
     },
+    "claude-chat": {
+      "command": "claude",
+      "skipPermissionsFlag": "--dangerously-skip-permissions",
+      "label": "Claude Code (Chat)",
+      "mode": "chat"
+    },
     "codex": {
       "command": "codex",
       "skipPermissionsFlag": "--full-auto",
       "label": "Codex CLI"
     }
+  },
+  "chat": {
+    "models": [
+      { "id": "opus", "label": "Opus" },
+      { "id": "sonnet", "label": "Sonnet" },
+      { "id": "haiku", "label": "Haiku" }
+    ]
   }
 }
 ```
 
-Add a new CLI (e.g. `aider`, `opencode`) by appending another entry to `clis`. The legacy `claudeCommand` key is migrated automatically.
+Add a new CLI (e.g. `aider`, `opencode`) by appending another entry to `clis`. The legacy `claudeCommand` key is migrated automatically. A CLI with `"mode": "chat"` launches the chat UI instead of a terminal (see below); `chat.models` defines its model menu.
+
+## Chat mode (Claude)
+
+Launch a project with the **Claude Code (Chat)** CLI to get a chat UI instead of a terminal — message bubbles, streamed responses, collapsible thinking/tool cards, image attachments, and a model picker, à la the Codex app or Zed's agent panel.
+
+- **How it works**: the session runs `claude` headless in stream-json mode (`claude -p --input-format stream-json --output-format stream-json`) rather than a PTY. The host forwards events to the browser over `/ws/chat`; the conversation keeps running across disconnects and persists across host restarts (it resumes the same conversation via `--resume`).
+- **Permissions**: chat mode runs with `--dangerously-skip-permissions` (an interactive permission UI is tracked in #84). As with the rest of agent-start, only expose the host on a trusted network.
+- **Images**: attach via the 📎 button, paste, or drag-and-drop (png/jpeg/webp/gif, up to 5 MB / 4 images). Images are downscaled client-side before sending.
+- **Send key**: defaults to Enter (Shift+Enter for newline); switch to Ctrl+Enter under **Settings → チャット** (a per-device preference). The Japanese/IME composition Enter never sends.
+- **Models**: pick from `chat.models` in the composer; switching mid-conversation transparently resumes it on the new model.
+
+> Note: slash commands (`/help`, `/model`, …) are not available in headless mode, so there is no in-chat command palette; model switching uses the picker.
 
 ## Worktree mode
 

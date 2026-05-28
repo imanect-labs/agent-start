@@ -221,17 +221,42 @@ agent-start stop                  # manifest.json 経由で SIGTERM
       "skipPermissionsFlag": "--dangerously-skip-permissions",
       "label": "Claude Code"
     },
+    "claude-chat": {
+      "command": "claude",
+      "skipPermissionsFlag": "--dangerously-skip-permissions",
+      "label": "Claude Code (Chat)",
+      "mode": "chat"
+    },
     "codex": {
       "command": "codex",
       "skipPermissionsFlag": "--full-auto",
       "label": "Codex CLI"
     }
+  },
+  "chat": {
+    "models": [
+      { "id": "opus", "label": "Opus" },
+      { "id": "sonnet", "label": "Sonnet" },
+      { "id": "haiku", "label": "Haiku" }
+    ]
   }
 }
 ```
 
 CLI を追加したい場合 (例: aider, opencode) は `clis` にエントリを増やすだけ。
-旧 `claudeCommand` キーは自動マイグレーションされる。
+旧 `claudeCommand` キーは自動マイグレーションされる。`"mode": "chat"` を持つ CLI はターミナルではなくチャット UI で起動する (後述)。`chat.models` がモデルメニューを定義する。
+
+## チャットモード (Claude)
+
+プロジェクトを **Claude Code (Chat)** CLI で起動すると、ターミナルではなくチャット UI が開く。メッセージバブル、ストリーミング応答、折り畳み可能な思考 / ツールカード、画像添付、モデルピッカーを備え、Codex アプリや Zed の agent panel に近い操作感になる。
+
+- **仕組み**: セッションは PTY ではなく `claude` をヘッドレス stream-json モード (`claude -p --input-format stream-json --output-format stream-json`) で実行する。ホストはイベントを `/ws/chat` 経由でブラウザに中継し、会話は切断をまたいで動き続け、ホスト再起動後も `--resume` で同じ会話を継続する。
+- **権限**: チャットモードは `--dangerously-skip-permissions` で動作する (対話的な許可 UI は #84 で追跡)。他機能と同様、ホストは信頼できるネットワークにのみ公開すること。
+- **画像**: 📎 ボタン / 貼り付け / ドラッグ&ドロップで添付 (png/jpeg/webp/gif、最大 5MB・4 枚)。送信前にクライアント側で縮小する。
+- **送信キー**: 既定は Enter 送信 (Shift+Enter で改行)。**設定 → チャット** で Ctrl+Enter 送信に切替できる (端末ごとの設定)。日本語 IME 変換確定の Enter では送信されない。
+- **モデル**: コンポーザのピッカーから `chat.models` の候補を選択。会話途中の切替も同じ会話を継続したまま反映される。
+
+> 注: ヘッドレスモードではスラッシュコマンド (`/help`, `/model` …) は使えないため、チャット内コマンドパレットは無く、モデル切替はピッカーで行う。
 
 ## worktree モード
 

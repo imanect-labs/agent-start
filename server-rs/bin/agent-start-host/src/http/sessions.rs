@@ -66,6 +66,9 @@ pub async fn start_session(
         command,
         resolved,
         create_wt,
+        is_chat,
+        extra,
+        prompt,
     } = prepared;
 
     let base_name = resolved
@@ -79,11 +82,31 @@ pub async fn start_session(
         Err(resp) => return *resp,
     };
 
-    if cli_key == "claude" {
+    // Both the PTY `claude` and the chat `claude` run the same binary, so
+    // mark the worktree Claude-trusted for either.
+    if cli_key == "claude" || is_chat {
         let _ = workspace_manager::mark_claude_trusted(&cwd);
     }
 
-    let env = launch_env(&resolved, &name, &cwd);
+    if is_chat {
+        return start_chat_session(
+            &app,
+            StartChatArgs {
+                cfg: &cfg,
+                name: &name,
+                cli_key: &cli_key,
+                command: &command,
+                resolved: &resolved,
+                cwd: &cwd,
+                worktree_path: worktree_path.as_deref(),
+                extra: &extra,
+                prompt: prompt.as_deref(),
+            },
+        )
+        .await;
+    }
+
+    let env = crate::sessions::launch_env(&resolved, &name, &cwd);
     let spec = PtySpawnSpec {
         name: name.clone(),
         window: 0,
@@ -156,6 +179,122 @@ pub async fn start_session(
     .into_response()
 }
 
+/// Inputs for `start_chat_session`, grouped to keep the arg list sane.
+struct StartChatArgs<'a> {
+    cfg: &'a config_loader::Config,
+    name: &'a str,
+    cli_key: &'a str,
+    command: &'a str,
+    resolved: &'a StdPath,
+    cwd: &'a StdPath,
+    worktree_path: Option<&'a StdPath>,
+    extra: &'a str,
+    prompt: Option<&'a str>,
+}
+
+/// Spawn a headless chat conversation (#34) instead of a PTY. Mirrors the
+/// PTY path: persist the session row + in-memory directory, roll back the
+/// worktree if the process fails to start. Chat always runs with
+/// skip-permissions (decision 7).
+async fn start_chat_session(app: &Shared, args: StartChatArgs<'_>) -> Response {
+    let StartChatArgs {
+        cfg,
+        name,
+        cli_key,
+        command,
+        resolved,
+        cwd,
+        worktree_path,
+        extra,
+        prompt,
+    } = args;
+
+    let cli_conf = match cfg.clis.get(cli_key) {
+        Some(c) => c,
+        None => return err(StatusCode::BAD_REQUEST, format!("unknown cli: {cli_key}")),
+    };
+    let env = crate::sessions::launch_env(resolved, name, cwd);
+    let spec = chat_manager::ChatSpawnSpec {
+        name: name.to_string(),
+        cwd: cwd.to_path_buf(),
+        shell: cfg.shell.clone(),
+        command: cli_conf.command.clone(),
+        skip_permissions_flag: cli_conf.skip_permissions_flag.clone(),
+        extra_args: extra.to_string(),
+        env,
+        model: cfg.chat.default_model.clone(),
+        resume: None,
+        start_seq: 0,
+    };
+
+    let session = app.chat.insert_dormant(spec);
+    crate::chat::attach_persistence(app.clone(), session.clone());
+    if let Err(e) = session.start().await {
+        app.chat.remove(name);
+        if let Some(wt) = worktree_path {
+            let _ = git_ops::remove_worktree(wt, Some(resolved), true);
+        }
+        return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
+    }
+
+    // Forward an initial prompt as the first user turn (e.g. launching
+    // from a GitHub issue).
+    if let Some(prompt) = prompt {
+        if let Err(e) = session.send_user_message(prompt, &[]).await {
+            tracing::warn!(error = %e, session = %name, "failed to send initial chat prompt");
+        }
+    }
+
+    let wt_str = worktree_path
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let orig_str = if worktree_path.is_some() {
+        resolved.to_string_lossy().into_owned()
+    } else {
+        String::new()
+    };
+
+    if let Err(e) = state::insert_session(
+        &app.db,
+        state::NewSession {
+            name,
+            cli: cli_key,
+            cwd: &cwd.to_string_lossy(),
+            command,
+            worktree_path: &wt_str,
+            orig_path: &orig_str,
+            pid: None,
+        },
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "failed to persist chat session metadata");
+    }
+
+    app.sessions.write().insert(
+        name.to_string(),
+        SessionDirectory {
+            name: name.to_string(),
+            created_at_ms: chrono::Utc::now().timestamp_millis(),
+            cli: cli_key.to_string(),
+            cwd: cwd.to_string_lossy().into_owned(),
+            worktree_path: wt_str,
+            orig_path: orig_str,
+            live: true,
+            history: Vec::new(),
+        },
+    );
+
+    Json(StartSessionResponse {
+        name: name.to_string(),
+        command: command.to_string(),
+        cli: cli_key.to_string(),
+        cwd: cwd.to_string_lossy().into_owned(),
+        worktree_path: worktree_path.map(|p| p.to_string_lossy().into_owned()),
+    })
+    .into_response()
+}
+
 /// POST `/api/sessions/:name/restart` — bring a session that was
 /// rehydrated as `stopped` (its previous PTY died with the host) back
 /// to life. Reuses the original cli/cwd/command from SQLite so the
@@ -195,7 +334,7 @@ pub async fn restart_session(State(app): State<Shared>, Path(name): Path<String>
     } else {
         PathBuf::from(&row.orig_path)
     };
-    let env = launch_env(&orig, &name, &cwd);
+    let env = crate::sessions::launch_env(&orig, &name, &cwd);
     let spec = PtySpawnSpec {
         name: name.clone(),
         window: 0,
@@ -268,6 +407,9 @@ pub async fn delete_session(
     for window in app.pty.remove_session(&name) {
         window.kill();
     }
+    // Tear down the chat conversation (if this is a chat session). Its
+    // transcript rows cascade-delete with the session row below.
+    app.chat.remove(&name);
     app.code_server.kill(&name).await;
     let _ = state::delete_code_server(&app.db, &name).await;
     if let Err(e) = state::mark_dead(&app.db, &name).await {
@@ -311,6 +453,12 @@ struct Prepared {
     command: String,
     resolved: PathBuf,
     create_wt: bool,
+    /// True when the selected CLI runs in headless chat mode (#34).
+    is_chat: bool,
+    /// Sanitized extra args (without the appended prompt).
+    extra: String,
+    /// Initial prompt (trimmed + capped), if any.
+    prompt: Option<String>,
 }
 
 fn prepare_start(body: &StartSessionRequest) -> Erred<Prepared> {
@@ -351,20 +499,37 @@ fn prepare_start(body: &StartSessionRequest) -> Erred<Prepared> {
         ));
     }
 
-    let mut command = config_loader::build_launch_command(cli_conf, skip, &extra)
-        .map_err(|e| bad(e.to_string()))?;
+    let is_chat = cli_conf.is_chat();
 
-    // An initial prompt (e.g. launching from a GitHub issue) is handed to
-    // the agent CLI as a positional argument. Skip it for the bare-shell
-    // CLI (empty command) which has no prompt argument.
-    if let Some(prompt) = body.prompt.as_deref() {
-        let trimmed = prompt.trim();
-        if !trimmed.is_empty() && !command.is_empty() {
-            let capped: String = trimmed.chars().take(MAX_PROMPT_CHARS).collect();
-            command.push(' ');
-            command.push_str(&shell_single_quote(&capped));
+    // Capped initial prompt, shared by both launch paths.
+    let prompt = body.prompt.as_deref().and_then(|p| {
+        let trimmed = p.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.chars().take(MAX_PROMPT_CHARS).collect::<String>())
         }
-    }
+    });
+
+    // Chat mode never builds a PTY command line; it spawns the headless
+    // process from its components in `start_session`. The stored `command`
+    // is just a human-readable descriptor.
+    let command = if is_chat {
+        format!("{} (chat)", cli_conf.command)
+    } else {
+        let mut command = config_loader::build_launch_command(cli_conf, skip, &extra)
+            .map_err(|e| bad(e.to_string()))?;
+        // An initial prompt (e.g. launching from a GitHub issue) is handed
+        // to the agent CLI as a positional argument. Skip it for the
+        // bare-shell CLI (empty command) which has no prompt argument.
+        if let Some(prompt) = &prompt {
+            if !command.is_empty() {
+                command.push(' ');
+                command.push_str(&shell_single_quote(prompt));
+            }
+        }
+        command
+    };
 
     Ok(Prepared {
         cfg,
@@ -372,6 +537,9 @@ fn prepare_start(body: &StartSessionRequest) -> Erred<Prepared> {
         command,
         resolved,
         create_wt,
+        is_chat,
+        extra,
+        prompt,
     })
 }
 
@@ -409,21 +577,6 @@ fn shell_single_quote(s: &str) -> String {
     }
     out.push('\'');
     out
-}
-
-fn launch_env(orig: &StdPath, name: &str, cwd: &StdPath) -> Vec<(String, String)> {
-    vec![
-        (
-            "AGENT_START_ROOT_PATH".into(),
-            orig.to_string_lossy().into_owned(),
-        ),
-        ("AGENT_START_WORKSPACE_NAME".into(), name.to_string()),
-        (
-            "AGENT_START_WORKSPACE_PATH".into(),
-            cwd.to_string_lossy().into_owned(),
-        ),
-        ("TERM".into(), "xterm-256color".into()),
-    ]
 }
 
 #[cfg(test)]

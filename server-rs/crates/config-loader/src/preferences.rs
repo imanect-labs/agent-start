@@ -142,6 +142,7 @@ mod tests {
             command: String::new(),
             skip_permissions_flag: None,
             label: None,
+            mode: None,
         };
         assert_eq!(build_launch_command(&c, true, "anything").unwrap(), "");
     }
@@ -152,6 +153,7 @@ mod tests {
             command: "claude".into(),
             skip_permissions_flag: Some("--dangerously-skip-permissions".into()),
             label: None,
+            mode: None,
         };
         assert_eq!(
             build_launch_command(&c, true, "--model opus").unwrap(),

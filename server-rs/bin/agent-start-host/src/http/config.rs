@@ -1,5 +1,7 @@
 use super::err;
-use agent_start_api::{CliInfo, ConfigBody, ConfigPatch, ConfigPaths};
+use agent_start_api::{
+    ChatConfigBody, ChatModelInfo, CliInfo, ConfigBody, ConfigPatch, ConfigPaths,
+};
 use axum::http::StatusCode;
 use axum::response::Response;
 use axum::{response::IntoResponse, Json};
@@ -20,8 +22,21 @@ pub async fn get_config() -> Response {
             command: conf.command.clone(),
             has_skip_flag: conf.skip_permissions_flag.is_some(),
             skip_flag: conf.skip_permissions_flag.clone().unwrap_or_default(),
+            mode: conf.mode.clone().unwrap_or_default(),
         })
         .collect();
+    let chat = ChatConfigBody {
+        models: cfg
+            .chat
+            .models
+            .iter()
+            .map(|m| ChatModelInfo {
+                id: m.id.clone(),
+                label: m.label.clone(),
+            })
+            .collect(),
+        default_model: cfg.chat.default_model.clone(),
+    };
     let paths = ConfigPaths {
         config: config_loader::config_path().to_string_lossy().into_owned(),
         preferences: config_loader::preferences_path()
@@ -40,6 +55,7 @@ pub async fn get_config() -> Response {
         show_hidden: cfg.show_hidden,
         git_only: cfg.git_only,
         paths,
+        chat,
     })
     .into_response()
 }
@@ -77,6 +93,7 @@ pub async fn put_config(Json(patch): Json<ConfigPatch>) -> Response {
                     command: c.command,
                     skip_permissions_flag: c.skip_permissions_flag,
                     label: c.label,
+                    mode: c.mode,
                 },
             );
         }

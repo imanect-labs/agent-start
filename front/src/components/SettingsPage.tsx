@@ -6,6 +6,7 @@ import { useToast } from "./Toast";
 import { Button, Input, Spinner } from "@/components/ui";
 import { useTheme, type ThemeChoice } from "@/components/ThemeProvider";
 import { IconMonitor, IconMoon, IconSun } from "@/components/icons";
+import { readSendKey, SEND_KEY_STORAGE, type SendKey } from "@/components/chat/ChatComposer";
 
 type Preferences = {
   cli: string;
@@ -240,6 +241,15 @@ export function SettingsPage() {
               </Section>
 
               <Section
+                title="チャット"
+                hint="この端末のみに適用 (即時保存・サーバーには送信されません)"
+              >
+                <Field label="メッセージの送信キー">
+                  <SendKeySelector />
+                </Field>
+              </Section>
+
+              <Section
                 title="プロジェクトディレクトリ"
                 hint="プロジェクトを探す検索先(1 行 1 パス)。デフォルトは ~/.agent-start/projects"
               >
@@ -383,6 +393,51 @@ export function SettingsPage() {
           )}
         </div>
       </main>
+    </div>
+  );
+}
+
+function SendKeySelector() {
+  const [value, setValue] = useState<SendKey>(readSendKey);
+  const items: { key: SendKey; label: string; hint: string }[] = [
+    { key: "enter", label: "Enter で送信", hint: "Shift+Enter で改行" },
+    { key: "ctrlEnter", label: "Ctrl+Enter で送信", hint: "Enter で改行" },
+  ];
+  const choose = (k: SendKey) => {
+    setValue(k);
+    try {
+      window.localStorage.setItem(SEND_KEY_STORAGE, k);
+      // Notify any open chat composer in this same tab to pick up the change.
+      window.dispatchEvent(new StorageEvent("storage", { key: SEND_KEY_STORAGE, newValue: k }));
+    } catch {
+      // ignore
+    }
+  };
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-md">
+      {items.map((it) => {
+        const active = value === it.key;
+        return (
+          <button
+            key={it.key}
+            type="button"
+            onClick={() => choose(it.key)}
+            className={[
+              "h-auto min-h-[3.25rem] px-3 py-2 rounded-md border text-left transition-colors",
+              active
+                ? "border-accent bg-accent text-accent-fg"
+                : "border-line bg-surface text-fg hover:bg-surface-muted",
+            ].join(" ")}
+          >
+            <div className="text-sm font-medium">{it.label}</div>
+            <div
+              className={["text-[11px] mt-0.5", active ? "opacity-70" : "text-fg-subtle"].join(" ")}
+            >
+              {it.hint}
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }

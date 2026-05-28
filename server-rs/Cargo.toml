@@ -6,6 +6,7 @@ members = [
     "crates/agent-start-api",
     "crates/workspace-manager",
     "crates/pty-manager",
+    "crates/chat-manager",
     "crates/code-server-manager",
     "crates/novnc-manager",
     "crates/git-ops",
@@ -25,6 +26,7 @@ agent-start-api = { path = "crates/agent-start-api" }
 config-loader  = { path = "crates/config-loader" }
 git-ops        = { path = "crates/git-ops" }
 pty-manager    = { path = "crates/pty-manager" }
+chat-manager   = { path = "crates/chat-manager" }
 code-server-manager = { path = "crates/code-server-manager" }
 novnc-manager = { path = "crates/novnc-manager" }
 state          = { path = "crates/state" }
