@@ -1,6 +1,7 @@
 //! Write a small runtime manifest describing how the CLI / scripts can
 //! talk to the running host (URL + PID). Stored under
-//! `$XDG_DATA_HOME/agent-start/runtime/manifest.json`.
+//! `<host_state_dir>/runtime/manifest.json` (i.e. `$AGENT_START_HOME/runtime`
+//! or `~/.agent-start/runtime`). The `agent-start` CLI reads the same path.
 
 use serde::Serialize;
 use std::path::PathBuf;

@@ -100,12 +100,12 @@ jobs:
       - name: Build (native)
         if: ${{ !matrix.use_cross }}
         working-directory: server-rs
-        run: cargo build --release --bin agent-start-host --target ${{ matrix.target }}
+        run: cargo build --release --bin agent-start-host --bin agent-start --target ${{ matrix.target }}
 
       - name: Build (cross)
         if: matrix.use_cross
         working-directory: server-rs
-        run: cross build --release --bin agent-start-host --target ${{ matrix.target }}
+        run: cross build --release --bin agent-start-host --bin agent-start --target ${{ matrix.target }}
 
       - name: Resolve release tag
         id: tag
@@ -127,6 +127,7 @@ jobs:
           name="agent-start-${tag}-${target}"
           mkdir -p "dist/${name}"
           cp "server-rs/target/${target}/release/agent-start-host" "dist/${name}/"
+          cp "server-rs/target/${target}/release/agent-start" "dist/${name}/"
           cp README.md LICENSE "dist/${name}/" 2>/dev/null || true
           (cd dist && tar czf "${name}.tar.gz" "${name}")
           echo "ASSET=dist/${name}.tar.gz" >> "$GITHUB_ENV"
@@ -140,6 +141,7 @@ jobs:
           $name = "agent-start-$tag-$target"
           New-Item -ItemType Directory -Force -Path "dist/$name" | Out-Null
           Copy-Item "server-rs/target/$target/release/agent-start-host.exe" "dist/$name/"
+          Copy-Item "server-rs/target/$target/release/agent-start.exe" "dist/$name/"
           Copy-Item README.md, LICENSE "dist/$name/" -ErrorAction SilentlyContinue
           Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
           echo "ASSET=dist/$name.zip" | Out-File -FilePath $env:GITHUB_ENV -Append

@@ -34,6 +34,10 @@ pub struct AppState {
     pub novnc: Arc<NovncManager>,
     /// In-memory mirror of session metadata. Persisted on insert via SQLite.
     pub sessions: Arc<RwLock<HashMap<String, SessionDirectory>>>,
+    /// Cached result of the last GitHub Releases check, with the instant it
+    /// was taken. Lets `/v1/update-check` answer cheaply (and avoid hammering
+    /// the GitHub API) when polled by the UI/CLI. See `http::meta`.
+    pub update_cache: RwLock<Option<(std::time::Instant, agent_start_api::UpdateCheckBody)>>,
 }
 
 pub type Shared = Arc<AppState>;
@@ -149,6 +153,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         code_server,
         novnc,
         sessions,
+        update_cache: RwLock::new(None),
     });
 
     // When a child process exits on its own (user types `exit`, the
@@ -291,6 +296,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         // Versioned (Rust-native) endpoints.
         .route("/v1/health", get(crate::http::health))
         .route("/v1/version", get(crate::http::version))
+        .route("/v1/update-check", get(crate::http::update_check))
         // `/api/*` surface consumed by the Vite+ SPA under `/front/`.
         .route(
             "/api/config",

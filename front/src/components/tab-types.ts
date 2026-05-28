@@ -9,8 +9,12 @@
 export type TerminalTab = {
   id: string;
   kind: "terminal";
-  /** tmux window index this tab is bound to */
+  /** tmux window index this tab is bound to. -1 while the window is still
+   *  being created on the host (optimistic tab). */
   windowId: number;
+  /** True while the backing tmux window is being created. The tab renders a
+   *  skeleton instead of an xterm until the real windowId arrives. */
+  pending?: boolean;
   /** optional display label; falls back to "Terminal N" */
   label?: string;
 };

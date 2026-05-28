@@ -28,6 +28,23 @@ pub struct VersionBody {
     pub version: String,
 }
 
+/// Result of checking GitHub Releases for a newer `agent-start` build.
+/// Best-effort: when the upstream check fails (offline, rate-limited) the
+/// host returns `available: false` with `latest`/`html_url` left `None`
+/// rather than erroring the request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCheckBody {
+    /// The currently-running host version (`CARGO_PKG_VERSION`).
+    pub current: String,
+    /// Latest release tag from GitHub, if the check succeeded.
+    pub latest: Option<String>,
+    /// True when `latest` is strictly newer than `current`.
+    pub available: bool,
+    /// Browser URL of the latest release, for "view release" links.
+    #[serde(rename = "htmlUrl", skip_serializing_if = "Option::is_none")]
+    pub html_url: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CliInfo {
     pub key: String,
@@ -202,13 +219,13 @@ pub struct FsWriteRequest {
     pub base_sha: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CloneRequest {
     pub url: String,
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportRequest {
     pub src: String,
     pub name: Option<String>,
@@ -243,7 +260,7 @@ pub struct SessionsBody {
     pub sessions: Vec<Session>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartSessionRequest {
     #[serde(rename = "projectPath")]
     pub project_path: String,

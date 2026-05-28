@@ -295,13 +295,13 @@ EOF
 }
 
 main() {
-  local target version url tmp archive bin os installed_bin
+  local target version url tmp archive bin cli_bin os installed_bin
   target="$(detect_target)"
   version="$(resolve_version)"
   [ -n "$version" ] || err "could not resolve latest version"
   info "target:  $target"
   info "version: $version"
-  info "dest:    $INSTALL_DIR/agent-start-host"
+  info "dest:    $INSTALL_DIR (agent-start-host + agent-start)"
 
   archive="agent-start-${version}-${target}.tar.gz"
   url="https://github.com/${REPO}/releases/download/${version}/${archive}"
@@ -321,8 +321,18 @@ main() {
   mkdir -p "$INSTALL_DIR"
   installed_bin="$INSTALL_DIR/agent-start-host"
   install -m 0755 "$bin" "$installed_bin"
-
   info "installed: $installed_bin"
+
+  # The thin-client CLI ships in the same archive as of v0.1.x. Install it
+  # alongside the host when present; older archives won't have it, so skip
+  # gracefully rather than failing the whole install.
+  cli_bin="$(find "$tmp" -type f -name 'agent-start' | head -n1 || true)"
+  if [ -n "$cli_bin" ]; then
+    install -m 0755 "$cli_bin" "$INSTALL_DIR/agent-start"
+    info "installed: $INSTALL_DIR/agent-start"
+  else
+    warn "agent-start CLI not found in archive (older release?); installed host only"
+  fi
 
   case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
@@ -366,8 +376,13 @@ Next steps:
   agent-start-host --bind 0.0.0.0 --port ${PORT}   # expose to tailnet/LAN
   open http://localhost:${PORT}
 
+Or drive it with the CLI:
+  agent-start start --daemon                       # start the host in the background
+  agent-start status                               # host version + update check
+  agent-start project list                         # list projects via the host
+
 Upgrade later:
-  agent-start-host update                          # in-place upgrade
+  agent-start update                               # in-place upgrade (CLI)
   agent-start-host update --version v0.2.0         # pin a release
 
 Register as a daemon (systemd on Linux, launchd on macOS):
