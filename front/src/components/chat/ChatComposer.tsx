@@ -33,7 +33,8 @@ export function ChatComposer({
 }: {
   models: ChatModelInfo[];
   currentModel: string | null;
-  onSend: (text: string, images: OutgoingImage[]) => void;
+  /** Returns false if the transport wasn't ready (draft is then preserved). */
+  onSend: (text: string, images: OutgoingImage[]) => boolean;
   onInterrupt: () => void;
   onSetModel: (model: string) => void;
   generating: boolean;
@@ -70,13 +71,19 @@ export function ChatComposer({
 
   const submit = useCallback(() => {
     if (!canSend) return;
-    onSend(
+    const ok = onSend(
       text.trim(),
       images.map(({ id: _id, ...rest }) => rest),
     );
+    // Preserve the draft if the socket wasn't ready, so input isn't lost on
+    // a connection race.
+    if (!ok) {
+      toast({ title: "送信できませんでした（接続待ち）", color: "warning" });
+      return;
+    }
     setText("");
     setImages([]);
-  }, [canSend, onSend, text, images]);
+  }, [canSend, onSend, text, images, toast]);
 
   const addFiles = useCallback(
     async (files: FileList | File[]) => {

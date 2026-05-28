@@ -84,6 +84,10 @@ pub struct ChatSession {
     saw_init: std::sync::atomic::AtomicBool,
     /// Set when a resumed process died before producing `system:init`.
     resume_suspect: std::sync::atomic::AtomicBool,
+    /// Serializes user-driven lifecycle transitions (`switch_model` /
+    /// `revive`) so concurrent control messages from multiple WebSocket
+    /// clients can't interleave overlapping respawns.
+    lifecycle: tokio::sync::Mutex<()>,
     /// Lossless persistence sink. Every committed envelope is forwarded
     /// here (in addition to the lossy live broadcast) so the host can write
     /// the transcript to SQLite without dropping messages under backpressure.
@@ -114,6 +118,7 @@ impl ChatSession {
             generation: AtomicU64::new(0),
             saw_init: std::sync::atomic::AtomicBool::new(false),
             resume_suspect: std::sync::atomic::AtomicBool::new(false),
+            lifecycle: tokio::sync::Mutex::new(()),
             spec: Mutex::new(spec),
             proc: Mutex::new(None),
             stdin: tokio::sync::Mutex::new(None),
@@ -276,6 +281,7 @@ impl ChatSession {
     /// broadcast channel and buffers are preserved across the respawn.
     pub async fn switch_model(self: &Arc<Self>, model: &str) -> Result<(), ChatError> {
         validate_token(model)?;
+        let _guard = self.lifecycle.lock().await;
         let sid = self.claude_session_id();
         {
             let mut spec = self.spec.lock();
@@ -303,6 +309,11 @@ impl ChatSession {
     /// died before its `system:init`, the resume id is stale — fall back to
     /// a fresh conversation and tell the user (U5).
     pub async fn revive(self: &Arc<Self>) -> Result<(), ChatError> {
+        let _guard = self.lifecycle.lock().await;
+        // Another concurrent revive may have already brought it back.
+        if self.is_alive() {
+            return Ok(());
+        }
         let fallback = self.resume_suspect.swap(false, Ordering::SeqCst);
         let sid = self.claude_session_id();
         {
@@ -458,6 +469,11 @@ impl ChatSession {
             return;
         }
         *self.proc.lock() = None;
+        // Drop the dead stdin so a write can't target a stale pipe before a
+        // revive swaps in a fresh one.
+        if let Ok(mut stdin) = self.stdin.try_lock() {
+            *stdin = None;
+        }
         // A resumed process that died before its `system:init` means the
         // resume id is stale; the next revive starts a fresh conversation.
         if !self.saw_init.load(Ordering::SeqCst) && self.spec.lock().resume.is_some() {
@@ -478,6 +494,9 @@ impl ChatSession {
         if let Some(mut proc) = self.proc.lock().take() {
             proc.reader.abort();
             let _ = proc.child.start_kill();
+        }
+        if let Ok(mut stdin) = self.stdin.try_lock() {
+            *stdin = None;
         }
     }
 }

@@ -9,6 +9,9 @@ use crate::app::Shared;
 use chat_manager::ChatSession;
 use std::sync::Arc;
 
+/// How many times to retry a transient chat-message persist before giving up.
+const MAX_PERSIST_RETRIES: u32 = 5;
+
 /// Attach the lossless persistence task to a chat session. Every committed
 /// message (user / assistant / tool echo) is written to `chat_messages`,
 /// and Claude's resumable `session_id` is persisted as soon as it is known
@@ -21,10 +24,26 @@ pub fn attach_persistence(state: Shared, session: Arc<ChatSession>) {
     tokio::spawn(async move {
         let mut last_sid = String::new();
         while let Some(ev) = rx.recv().await {
-            if let Err(e) =
-                state::append_chat_message(&state.db, &name, ev.seq, &ev.role, &ev.json).await
-            {
-                tracing::warn!(error = %e, session = %name, "failed to persist chat message");
+            // Retry on transient SQLite failures (e.g. SQLITE_BUSY) so the
+            // transcript stays lossless; give up after a bounded number of
+            // attempts rather than spinning forever on a permanent error.
+            // The mpsc queue holds later events in order while we retry.
+            for attempt in 0..MAX_PERSIST_RETRIES {
+                match state::append_chat_message(&state.db, &name, ev.seq, &ev.role, &ev.json).await
+                {
+                    Ok(()) => break,
+                    Err(e) => {
+                        let last = attempt + 1 == MAX_PERSIST_RETRIES;
+                        tracing::warn!(
+                            error = %e, session = %name, seq = ev.seq, attempt, give_up = last,
+                            "failed to persist chat message"
+                        );
+                        if last {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    }
+                }
             }
             if let Some(s) = weak.upgrade() {
                 let sid = s.claude_session_id();

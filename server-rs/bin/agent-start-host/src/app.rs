@@ -229,9 +229,16 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
                 } else {
                     row.orig_path.clone()
                 };
-                let start_seq = state::next_chat_seq(&app_state.db, &row.name)
-                    .await
-                    .unwrap_or(0);
+                // On a transient DB error, skip rehydrating rather than
+                // resetting the seq to 0 (which would overwrite persisted
+                // messages on the next turn).
+                let start_seq = match state::next_chat_seq(&app_state.db, &row.name).await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!(error = %e, session = %row.name, "skip chat rehydrate: next_chat_seq failed");
+                        continue;
+                    }
+                };
                 let spec = chat_manager::ChatSpawnSpec {
                     name: row.name.clone(),
                     cwd: std::path::PathBuf::from(&cwd),

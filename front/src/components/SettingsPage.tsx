@@ -421,6 +421,7 @@ function SendKeySelector() {
           <button
             key={it.key}
             type="button"
+            aria-pressed={active}
             onClick={() => choose(it.key)}
             className={[
               "h-auto min-h-[3.25rem] px-3 py-2 rounded-md border text-left transition-colors",
