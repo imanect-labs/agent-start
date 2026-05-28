@@ -3,7 +3,7 @@ import useSWR, { mutate } from "swr";
 import { useBlocker, useNavigate } from "@tanstack/react-router";
 import { Toggle } from "./Toggle";
 import { useToast } from "./Toast";
-import { Button, Input, Spinner } from "@/components/ui";
+import { Button, Card, Input, SegmentedControl, Spinner } from "@/components/ui";
 import { useTheme, type ThemeChoice } from "@/components/ThemeProvider";
 import { IconMonitor, IconMoon, IconSun } from "@/components/icons";
 import { readSendKey, SEND_KEY_STORAGE, type SendKey } from "@/components/chat/ChatComposer";
@@ -207,7 +207,7 @@ export function SettingsPage() {
             ← 戻る
           </button>
           <h1 className="text-base font-semibold tracking-tight flex-1 truncate">設定</h1>
-          {dirty && <span className="hidden sm:inline text-[11px] text-warn">未保存</span>}
+          {dirty && <span className="hidden sm:inline text-2xs text-warn">未保存</span>}
           {/* キャンセルは「戻る」と同じ動作なのでモバイルでは省略。
               dirty 時の警告ドットは「保存」ボタン左に小さく出す。 */}
           <Button
@@ -257,7 +257,7 @@ export function SettingsPage() {
                   value={form.roots}
                   onChange={(e) => update("roots", e.target.value)}
                   rows={3}
-                  className="w-full min-h-[88px] resize-y rounded-md border border-line bg-app px-3 py-2 text-sm font-mono outline-none focus-visible:border-accent"
+                  className="w-full min-h-[88px] resize-y rounded border border-line bg-app px-3 py-2 text-sm font-mono outline-none transition-colors focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-ring/20"
                 />
               </Section>
 
@@ -273,7 +273,7 @@ export function SettingsPage() {
                             type="button"
                             onClick={() => update("cli", c.key)}
                             className={[
-                              "h-auto min-h-[3.5rem] px-3 py-2 rounded-md border text-left transition-colors",
+                              "h-auto min-h-[3.5rem] px-3 py-2 rounded border text-left transition-colors",
                               active
                                 ? "border-accent bg-accent text-accent-fg"
                                 : "border-line bg-surface text-fg hover:bg-surface-muted",
@@ -282,7 +282,7 @@ export function SettingsPage() {
                             <div className="text-sm font-medium">{c.label}</div>
                             <div
                               className={[
-                                "text-[11px] font-mono truncate mt-0.5",
+                                "text-2xs font-mono truncate mt-0.5",
                                 active ? "opacity-70" : "text-fg-subtle",
                               ].join(" ")}
                             >
@@ -354,7 +354,7 @@ export function SettingsPage() {
                     <select
                       value={form.defaultCli}
                       onChange={(e) => update("defaultCli", e.target.value)}
-                      className="w-full rounded-md border border-line bg-app px-3 py-2 text-sm"
+                      className="w-full rounded border border-line bg-app px-3 py-2 text-sm"
                     >
                       {clis.map((c) => (
                         <option key={c.key} value={c.key}>
@@ -424,7 +424,7 @@ function SendKeySelector() {
             aria-pressed={active}
             onClick={() => choose(it.key)}
             className={[
-              "h-auto min-h-[3.25rem] px-3 py-2 rounded-md border text-left transition-colors",
+              "h-auto min-h-[3.25rem] px-3 py-2 rounded border text-left transition-colors",
               active
                 ? "border-accent bg-accent text-accent-fg"
                 : "border-line bg-surface text-fg hover:bg-surface-muted",
@@ -432,7 +432,7 @@ function SendKeySelector() {
           >
             <div className="text-sm font-medium">{it.label}</div>
             <div
-              className={["text-[11px] mt-0.5", active ? "opacity-70" : "text-fg-subtle"].join(" ")}
+              className={["text-2xs mt-0.5", active ? "opacity-70" : "text-fg-subtle"].join(" ")}
             >
               {it.hint}
             </div>
@@ -450,33 +450,17 @@ function ThemeSelector({
   value: ThemeChoice;
   onChange: (v: ThemeChoice) => void;
 }) {
-  const items: { key: ThemeChoice; label: string; icon: React.ReactNode }[] = [
-    { key: "light", label: "ライト", icon: <IconSun className="w-4 h-4" /> },
-    { key: "dark", label: "ダーク", icon: <IconMoon className="w-4 h-4" /> },
-    { key: "system", label: "システム", icon: <IconMonitor className="w-4 h-4" /> },
-  ];
   return (
-    <div className="grid grid-cols-3 gap-2 max-w-md">
-      {items.map((it) => {
-        const active = value === it.key;
-        return (
-          <button
-            key={it.key}
-            type="button"
-            onClick={() => onChange(it.key)}
-            className={[
-              "h-12 inline-flex items-center justify-center gap-2 rounded-md border transition-colors text-sm font-medium",
-              active
-                ? "border-accent bg-accent text-accent-fg"
-                : "border-line bg-surface text-fg hover:bg-surface-muted",
-            ].join(" ")}
-          >
-            {it.icon}
-            {it.label}
-          </button>
-        );
-      })}
-    </div>
+    <SegmentedControl<ThemeChoice>
+      aria-label="テーマ"
+      value={value}
+      onChange={onChange}
+      options={[
+        { value: "light", label: "ライト", icon: <IconSun className="w-4 h-4" /> },
+        { value: "dark", label: "ダーク", icon: <IconMoon className="w-4 h-4" /> },
+        { value: "system", label: "システム", icon: <IconMonitor className="w-4 h-4" /> },
+      ]}
+    />
   );
 }
 
@@ -491,13 +475,13 @@ function Section({
 }) {
   return (
     <section>
-      <div className="mb-3">
-        <div className="text-[11px] uppercase tracking-wider text-fg-subtle font-medium">
-          {title}
-        </div>
-        {hint && <div className="text-[11px] text-fg-faint mt-0.5">{hint}</div>}
+      <div className="mb-3 px-1">
+        <div className="text-2xs uppercase tracking-wider text-fg-subtle font-medium">{title}</div>
+        {hint && <div className="text-2xs text-fg-faint mt-0.5">{hint}</div>}
       </div>
-      {children}
+      <Card>
+        <div className="p-4">{children}</div>
+      </Card>
     </section>
   );
 }

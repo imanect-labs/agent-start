@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 
 type Props = {
   open: boolean;
@@ -18,17 +18,53 @@ const MAX_W: Record<NonNullable<Props["maxWidth"]>, string> = {
 };
 
 export function Sheet({ open, onClose, children, maxWidth = "md", tall = false }: Props) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    const lastFocused = document.activeElement as HTMLElement | null;
+    // Move focus into the dialog so screen readers and keyboards land inside.
+    panelRef.current?.focus();
+
+    const focusables = () =>
+      Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),textarea,input,select,[tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((el) => el.offsetParent !== null);
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      // Trap Tab focus within the sheet.
+      if (e.key === "Tab") {
+        const items = focusables();
+        if (items.length === 0) {
+          e.preventDefault();
+          panelRef.current?.focus();
+          return;
+        }
+        const first = items[0];
+        const last = items[items.length - 1];
+        const activeEl = document.activeElement as HTMLElement;
+        if (e.shiftKey && (activeEl === first || activeEl === panelRef.current)) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && activeEl === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = prev;
       document.removeEventListener("keydown", onKey);
+      lastFocused?.focus?.();
     };
   }, [open, onClose]);
 
@@ -46,12 +82,14 @@ export function Sheet({ open, onClose, children, maxWidth = "md", tall = false }
     >
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
       <div
+        ref={panelRef}
+        tabIndex={-1}
         className={[
-          "relative bg-surface text-fg w-full",
+          "relative bg-surface text-fg w-full outline-none",
           MAX_W[maxWidth],
           "rounded-t-2xl sm:rounded-xl",
           "border-t border-line sm:border",
-          "shadow-[0_-12px_40px_-12px_rgba(0,0,0,0.18)] sm:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.45)]",
+          "shadow-[0_-12px_40px_-12px_rgba(0,0,0,0.18)] sm:shadow-lg",
           "flex flex-col overflow-hidden",
           // Lock height on mobile so toggling content inside (e.g. 詳細
           // オプション) doesn't jump the sheet up/down — body scrolls
@@ -85,7 +123,7 @@ export function SheetHeader({
       <button
         type="button"
         onClick={onClose}
-        className="shrink-0 -mt-1 -mr-2 w-9 h-9 inline-flex items-center justify-center rounded-md text-fg-faint hover:text-fg hover:bg-surface-muted transition-colors"
+        className="shrink-0 -mt-1 -mr-2 w-9 h-9 inline-flex items-center justify-center rounded text-fg-faint hover:text-fg hover:bg-surface-muted transition-colors"
         aria-label="閉じる"
       >
         <svg viewBox="0 0 20 20" className="w-4 h-4" fill="currentColor">

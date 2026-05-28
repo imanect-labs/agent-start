@@ -21,53 +21,44 @@ type Props = {
   restarting?: boolean;
 };
 
-const LIGHT_TERM_THEME = {
-  background: "#fafafa",
-  foreground: "#18181b",
-  cursor: "#18181b",
-  cursorAccent: "#fafafa",
-  selectionBackground: "#d4d4d8",
-  black: "#27272a",
-  red: "#dc2626",
-  green: "#16a34a",
-  yellow: "#ca8a04",
-  blue: "#2563eb",
-  magenta: "#9333ea",
-  cyan: "#0891b2",
-  white: "#71717a",
-  brightBlack: "#52525b",
-  brightRed: "#ef4444",
-  brightGreen: "#22c55e",
-  brightYellow: "#eab308",
-  brightBlue: "#3b82f6",
-  brightMagenta: "#a855f7",
-  brightCyan: "#06b6d4",
-  brightWhite: "#18181b",
-};
+// The xterm color palette is sourced from the --term-* CSS variables defined
+// in globals.css (light in :root, dark under .dark). Reading them here keeps a
+// single source of truth and lets the terminal follow the active theme.
+const TERM_VARS = {
+  background: "--term-bg",
+  foreground: "--term-fg",
+  cursor: "--term-cursor",
+  cursorAccent: "--term-cursor-accent",
+  selectionBackground: "--term-selection",
+  black: "--term-black",
+  red: "--term-red",
+  green: "--term-green",
+  yellow: "--term-yellow",
+  blue: "--term-blue",
+  magenta: "--term-magenta",
+  cyan: "--term-cyan",
+  white: "--term-white",
+  brightBlack: "--term-bright-black",
+  brightRed: "--term-bright-red",
+  brightGreen: "--term-bright-green",
+  brightYellow: "--term-bright-yellow",
+  brightBlue: "--term-bright-blue",
+  brightMagenta: "--term-bright-magenta",
+  brightCyan: "--term-bright-cyan",
+  brightWhite: "--term-bright-white",
+} as const;
 
-const DARK_TERM_THEME = {
-  background: "#09090b",
-  foreground: "#fafafa",
-  cursor: "#fafafa",
-  cursorAccent: "#09090b",
-  selectionBackground: "#3f3f46",
-  black: "#27272a",
-  red: "#f87171",
-  green: "#4ade80",
-  yellow: "#facc15",
-  blue: "#60a5fa",
-  magenta: "#c084fc",
-  cyan: "#22d3ee",
-  white: "#fafafa",
-  brightBlack: "#52525b",
-  brightRed: "#fca5a5",
-  brightGreen: "#86efac",
-  brightYellow: "#fde68a",
-  brightBlue: "#93c5fd",
-  brightMagenta: "#d8b4fe",
-  brightCyan: "#67e8f9",
-  brightWhite: "#ffffff",
-};
+/** Read the current --term-* CSS variables into an xterm theme object.
+ *  Each var holds a space-separated "R G B" triple; wrap as rgb(r,g,b). */
+function readTermTheme(): Record<string, string> {
+  const cs = getComputedStyle(document.documentElement);
+  const theme: Record<string, string> = {};
+  for (const [key, varName] of Object.entries(TERM_VARS)) {
+    const raw = cs.getPropertyValue(varName).trim();
+    if (raw) theme[key] = `rgb(${raw.split(/\s+/).join(", ")})`;
+  }
+  return theme;
+}
 
 type Status = "connecting" | "open" | "closed";
 
@@ -103,10 +94,9 @@ export function Terminal({
   const [selectMode, setSelectMode] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
 
-  const theme = useMemo(
-    () => (resolved === "dark" ? DARK_TERM_THEME : LIGHT_TERM_THEME),
-    [resolved],
-  );
+  // Re-read on theme change: getComputedStyle reflects the .dark class that
+  // ThemeProvider has already toggled on <html> by the time `resolved` updates.
+  const theme = useMemo(() => readTermTheme(), [resolved]);
 
   // Update xterm theme live when the resolved theme changes.
   useEffect(() => {

@@ -170,17 +170,15 @@ export function CommitGraphView({ cwd }: { cwd: string }) {
                 {row.c.refs.map((r) => (
                   <span
                     key={r}
-                    className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20"
+                    className="shrink-0 text-2xs font-mono px-1.5 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20"
                   >
                     {r}
                   </span>
                 ))}
-                <span className="text-[13px] truncate flex-1 min-w-0">{row.c.subject}</span>
-                <span className="shrink-0 font-mono text-[11px] text-fg-faint">
-                  {row.c.shortSha}
-                </span>
+                <span className="text-xs truncate flex-1 min-w-0">{row.c.subject}</span>
+                <span className="shrink-0 font-mono text-2xs text-fg-faint">{row.c.shortSha}</span>
               </div>
-              <div className="text-[11px] text-fg-faint truncate">
+              <div className="text-2xs text-fg-faint truncate">
                 {row.c.authorName} · {relTime(row.c.authoredAt)}
               </div>
             </li>

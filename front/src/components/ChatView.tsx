@@ -80,12 +80,12 @@ export function ChatView({
       </div>
 
       {chat.error && (
-        <div className="mx-3 sm:mx-5 mb-2 rounded-lg border border-danger/40 bg-danger-soft px-3 py-2 text-[13px] text-danger">
+        <div className="mx-3 sm:mx-5 mb-2 rounded-lg border border-danger/40 bg-danger-soft px-3 py-2 text-sm text-danger">
           {chat.error}
         </div>
       )}
       {dead && !chat.error && (
-        <div className="mx-3 sm:mx-5 mb-2 rounded-lg border border-line-strong bg-surface-muted px-3 py-2 text-[12.5px] text-fg-muted">
+        <div className="mx-3 sm:mx-5 mb-2 rounded-lg border border-line-strong bg-surface-muted px-3 py-2 text-xs text-fg-muted">
           会話は停止しています。メッセージを送信すると <span className="font-mono">--resume</span>{" "}
           で再開します。
         </div>
@@ -138,13 +138,13 @@ function Header({
   return (
     <div className="flex items-center gap-2 px-3 sm:px-4 h-9 border-b border-line bg-surface/80 backdrop-blur-sm shrink-0">
       <span className={["inline-block w-1.5 h-1.5 rounded-full", dotClass].join(" ")} />
-      <span className="text-[12px] text-fg-muted font-mono">{prettyModel(model)}</span>
-      <span className="text-[11px] text-fg-faint ml-1">{statusText}</span>
+      <span className="text-xs text-fg-muted font-mono">{prettyModel(model)}</span>
+      <span className="text-2xs text-fg-faint ml-1">{statusText}</span>
       {connection === "closed" && (
         <button
           type="button"
           onClick={onReconnect}
-          className="ml-auto text-[11px] text-accent hover:text-accent-hover"
+          className="ml-auto text-2xs text-accent hover:text-accent-hover"
         >
           再接続
         </button>
@@ -172,10 +172,8 @@ function EmptyState({ model, cwd }: { model: string | null; cwd: string }) {
           ◇
         </div>
         <div className="mt-3 text-sm font-medium text-fg">{prettyModel(model)} とチャット</div>
-        {tail && <div className="mt-1 text-[12px] text-fg-faint font-mono">…/{tail}</div>}
-        <div className="mt-2 text-[12px] text-fg-subtle">
-          メッセージを送って会話を始めましょう。
-        </div>
+        {tail && <div className="mt-1 text-xs text-fg-faint font-mono">…/{tail}</div>}
+        <div className="mt-2 text-xs text-fg-subtle">メッセージを送って会話を始めましょう。</div>
       </div>
     </div>
   );

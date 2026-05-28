@@ -39,7 +39,7 @@ function UserMessage({ blocks }: { blocks: UserContentBlock[] }) {
   );
   return (
     <div className="flex justify-end">
-      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-zinc-100 dark:bg-zinc-800 px-3.5 py-2">
+      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent-soft border border-accent/15 px-3.5 py-2">
         {images.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-1.5">
             {images.map((img, i) =>
@@ -48,12 +48,12 @@ function UserMessage({ blocks }: { blocks: UserContentBlock[] }) {
                   key={i}
                   src={img.thumb}
                   alt="添付画像"
-                  className="h-16 w-16 rounded-md object-cover border border-line"
+                  className="h-16 w-16 rounded object-cover border border-line"
                 />
               ) : (
                 <span
                   key={i}
-                  className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-surface-muted text-[11px] text-fg-subtle border border-line"
+                  className="inline-flex items-center gap-1 h-7 px-2 rounded bg-surface-muted text-2xs text-fg-subtle border border-line"
                 >
                   🖼 画像
                 </span>
@@ -61,7 +61,7 @@ function UserMessage({ blocks }: { blocks: UserContentBlock[] }) {
             )}
           </div>
         )}
-        {text && <div className="whitespace-pre-wrap break-words text-[14px] text-fg">{text}</div>}
+        {text && <div className="whitespace-pre-wrap break-words text-sm text-fg">{text}</div>}
       </div>
     </div>
   );
@@ -94,13 +94,13 @@ function ThinkingBlock({ text }: { text: string }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 text-[11px] text-fg-faint hover:text-fg-subtle transition-colors"
+        className="inline-flex items-center gap-1 text-2xs text-fg-faint hover:text-fg-subtle transition-colors"
       >
         <Chevron open={open} />
         思考
       </button>
       {open && (
-        <div className="mt-1 pl-3 border-l border-line text-[12.5px] italic text-fg-subtle whitespace-pre-wrap break-words">
+        <div className="mt-1 pl-3 border-l border-line text-xs italic text-fg-subtle whitespace-pre-wrap break-words">
           {text}
         </div>
       )}
@@ -115,7 +115,7 @@ function ToolCard({ name, input, result }: { name: string; input?: unknown; resu
   return (
     <div
       className={[
-        "my-1.5 rounded-lg border text-[12.5px] overflow-hidden",
+        "my-1.5 rounded-lg border text-xs overflow-hidden",
         result?.isError ? "border-danger/40" : "border-line",
       ].join(" ")}
     >
@@ -125,17 +125,17 @@ function ToolCard({ name, input, result }: { name: string; input?: unknown; resu
         className="w-full flex items-center gap-2 px-3 py-1.5 bg-surface-muted/60 hover:bg-surface-muted transition-colors text-left"
       >
         <Chevron open={open} />
-        <span className="font-mono text-[12px] text-fg">{name}</span>
+        <span className="font-mono text-xs text-fg">{name}</span>
         <span className="ml-auto inline-flex items-center gap-1.5 text-fg-faint">
           {running ? (
             <>
               <Spinner size="sm" />
-              <span className="text-[11px]">実行中</span>
+              <span className="text-2xs">実行中</span>
             </>
           ) : result?.isError ? (
-            <span className="text-[11px] text-danger">エラー</span>
+            <span className="text-2xs text-danger">エラー</span>
           ) : (
-            <span className="text-[11px] text-success">完了</span>
+            <span className="text-2xs text-success">完了</span>
           )}
         </span>
       </button>
@@ -143,18 +143,18 @@ function ToolCard({ name, input, result }: { name: string; input?: unknown; resu
         <div className="px-3 py-2 space-y-2 bg-surface-sunken/40">
           {inputStr && (
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-fg-faint mb-0.5">入力</div>
-              <pre className="overflow-x-auto scroll-thin text-[12px] font-mono text-fg-muted whitespace-pre-wrap break-words">
+              <div className="text-2xs uppercase tracking-wide text-fg-faint mb-0.5">入力</div>
+              <pre className="overflow-x-auto scroll-thin text-xs font-mono text-fg-muted whitespace-pre-wrap break-words">
                 {inputStr}
               </pre>
             </div>
           )}
           {result && (
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-fg-faint mb-0.5">結果</div>
+              <div className="text-2xs uppercase tracking-wide text-fg-faint mb-0.5">結果</div>
               <pre
                 className={[
-                  "overflow-x-auto scroll-thin text-[12px] font-mono whitespace-pre-wrap break-words max-h-64",
+                  "overflow-x-auto scroll-thin text-xs font-mono whitespace-pre-wrap break-words max-h-64",
                   result.isError ? "text-danger" : "text-fg-muted",
                 ].join(" ")}
               >
@@ -172,7 +172,7 @@ function ToolCard({ name, input, result }: { name: string; input?: unknown; resu
 export function DraftView({ draft }: { draft: Draft }) {
   if (draft.kind === "thinking") {
     return (
-      <div className="my-1 pl-3 border-l border-line text-[12.5px] italic text-fg-subtle whitespace-pre-wrap break-words">
+      <div className="my-1 pl-3 border-l border-line text-xs italic text-fg-subtle whitespace-pre-wrap break-words">
         {draft.text}
         <Caret />
       </div>

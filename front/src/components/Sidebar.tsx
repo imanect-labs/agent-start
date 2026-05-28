@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Badge, Input, SkeletonRows, Spinner } from "@/components/ui";
+import { Badge, EmptyState, Input, SkeletonRows, Spinner } from "@/components/ui";
 import {
   IconBranch,
   IconChevronDown,
@@ -237,7 +237,7 @@ export function Sidebar({
             clearable
             leftSlot={<IconSearch className="w-4 h-4" />}
           />
-          <div className="mt-2 flex items-center gap-2 text-[11px] text-fg-subtle">
+          <div className="mt-2 flex items-center gap-2 text-2xs text-fg-subtle">
             <span className="inline-flex items-center gap-1">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-success" />
               {totalSessions} セッション
@@ -264,9 +264,16 @@ export function Sidebar({
               <SkeletonRows n={5} rowHeight={26} />
             </div>
           ) : filtered.length === 0 && pending.length === 0 ? (
-            <div className="px-4 py-8 text-center text-xs text-fg-subtle">
-              {query ? "一致する項目がありません" : "プロジェクトがありません"}
-            </div>
+            <EmptyState
+              compact
+              icon={<IconFolder />}
+              title={query ? "一致する項目がありません" : "プロジェクトがありません"}
+              description={
+                query
+                  ? "検索条件を変えてみてください"
+                  : "下の「プロジェクトを追加」から始めましょう"
+              }
+            />
           ) : (
             <ul className="py-1.5">
               {filtered.map((g) => (
@@ -319,7 +326,7 @@ function PendingRow({ pending, onCancel }: { pending: PendingProject; onCancel: 
         </span>
         <div className="flex-1 min-w-0">
           <div className="text-sm text-fg truncate">{pending.name}</div>
-          <div className="text-[10px] font-mono text-fg-faint truncate">
+          <div className="text-2xs font-mono text-fg-faint truncate">
             {isError ? pending.error : `${pending.kind}…`}
           </div>
         </div>
@@ -401,9 +408,7 @@ function GroupRow({
           )}
           <span className="text-sm text-fg truncate">{name}</span>
           {sessions.length > 0 && (
-            <span className="text-[10px] tabular-nums text-fg-faint shrink-0">
-              {sessions.length}
-            </span>
+            <span className="text-2xs tabular-nums text-fg-faint shrink-0">{sessions.length}</span>
           )}
           {isGit && (
             <Badge tone="emerald" className="ml-0.5 shrink-0">
@@ -468,7 +473,7 @@ function GroupRow({
       {expanded && (
         <>
           {path && (
-            <div className="px-2.5 -mt-1 mb-1 ml-4 text-[10px] font-mono text-fg-faint truncate">
+            <div className="px-2.5 -mt-1 mb-1 ml-4 text-2xs font-mono text-fg-faint truncate">
               {path}
             </div>
           )}
@@ -477,7 +482,7 @@ function GroupRow({
               <button
                 type="button"
                 onClick={onLaunch}
-                className="ml-6 mb-1 px-2 py-1 text-[11px] text-fg-subtle hover:text-fg inline-flex items-center gap-1.5"
+                className="ml-6 mb-1 px-2 py-1 text-2xs text-fg-subtle hover:text-fg inline-flex items-center gap-1.5"
               >
                 <IconPlus className="w-3 h-3" /> 新規セッション
               </button>
@@ -518,12 +523,18 @@ function SessionRow({
   return (
     <li
       className={[
-        "group ml-4 flex items-start gap-1.5 px-1.5 py-2 rounded-md min-h-[44px]",
-        "cursor-pointer",
-        active ? "bg-accent/10 text-fg" : "hover:bg-surface-muted text-fg-muted",
+        "group relative ml-4 flex items-start gap-1.5 px-1.5 py-2 rounded-md min-h-[44px]",
+        "cursor-pointer transition-colors",
+        active ? "bg-accent-soft text-fg" : "hover:bg-surface-muted text-fg-muted",
       ].join(" ")}
       onClick={onOpen}
     >
+      {active && (
+        <span
+          aria-hidden
+          className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent"
+        />
+      )}
       {pending ? (
         <span className="mt-1 inline-flex w-2 h-2 items-center justify-center shrink-0">
           <Spinner size="xs" />
@@ -546,17 +557,17 @@ function SessionRow({
           )}
           <span
             className={[
-              "text-[12px] font-mono truncate",
+              "text-xs font-mono truncate",
               session.stopped || pending ? "text-fg-subtle" : "",
             ].join(" ")}
           >
             {pending ? session.path.split("/").filter(Boolean).pop() || "セッション" : session.name}
           </span>
           {session.stopped && !pending && (
-            <span className="text-[9px] uppercase tracking-wider text-warn shrink-0">stopped</span>
+            <span className="text-2xs uppercase tracking-wider text-warn shrink-0">stopped</span>
           )}
         </div>
-        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-fg-faint">
+        <div className="mt-0.5 flex items-center gap-1.5 text-2xs text-fg-faint">
           <span>{cliLabel}</span>
           {pending ? (
             <>

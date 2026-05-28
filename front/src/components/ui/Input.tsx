@@ -1,6 +1,13 @@
 import { InputHTMLAttributes, forwardRef, ReactNode } from "react";
 
-type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> & {
+type Size = "sm" | "md";
+
+const SIZE: Record<Size, string> = {
+  sm: "h-9 px-2.5 gap-1.5",
+  md: "h-10 px-3 gap-2",
+};
+
+type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "onChange" | "size"> & {
   label?: ReactNode;
   description?: ReactNode;
   errorText?: ReactNode;
@@ -10,6 +17,7 @@ type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> & {
   onClear?: () => void;
   clearable?: boolean;
   inputClassName?: string;
+  inputSize?: Size;
 };
 
 export const Input = forwardRef<HTMLInputElement, Props>(function Input(
@@ -24,6 +32,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
     clearable,
     className = "",
     inputClassName = "",
+    inputSize = "md",
     value,
     ...rest
   },
@@ -35,10 +44,10 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
       {label && <div className="text-xs font-medium text-fg-muted mb-1.5">{label}</div>}
       <div
         className={[
-          "group flex items-center gap-2",
-          "h-10 px-3 rounded-md",
+          "group flex items-center rounded",
+          SIZE[inputSize],
           "bg-surface border border-line",
-          "focus-within:border-line-strong focus-within:ring-2 focus-within:ring-ring/10",
+          "focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-ring/20",
           "transition-colors",
           errorText
             ? "border-danger/40 focus-within:border-danger focus-within:ring-danger/10"

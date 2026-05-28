@@ -29,6 +29,12 @@ const config: Config = {
           DEFAULT: rgb("accent"),
           hover: rgb("accent-hover"),
           fg: rgb("accent-fg"),
+          soft: rgb("accent-soft"),
+          subtle: rgb("accent-subtle"),
+        },
+        neutral: {
+          strong: rgb("neutral-strong"),
+          "strong-fg": rgb("neutral-strong-fg"),
         },
         danger: {
           DEFAULT: rgb("danger"),
@@ -40,6 +46,29 @@ const config: Config = {
       },
       ringColor: {
         DEFAULT: rgb("ring"),
+      },
+      fontSize: {
+        // Unified type scale (retires arbitrary text-[Npx] usages).
+        // Each entry: [size, lineHeight].
+        "2xs": ["0.6875rem", { lineHeight: "1rem" }], // 11 / 16
+        xs: ["0.75rem", { lineHeight: "1rem" }], // 12 / 16
+        sm: ["0.84375rem", { lineHeight: "1.25rem" }], // 13.5 / 20
+        base: ["0.9375rem", { lineHeight: "1.5rem" }], // 15 / 24
+        lg: ["1.125rem", { lineHeight: "1.625rem" }], // 18 / 26
+        xl: ["1.375rem", { lineHeight: "1.875rem" }], // 22 / 30
+        "2xl": ["1.75rem", { lineHeight: "2.125rem" }], // 28 / 34
+      },
+      boxShadow: {
+        xs: "var(--shadow-xs)",
+        sm: "var(--shadow-sm)",
+        md: "var(--shadow-md)",
+        lg: "var(--shadow-lg)",
+      },
+      borderRadius: {
+        sm: "var(--radius-sm)",
+        DEFAULT: "var(--radius)",
+        lg: "var(--radius-lg)",
+        xl: "var(--radius-xl)",
       },
       fontFamily: {
         sans: [

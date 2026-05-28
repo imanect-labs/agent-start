@@ -129,7 +129,7 @@ export function LaunchConfirmSheet({
                       <div className="text-sm font-medium">{c.label}</div>
                       <div
                         className={[
-                          "text-[11px] font-mono truncate mt-0.5",
+                          "text-2xs font-mono truncate mt-0.5",
                           active ? "opacity-70" : "text-fg-subtle",
                         ].join(" ")}
                       >

@@ -23,18 +23,18 @@ function CodeBlock({ className, children }: { className?: string; children: Reac
   return (
     <div className="relative group my-2 rounded-lg border border-line bg-surface-sunken overflow-hidden">
       <div className="flex items-center justify-between px-3 py-1 border-b border-line/70 bg-surface-muted/60">
-        <span className="text-[10px] uppercase tracking-wide text-fg-faint font-mono">
+        <span className="text-2xs uppercase tracking-wide text-fg-faint font-mono">
           {lang || "code"}
         </span>
         <button
           type="button"
           onClick={copy}
-          className="text-[11px] px-1.5 py-0.5 rounded text-fg-subtle hover:text-fg hover:bg-surface-elev transition-colors"
+          className="text-2xs px-1.5 py-0.5 rounded text-fg-subtle hover:text-fg hover:bg-surface-elev transition-colors"
         >
           {copied ? "コピー済" : "コピー"}
         </button>
       </div>
-      <pre className="overflow-x-auto scroll-thin p-3 text-[12.5px] leading-relaxed font-mono text-fg">
+      <pre className="overflow-x-auto scroll-thin p-3 text-xs leading-relaxed font-mono text-fg">
         <code>{text}</code>
       </pre>
     </div>
@@ -43,7 +43,7 @@ function CodeBlock({ className, children }: { className?: string; children: Reac
 
 export const ChatMarkdown = memo(function ChatMarkdown({ text }: { text: string }) {
   return (
-    <div className="chat-md text-[14px] leading-relaxed text-fg break-words">
+    <div className="chat-md text-sm leading-relaxed text-fg break-words">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -55,7 +55,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({ text }: { text: string 
             }
             return (
               <code
-                className="rounded bg-surface-muted px-1 py-0.5 text-[12.5px] font-mono text-fg"
+                className="rounded bg-surface-muted px-1 py-0.5 text-xs font-mono text-fg"
                 {...props}
               >
                 {children}
@@ -87,10 +87,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({ text }: { text: string 
             return <h1 className="text-base font-semibold mt-3 mb-1.5">{children}</h1>;
           },
           h2({ children }) {
-            return <h2 className="text-[15px] font-semibold mt-3 mb-1.5">{children}</h2>;
+            return <h2 className="text-base font-semibold mt-3 mb-1.5">{children}</h2>;
           },
           h3({ children }) {
-            return <h3 className="text-[14px] font-semibold mt-2.5 mb-1">{children}</h3>;
+            return <h3 className="text-sm font-semibold mt-2.5 mb-1">{children}</h3>;
           },
           blockquote({ children }) {
             return (
@@ -102,7 +102,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({ text }: { text: string 
           table({ children }) {
             return (
               <div className="overflow-x-auto scroll-thin my-2">
-                <table className="text-[13px] border-collapse">{children}</table>
+                <table className="text-xs border-collapse">{children}</table>
               </div>
             );
           },

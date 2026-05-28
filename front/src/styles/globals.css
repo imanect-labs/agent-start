@@ -38,11 +38,20 @@
   --fg-subtle: 113 113 122; /* zinc-500 */
   --fg-faint: 161 161 170; /* zinc-400 */
 
-  /* Accent (primary action / focus) */
-  --accent: 24 24 27; /* zinc-900 */
-  --accent-hover: 39 39 42; /* zinc-800 */
+  /* Accent (primary action / focus) — the signature Indigo. Drives primary
+   * buttons, links, focus rings, active/selected states and status accents.
+   * The neutral "solid dark control" look lives in --neutral-strong below. */
+  --accent: 79 70 229; /* indigo-600 */
+  --accent-hover: 67 56 202; /* indigo-700 */
   --accent-fg: 255 255 255;
-  --ring: 24 24 27; /* used at low alpha */
+  --accent-soft: 238 242 255; /* indigo-50 — tinted surface / active row bg */
+  --accent-subtle: 67 56 202; /* indigo-700 — text/icon on neutral surface */
+  --ring: 99 102 241; /* indigo-500, used at low alpha */
+
+  /* Neutral-strong: the old "solid dark control" look, decoupled from the
+   * accent so it survives the Phase 2 indigo flip. */
+  --neutral-strong: 24 24 27; /* zinc-900 */
+  --neutral-strong-fg: 255 255 255;
 
   /* Status */
   --danger: 220 38 38; /* red-600 */
@@ -51,9 +60,43 @@
   --warn: 217 119 6; /* amber-600 */
   --success: 22 163 74; /* green-600 */
 
-  /* Terminal */
-  --term-bg: 9 9 11; /* zinc-950 */
-  --term-fg: 250 250 250;
+  /* Elevation. Dark mode overrides these in .dark (shadows read poorly on
+   * zinc-950, so we soften them and lean on borders + an inset highlight). */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 6px -2px rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.16);
+
+  /* Radius scale */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Terminal palette (light). Terminal.tsx reads these vars instead of
+   * hardcoding hex; .dark overrides them below. Values mirror the previous
+   * LIGHT_TERM_THEME exactly so the migration is visually lossless. */
+  --term-bg: 250 250 250; /* zinc-50 */
+  --term-fg: 24 24 27; /* zinc-900 */
+  --term-cursor: 24 24 27;
+  --term-cursor-accent: 250 250 250;
+  --term-selection: 212 212 216; /* zinc-300 */
+  --term-black: 39 39 42;
+  --term-red: 220 38 38;
+  --term-green: 22 163 74;
+  --term-yellow: 202 138 4;
+  --term-blue: 37 99 235;
+  --term-magenta: 147 51 234;
+  --term-cyan: 8 145 178;
+  --term-white: 113 113 122;
+  --term-bright-black: 82 82 91;
+  --term-bright-red: 239 68 68;
+  --term-bright-green: 34 197 94;
+  --term-bright-yellow: 234 179 8;
+  --term-bright-blue: 59 130 246;
+  --term-bright-magenta: 168 85 247;
+  --term-bright-cyan: 6 182 212;
+  --term-bright-white: 24 24 27;
 
   color-scheme: light;
 }
@@ -73,10 +116,15 @@
   --fg-subtle: 161 161 170; /* zinc-400 */
   --fg-faint: 113 113 122; /* zinc-500 */
 
-  --accent: 244 244 245; /* zinc-100 */
-  --accent-hover: 228 228 231;
-  --accent-fg: 24 24 27;
-  --ring: 244 244 245;
+  --accent: 129 140 248; /* indigo-400 */
+  --accent-hover: 165 180 252; /* indigo-300 */
+  --accent-fg: 23 23 33;
+  --accent-soft: 49 46 129; /* indigo-900, used at low alpha */
+  --accent-subtle: 165 180 252; /* indigo-300 */
+  --ring: 129 140 248; /* indigo-400 */
+
+  --neutral-strong: 244 244 245; /* zinc-100 */
+  --neutral-strong-fg: 24 24 27;
 
   --danger: 248 113 113; /* red-400 */
   --danger-fg: 24 24 27;
@@ -84,8 +132,34 @@
   --warn: 251 191 36;
   --success: 74 222 128;
 
-  --term-bg: 9 9 11;
+  /* Softer shadows on the dark canvas; pair with borders + inset highlight. */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.6);
+
+  /* Terminal palette (dark) — mirrors the previous DARK_TERM_THEME. */
+  --term-bg: 9 9 11; /* zinc-950 */
   --term-fg: 250 250 250;
+  --term-cursor: 250 250 250;
+  --term-cursor-accent: 9 9 11;
+  --term-selection: 63 63 70; /* zinc-700 */
+  --term-black: 39 39 42;
+  --term-red: 248 113 113;
+  --term-green: 74 222 128;
+  --term-yellow: 250 204 21;
+  --term-blue: 96 165 250;
+  --term-magenta: 192 132 252;
+  --term-cyan: 34 211 238;
+  --term-white: 250 250 250;
+  --term-bright-black: 82 82 91;
+  --term-bright-red: 252 165 165;
+  --term-bright-green: 134 239 172;
+  --term-bright-yellow: 253 224 138;
+  --term-bright-blue: 147 197 253;
+  --term-bright-magenta: 216 180 254;
+  --term-bright-cyan: 103 232 249;
+  --term-bright-white: 255 255 255;
 
   color-scheme: dark;
 }
@@ -143,6 +217,26 @@ button:active:not(:disabled),
   button:active:not(:disabled),
   [role="button"]:active {
     transform: none;
+  }
+}
+
+/* Respect the OS "reduce motion" setting: neutralize transitions/animations
+ * and force any View Transition to cut instantly. Kept narrow (very short,
+ * non-zero durations) so JS that waits on transition/animation end events
+ * still fires. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }
 
