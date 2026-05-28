@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Screenshots / demo GIF in `docs/screenshots/` (TODO).
 
+## [0.2.1] - 2026-05-28
+
+Mobile + welcome-screen polish. Wraps up the remaining sub-issues of #88.
+
+### Added
+- **Shift+Tab virtual key** on the mobile terminal toolbar (#83). Sends
+  `ESC [Z` so Claude Code's `Shift+Tab` mode toggle (plan / auto-accept)
+  works on phones without a hardware keyboard.
+- **Recent projects on the welcome screen** (#86). When no session is
+  selected, the main pane now shows up to six recently-launched projects;
+  clicking a card reopens its most recent session.
+
 ## [0.2.0] - 2026-05-28
 
 Second feature release. Adds a chat UI mode for headless Claude, a top-level
@@ -78,6 +90,7 @@ Initial public release.
   `CONTRIBUTING`, `SECURITY`, `CODE_OF_CONDUCT`, issue / PR templates,
   dependabot configuration.
 
-[Unreleased]: https://github.com/imanect-labs/agent-start/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/imanect-labs/agent-start/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/imanect-labs/agent-start/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/imanect-labs/agent-start/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/imanect-labs/agent-start/releases/tag/v0.1.0

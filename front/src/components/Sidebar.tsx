@@ -61,7 +61,7 @@ type Group = {
   key: string;
 };
 
-function sessionProjectPath(s: TmuxSession): string {
+export function sessionProjectPath(s: TmuxSession): string {
   return s.origPath || s.path;
 }
 

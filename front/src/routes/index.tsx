@@ -7,8 +7,14 @@ import {
   PanelResizeHandle,
 } from "react-resizable-panels";
 import { useToast } from "@/components/Toast";
-import { Sidebar, type PendingProject, type Project, type TmuxSession } from "@/components/Sidebar";
-import { MainPane } from "@/components/MainPane";
+import {
+  Sidebar,
+  sessionProjectPath,
+  type PendingProject,
+  type Project,
+  type TmuxSession,
+} from "@/components/Sidebar";
+import { MainPane, type RecentProject } from "@/components/MainPane";
 import { RightPane } from "@/components/RightPane";
 import { LaunchConfirmSheet, type LaunchOverrides } from "@/components/LaunchConfirmSheet";
 import { IssuesSheet } from "@/components/IssuesSheet";
@@ -174,6 +180,32 @@ export function IndexPage() {
   );
   const chatModels = configData?.chat?.models ?? [];
   const chatDefaultModel = configData?.chat?.defaultModel ?? null;
+
+  // "Recent projects" for the welcome screen (#86): bubble up the projects
+  // whose most-recent session was launched most recently. Pending placeholders
+  // are skipped — they would otherwise jump to the top while the host is
+  // still creating the session.
+  const recentProjects = useMemo<RecentProject[]>(() => {
+    const projByPath = new Map(projects.map((p) => [p.path, p]));
+    const lastByPath = new Map<string, { name: string; at: number }>();
+    for (const s of sessions) {
+      if (s.pending) continue;
+      const pp = sessionProjectPath(s);
+      const cur = lastByPath.get(pp);
+      if (!cur || s.createdAt > cur.at) {
+        lastByPath.set(pp, { name: s.name, at: s.createdAt });
+      }
+    }
+    return Array.from(lastByPath.entries())
+      .map(([path, last]): RecentProject | null => {
+        const project = projByPath.get(path);
+        if (!project) return null;
+        return { project, lastSessionName: last.name, lastSessionAt: last.at };
+      })
+      .filter((r): r is RecentProject => r !== null)
+      .sort((a, b) => b.lastSessionAt - a.lastSessionAt)
+      .slice(0, 6);
+  }, [projects, sessions]);
 
   // Refs so the stable `openSession` callback can read the latest values
   // without resubscribing (it is created once with an empty dep list).
@@ -745,6 +777,9 @@ export function IndexPage() {
       onOpenDiff={(file, mode) => openDiffTab(activeCwd, file, mode)}
       chatModels={chatModels}
       chatDefaultModel={chatDefaultModel}
+      recentProjects={recentProjects}
+      onLaunchProject={(p) => setLaunchTarget(p)}
+      onOpenSession={(n) => openSession(n)}
     />
   );
 
