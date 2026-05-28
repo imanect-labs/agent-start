@@ -36,14 +36,24 @@ pub async fn create_window(State(app): State<Shared>, Path(name): Path<String>) 
         Some(d) => d,
         None => return err(StatusCode::NOT_FOUND, "session not found"),
     };
-    if !app.pty.has_window(&name, 0) {
-        return err(StatusCode::NOT_FOUND, "session has no live window 0");
+    // A stopped (rehydrated) session has no live process to attach windows to;
+    // the user must restart it first. Chat-mode sessions (#34), on the other
+    // hand, are live but own no PTY — their primary surface is the chat
+    // conversation — so they have no window 0. Gating on `has_window(0)` here
+    // wrongly 404'd "新規ターミナル" for chat sessions (#90); gate on liveness
+    // instead so chat sessions can still open auxiliary terminals.
+    if !dir.live {
+        return err(StatusCode::NOT_FOUND, "session is stopped; restart it first");
     }
     let cfg = match config_loader::load_config() {
         Ok(c) => c,
         Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     };
-    let index = app.pty.next_window_index(&name);
+    // Never hand out window 0: for a PTY session it's already taken, and for a
+    // chat session index 0 would be treated as the lifecycle-bound primary
+    // window (DELETE refuses to close it), stranding the terminal tab the user
+    // just opened. `.max(1)` keeps every spawned terminal closable.
+    let index = app.pty.next_window_index(&name).max(1);
     let cwd = PathBuf::from(if dir.worktree_path.is_empty() {
         dir.cwd.clone()
     } else {

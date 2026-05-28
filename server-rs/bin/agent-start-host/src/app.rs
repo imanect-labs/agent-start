@@ -424,11 +424,39 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         let assets_dir = dist.join("assets");
         tracing::info!(path = %dist.display(), "serving front-end SPA from dist (filesystem override)");
 
+        let serve_root = dist.clone();
         let serve_index = any(move |uri: Uri| {
             let index_path = index_path.clone();
+            let serve_root = serve_root.clone();
             async move {
                 if is_api_path(uri.path()) {
                     return StatusCode::NOT_FOUND.into_response();
+                }
+                // Mirror the embedded branch: serve a real file from the dist
+                // root (logo.png, favicon.png, …) when the request maps to one,
+                // otherwise fall through to index.html for SPA routes (#89).
+                // Reject `..` so a crafted path can't escape the dist dir.
+                let rel = uri.path().trim_start_matches('/');
+                if !rel.is_empty()
+                    && rel != "index.html"
+                    && !rel.split('/').any(|seg| seg == "..")
+                {
+                    let candidate = serve_root.join(rel);
+                    if tokio::fs::metadata(&candidate)
+                        .await
+                        .map(|m| m.is_file())
+                        .unwrap_or(false)
+                    {
+                        if let Ok(body) = tokio::fs::read(&candidate).await {
+                            let mime = mime_guess::from_path(&candidate).first_or_octet_stream();
+                            return (
+                                StatusCode::OK,
+                                [(header::CONTENT_TYPE, mime.as_ref().to_string())],
+                                body,
+                            )
+                                .into_response();
+                        }
+                    }
                 }
                 match tokio::fs::read(&index_path).await {
                     Ok(body) => (
@@ -518,6 +546,25 @@ fn is_api_path(path: &str) -> bool {
 async fn serve_embedded_index(uri: Uri) -> axum::response::Response {
     if is_api_path(uri.path()) {
         return StatusCode::NOT_FOUND.into_response();
+    }
+    // Public assets Vite copies to the dist root (logo.png, favicon.png, …)
+    // live alongside index.html, not under /assets. Serve them by path when
+    // one matches; otherwise fall through to index.html so client-side routes
+    // (e.g. /settings) still hydrate. Without this, `<img src="/logo.png">`
+    // received index.html's HTML and rendered nothing (#89). rust-embed
+    // normalizes the key and can't escape the embed, so no traversal guard
+    // is needed here.
+    let rel = uri.path().trim_start_matches('/');
+    if !rel.is_empty() && rel != "index.html" {
+        if let Some(file) = FrontAssets::get(rel) {
+            let mime = mime_guess::from_path(rel).first_or_octet_stream();
+            return (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, mime.as_ref().to_string())],
+                file.data.into_owned(),
+            )
+                .into_response();
+        }
     }
     match FrontAssets::get("index.html") {
         Some(file) => (
