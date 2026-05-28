@@ -653,6 +653,7 @@ function VirtualKeys({
     { kind: "paste", label: "貼り付け" },
     { kind: "send", label: "Esc", data: "\x1b" },
     { kind: "send", label: "Tab", data: "\t" },
+    { kind: "send", label: "⇧Tab", data: "\x1b[Z" },
     { kind: "toggle", label: "Ctrl", active: ctrlActive },
     { kind: "send", label: "↑", data: "\x1b[A" },
     { kind: "send", label: "↓", data: "\x1b[B" },

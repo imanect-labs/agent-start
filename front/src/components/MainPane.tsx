@@ -17,8 +17,9 @@ import { DiffTabView } from "@/components/DiffTabView";
 import { GuiView } from "@/components/GuiView";
 import { CommitGraphView } from "@/components/CommitGraphView";
 import { RepoTreeView } from "@/components/RepoTreeView";
-import type { TmuxSession } from "@/components/Sidebar";
+import type { Project, TmuxSession } from "@/components/Sidebar";
 import type { DiffMode, SessionTabs, Tab } from "@/components/tab-types";
+import { formatRelative } from "@/lib/format";
 import { useToast } from "@/components/Toast";
 
 const CLI_LABEL: Record<string, string> = {
@@ -54,6 +55,17 @@ type Props = {
   /** Chat model menu + default for chat-mode sessions (#34). */
   chatModels?: ChatModelInfo[];
   chatDefaultModel?: string | null;
+  /** Recently-used projects shown on the welcome screen — sorted by the
+   *  most recent session's createdAt. Empty list hides the section. */
+  recentProjects?: RecentProject[];
+  onLaunchProject?: (p: Project) => void;
+  onOpenSession?: (name: string) => void;
+};
+
+export type RecentProject = {
+  project: Project;
+  lastSessionName?: string;
+  lastSessionAt: number;
 };
 
 export function MainPane({
@@ -77,6 +89,9 @@ export function MainPane({
   onOpenFile,
   chatModels,
   chatDefaultModel,
+  recentProjects,
+  onLaunchProject,
+  onOpenSession,
 }: Props) {
   // Optimistic placeholder while the host is still creating the session
   // (POST /api/sessions in flight). The real PTY/name doesn't exist yet, so
@@ -90,7 +105,14 @@ export function MainPane({
   }
 
   if (!session || !tabs) {
-    return <WelcomeBanner onToggleSidebar={onToggleSidebar} />;
+    return (
+      <WelcomeBanner
+        onToggleSidebar={onToggleSidebar}
+        recentProjects={recentProjects ?? []}
+        onLaunchProject={onLaunchProject}
+        onOpenSession={onOpenSession}
+      />
+    );
   }
 
   const active = tabs.tabs.find((t) => t.id === tabs.activeTabId) ?? null;
@@ -801,7 +823,17 @@ function PendingSessionView({
   );
 }
 
-function WelcomeBanner({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
+function WelcomeBanner({
+  onToggleSidebar,
+  recentProjects,
+  onLaunchProject,
+  onOpenSession,
+}: {
+  onToggleSidebar?: () => void;
+  recentProjects: RecentProject[];
+  onLaunchProject?: (p: Project) => void;
+  onOpenSession?: (name: string) => void;
+}) {
   return (
     <div className="h-full w-full flex flex-col bg-app">
       {/* Mobile/tablet still needs a way to open the sidebar before any
@@ -822,21 +854,59 @@ function WelcomeBanner({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
           <span className="text-sm font-semibold tracking-tight text-fg">agent-start</span>
         </div>
       )}
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center max-w-md px-6">
-          <div className="mx-auto w-14 h-14 rounded-xl bg-surface-muted border border-line flex items-center justify-center text-fg-subtle">
-            <IconTerminal className="w-6 h-6" />
+      <div className="flex-1 overflow-y-auto scroll-thin">
+        <div className="max-w-2xl mx-auto px-6 py-10">
+          <div className="text-center">
+            <div className="mx-auto w-14 h-14 rounded-xl bg-surface-muted border border-line flex items-center justify-center text-fg-subtle">
+              <IconTerminal className="w-6 h-6" />
+            </div>
+            <h2 className="mt-4 text-base font-semibold text-fg">セッションが選択されていません</h2>
+            <p className="mt-1 text-sm text-fg-subtle">
+              左のサイドバーからプロジェクトを選び、 <span className="font-mono">＋</span>{" "}
+              で新しいセッションを起動するか、稼働中のセッションをクリックしてターミナルを開きます。
+            </p>
+            <p className="mt-3 text-[11px] text-fg-faint inline-flex items-center gap-1">
+              <IconBranch className="inline w-3 h-3" /> = worktree 付き
+              <span className="mx-1">·</span>
+              選択中のセッションには複数のタブとファイル変更ペインを開けます
+            </p>
           </div>
-          <h2 className="mt-4 text-base font-semibold text-fg">セッションが選択されていません</h2>
-          <p className="mt-1 text-sm text-fg-subtle">
-            左のサイドバーからプロジェクトを選び、 <span className="font-mono">＋</span>{" "}
-            で新しいセッションを起動するか、稼働中のセッションをクリックしてターミナルを開きます。
-          </p>
-          <p className="mt-3 text-[11px] text-fg-faint inline-flex items-center gap-1">
-            <IconBranch className="inline w-3 h-3" /> = worktree 付き
-            <span className="mx-1">·</span>
-            選択中のセッションには複数のタブとファイル変更ペインを開けます
-          </p>
+
+          {recentProjects.length > 0 && (
+            <section className="mt-10">
+              <h3 className="text-xs font-semibold tracking-wide uppercase text-fg-subtle px-1">
+                最近のプロジェクト
+              </h3>
+              <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {recentProjects.map((r) => (
+                  <li key={r.project.path}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (r.lastSessionName && onOpenSession) {
+                          onOpenSession(r.lastSessionName);
+                        } else if (onLaunchProject) {
+                          onLaunchProject(r.project);
+                        }
+                      }}
+                      className="w-full text-left px-3 py-2.5 rounded-md border border-line bg-surface hover:bg-surface-muted transition-colors flex items-start gap-2.5 min-w-0"
+                    >
+                      <IconFolder className="w-4 h-4 mt-0.5 shrink-0 text-fg-subtle" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-fg truncate">{r.project.name}</div>
+                        <div className="text-[11px] text-fg-subtle truncate">{r.project.path}</div>
+                        <div className="text-[11px] text-fg-faint mt-0.5">
+                          {r.lastSessionName
+                            ? `最終: ${formatRelative(r.lastSessionAt)}`
+                            : "セッションなし"}
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
       </div>
     </div>
