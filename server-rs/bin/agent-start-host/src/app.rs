@@ -424,11 +424,51 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         let assets_dir = dist.join("assets");
         tracing::info!(path = %dist.display(), "serving front-end SPA from dist (filesystem override)");
 
+        // Canonicalize the dist root once so the per-request check can use
+        // `starts_with` instead of string heuristics. Falling back to the
+        // un-canonicalized path if the dir somehow isn't resolvable yet is
+        // fine — the per-request canonicalize below will then fail closed.
+        let serve_root = tokio::fs::canonicalize(&dist)
+            .await
+            .unwrap_or_else(|_| dist.clone());
         let serve_index = any(move |uri: Uri| {
             let index_path = index_path.clone();
+            let serve_root = serve_root.clone();
             async move {
                 if is_api_path(uri.path()) {
                     return StatusCode::NOT_FOUND.into_response();
+                }
+                // Mirror the embedded branch: serve a real file from the dist
+                // root (logo.png, favicon.png, …) when the request maps to one,
+                // otherwise fall through to index.html for SPA routes (#89).
+                //
+                // Traversal defense: canonicalize the joined path and require
+                // it to stay under `serve_root`. This catches plain `..`,
+                // percent-encoded `%2e%2e` (`uri.path()` doesn't decode, but
+                // even if a future layer did), and any symlink that points
+                // outside the dist tree — all of which a bare
+                // `split('/').any(== "..")` check would miss.
+                let rel = uri.path().trim_start_matches('/');
+                if !rel.is_empty() && rel != "index.html" {
+                    let candidate = serve_root.join(rel);
+                    if let Ok(real) = tokio::fs::canonicalize(&candidate).await {
+                        if real.starts_with(&serve_root)
+                            && tokio::fs::metadata(&real)
+                                .await
+                                .map(|m| m.is_file())
+                                .unwrap_or(false)
+                        {
+                            if let Ok(body) = tokio::fs::read(&real).await {
+                                let mime = mime_guess::from_path(&real).first_or_octet_stream();
+                                return (
+                                    StatusCode::OK,
+                                    [(header::CONTENT_TYPE, mime.as_ref().to_string())],
+                                    body,
+                                )
+                                    .into_response();
+                            }
+                        }
+                    }
                 }
                 match tokio::fs::read(&index_path).await {
                     Ok(body) => (
@@ -518,6 +558,30 @@ fn is_api_path(path: &str) -> bool {
 async fn serve_embedded_index(uri: Uri) -> axum::response::Response {
     if is_api_path(uri.path()) {
         return StatusCode::NOT_FOUND.into_response();
+    }
+    // Public assets Vite copies to the dist root (logo.png, favicon.png, …)
+    // live alongside index.html, not under /assets. Serve them by path when
+    // one matches; otherwise fall through to index.html so client-side routes
+    // (e.g. /settings) still hydrate. Without this, `<img src="/logo.png">`
+    // received index.html's HTML and rendered nothing (#89).
+    //
+    // `FrontAssets::get` is an exact lookup against the set of paths captured
+    // at compile time from `front/dist/`; it does not canonicalize the key or
+    // strip `..` segments. No traversal guard is needed here regardless —
+    // anything that isn't a literal embedded key (including `../etc/passwd`
+    // or `%2e%2e/etc/passwd`) simply returns `None` and falls through to the
+    // SPA index.
+    let rel = uri.path().trim_start_matches('/');
+    if !rel.is_empty() && rel != "index.html" {
+        if let Some(file) = FrontAssets::get(rel) {
+            let mime = mime_guess::from_path(rel).first_or_octet_stream();
+            return (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, mime.as_ref().to_string())],
+                file.data.into_owned(),
+            )
+                .into_response();
+        }
     }
     match FrontAssets::get("index.html") {
         Some(file) => (
