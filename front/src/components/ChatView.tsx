@@ -144,7 +144,7 @@ function Header({
         <button
           type="button"
           onClick={onReconnect}
-          className="ml-auto text-2xs text-accent hover:text-accent-hover"
+          className="ml-auto text-2xs text-link hover:opacity-80"
         >
           再接続
         </button>

@@ -31,32 +31,23 @@ export function WelcomeBanner({
       )}
       <div className="flex-1 overflow-y-auto scroll-thin">
         <div className="max-w-2xl mx-auto px-6 py-12">
-          {/* Hero — the showcase surface for the new design language. */}
-          <div className="relative text-center">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 -translate-y-8 h-64 w-[28rem] max-w-full rounded-full opacity-70 blur-3xl"
-              style={{
-                background: "radial-gradient(closest-side, rgb(var(--accent) / 0.18), transparent)",
-              }}
-            />
-            <div className="relative">
-              <div className="mx-auto w-16 h-16 rounded-xl bg-accent-soft border border-accent/20 flex items-center justify-center text-accent-subtle shadow-sm">
-                <IconTerminal className="w-7 h-7" />
-              </div>
-              <h2 className="mt-5 text-2xl font-semibold tracking-tight text-fg">
-                セッションが選択されていません
-              </h2>
-              <p className="mt-2 text-sm text-fg-subtle max-w-md mx-auto leading-relaxed">
-                左のサイドバーからプロジェクトを選び、<span className="font-mono">＋</span>{" "}
-                で新しいセッションを起動するか、稼働中のセッションをクリックしてターミナルを開きます。
-              </p>
-              <p className="mt-3 text-2xs text-fg-faint inline-flex items-center gap-1">
-                <IconBranch className="inline w-3 h-3" /> = worktree 付き
-                <span className="mx-1">·</span>
-                選択中のセッションには複数のタブとファイル変更ペインを開けます
-              </p>
+          {/* Hero — restrained, monochrome, content-first. */}
+          <div className="text-center">
+            <div className="mx-auto w-12 h-12 rounded-xl bg-surface border border-line flex items-center justify-center text-fg shadow-xs">
+              <IconTerminal className="w-6 h-6" />
             </div>
+            <h2 className="mt-5 text-2xl font-semibold tracking-tight text-fg">
+              セッションが選択されていません
+            </h2>
+            <p className="mt-2 text-sm text-fg-subtle max-w-md mx-auto leading-relaxed">
+              左のサイドバーからプロジェクトを選び、<span className="font-mono">＋</span>{" "}
+              で新しいセッションを起動するか、稼働中のセッションをクリックしてターミナルを開きます。
+            </p>
+            <p className="mt-3 text-2xs text-fg-faint inline-flex items-center gap-1">
+              <IconBranch className="inline w-3 h-3" /> = worktree 付き
+              <span className="mx-1">·</span>
+              選択中のセッションには複数のタブとファイル変更ペインを開けます
+            </p>
           </div>
 
           {recentProjects.length > 0 && (

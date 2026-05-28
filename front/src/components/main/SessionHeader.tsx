@@ -79,8 +79,8 @@ export function SessionHeader({
           />
           <span className="font-mono text-sm text-fg truncate">{session.name}</span>
           <div className="hidden sm:flex items-center gap-1.5 flex-wrap">
-            <Badge tone="violet">{cliLabel}</Badge>
-            {hasWorktree && <Badge tone="amber">worktree</Badge>}
+            <Badge tone="neutral">{cliLabel}</Badge>
+            {hasWorktree && <Badge tone="neutral">worktree</Badge>}
             {session.stopped ? (
               <Badge tone="amber" dot>
                 停止中 (再起動後)

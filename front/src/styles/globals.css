@@ -28,25 +28,30 @@
   --surface-muted: 244 244 245; /* zinc-100 */
   --surface-sunken: 250 250 250; /* zinc-50 */
 
-  /* Borders */
-  --border: 228 228 231; /* zinc-200 */
-  --border-strong: 212 212 216; /* zinc-300 */
+  /* Borders — hairline, low-contrast (Vercel-style). */
+  --border: 234 234 234; /* ~#eaeaea */
+  --border-strong: 218 218 218;
 
   /* Text */
-  --fg: 24 24 27; /* zinc-900 */
+  --fg: 23 23 23; /* near-black */
   --fg-muted: 82 82 91; /* zinc-600 */
-  --fg-subtle: 113 113 122; /* zinc-500 */
-  --fg-faint: 161 161 170; /* zinc-400 */
+  --fg-subtle: 115 115 115; /* neutral-500 */
+  --fg-faint: 163 163 163; /* neutral-400 */
 
-  /* Accent (primary action / focus) — the signature Indigo. Drives primary
-   * buttons, links, focus rings, active/selected states and status accents.
-   * The neutral "solid dark control" look lives in --neutral-strong below. */
-  --accent: 79 70 229; /* indigo-600 */
-  --accent-hover: 67 56 202; /* indigo-700 */
+  /* Accent = the monochrome primary (near-black in light, near-white in dark).
+   * Color is reserved for *meaning* only: --link/--ring (blue) for links and
+   * focus, and the status tokens below. Selected/active states use the neutral
+   * --accent-soft tint, never a saturated fill. This restraint is the whole
+   * point of the "trustworthy, Vercel-like" direction. */
+  --accent: 23 23 23; /* near-black */
+  --accent-hover: 38 38 38;
   --accent-fg: 255 255 255;
-  --accent-soft: 238 242 255; /* indigo-50 — tinted surface / active row bg */
-  --accent-subtle: 67 56 202; /* indigo-700 — text/icon on neutral surface */
-  --ring: 99 102 241; /* indigo-500, used at low alpha */
+  --accent-soft: 244 244 245; /* zinc-100 — subtle selected / active bg */
+  --accent-subtle: 23 23 23; /* selected text/icon = fg */
+
+  /* The one signature color: Vercel blue, for links + focus rings only. */
+  --link: 0 112 243; /* #0070f3 */
+  --ring: 0 112 243;
 
   /* Neutral-strong: the old "solid dark control" look, decoupled from the
    * accent so it survives the Phase 2 indigo flip. */
@@ -60,12 +65,12 @@
   --warn: 217 119 6; /* amber-600 */
   --success: 22 163 74; /* green-600 */
 
-  /* Elevation. Dark mode overrides these in .dark (shadows read poorly on
-   * zinc-950, so we soften them and lean on borders + an inset highlight). */
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.04);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06);
-  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 6px -2px rgb(0 0 0 / 0.06);
-  --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.16);
+  /* Elevation — deliberately subtle; UI is defined by hairline borders, not
+   * heavy shadows. --shadow-lg mirrors Vercel's signature drop. */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.03);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 2px 8px -2px rgb(0 0 0 / 0.06), 0 4px 16px -4px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 8px 30px rgb(0 0 0 / 0.12);
 
   /* Radius scale */
   --radius-sm: 6px;
@@ -116,12 +121,14 @@
   --fg-subtle: 161 161 170; /* zinc-400 */
   --fg-faint: 113 113 122; /* zinc-500 */
 
-  --accent: 129 140 248; /* indigo-400 */
-  --accent-hover: 165 180 252; /* indigo-300 */
-  --accent-fg: 23 23 33;
-  --accent-soft: 49 46 129; /* indigo-900, used at low alpha */
-  --accent-subtle: 165 180 252; /* indigo-300 */
-  --ring: 129 140 248; /* indigo-400 */
+  --accent: 250 250 250; /* near-white primary */
+  --accent-hover: 228 228 231;
+  --accent-fg: 24 24 27;
+  --accent-soft: 39 39 42; /* zinc-800 — subtle selected / active bg */
+  --accent-subtle: 244 244 245; /* selected text/icon = fg */
+
+  --link: 96 165 250; /* blue-400 — links + focus only */
+  --ring: 96 165 250;
 
   --neutral-strong: 244 244 245; /* zinc-100 */
   --neutral-strong-fg: 24 24 27;
@@ -317,7 +324,7 @@ button:active:not(:disabled),
   margin: 0;
 }
 .md-preview a {
-  color: rgb(var(--accent));
+  color: rgb(var(--link));
   text-decoration: underline;
   text-underline-offset: 2px;
 }

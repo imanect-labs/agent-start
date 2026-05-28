@@ -159,7 +159,7 @@ function TabButton({
       className={[
         "px-3 py-1.5 rounded-md text-sm border transition-colors",
         active
-          ? "border-accent bg-accent text-accent-fg"
+          ? "border-fg bg-accent-soft text-fg"
           : "border-line bg-surface text-fg hover:bg-surface-muted",
       ].join(" ")}
     >

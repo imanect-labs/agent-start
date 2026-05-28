@@ -39,7 +39,7 @@ function UserMessage({ blocks }: { blocks: UserContentBlock[] }) {
   );
   return (
     <div className="flex justify-end">
-      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent-soft border border-accent/15 px-3.5 py-2">
+      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-surface-muted border border-line px-3.5 py-2">
         {images.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-1.5">
             {images.map((img, i) =>

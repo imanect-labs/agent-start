@@ -36,6 +36,7 @@ const config: Config = {
           strong: rgb("neutral-strong"),
           "strong-fg": rgb("neutral-strong-fg"),
         },
+        link: rgb("link"),
         danger: {
           DEFAULT: rgb("danger"),
           fg: rgb("danger-fg"),
@@ -72,6 +73,7 @@ const config: Config = {
       },
       fontFamily: {
         sans: [
+          "Geist Variable",
           "ui-sans-serif",
           "system-ui",
           "-apple-system",
@@ -83,6 +85,7 @@ const config: Config = {
           "sans-serif",
         ],
         mono: [
+          "Geist Mono Variable",
           "ui-monospace",
           "SFMono-Regular",
           "Menlo",

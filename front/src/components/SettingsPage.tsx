@@ -275,7 +275,7 @@ export function SettingsPage() {
                             className={[
                               "h-auto min-h-[3.5rem] px-3 py-2 rounded border text-left transition-colors",
                               active
-                                ? "border-accent bg-accent text-accent-fg"
+                                ? "border-fg bg-accent-soft text-fg"
                                 : "border-line bg-surface text-fg hover:bg-surface-muted",
                             ].join(" ")}
                           >
@@ -283,7 +283,7 @@ export function SettingsPage() {
                             <div
                               className={[
                                 "text-2xs font-mono truncate mt-0.5",
-                                active ? "opacity-70" : "text-fg-subtle",
+                                active ? "text-fg-muted" : "text-fg-subtle",
                               ].join(" ")}
                             >
                               {c.command || "default-shell"}
@@ -426,13 +426,13 @@ function SendKeySelector() {
             className={[
               "h-auto min-h-[3.25rem] px-3 py-2 rounded border text-left transition-colors",
               active
-                ? "border-accent bg-accent text-accent-fg"
+                ? "border-fg bg-accent-soft text-fg"
                 : "border-line bg-surface text-fg hover:bg-surface-muted",
             ].join(" ")}
           >
             <div className="text-sm font-medium">{it.label}</div>
             <div
-              className={["text-2xs mt-0.5", active ? "opacity-70" : "text-fg-subtle"].join(" ")}
+              className={["text-2xs mt-0.5", active ? "text-fg-muted" : "text-fg-subtle"].join(" ")}
             >
               {it.hint}
             </div>
