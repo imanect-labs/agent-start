@@ -27,8 +27,8 @@ export function DiffTabView({ cwd, file, mode }: Props) {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <div className="flex items-center gap-3 px-4 h-9 border-b border-line bg-surface shrink-0">
-        <div className="flex-1 min-w-0 text-[12px] font-mono truncate">{file}</div>
-        <span className="text-[10px] uppercase tracking-wider text-fg-faint">{mode}</span>
+        <div className="flex-1 min-w-0 text-xs font-mono truncate">{file}</div>
+        <span className="text-2xs uppercase tracking-wider text-fg-faint">{mode}</span>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto scroll-thin p-4">
         {isLoading ? (

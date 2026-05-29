@@ -23,7 +23,15 @@ const DOT: Record<ToastColor, string> = {
   success: "bg-success",
   danger: "bg-danger",
   warning: "bg-warn",
-  info: "bg-fg-faint",
+  info: "bg-accent",
+};
+
+// Color-coded left edge so the toast intent reads at a glance.
+const EDGE: Record<ToastColor, string> = {
+  success: "border-l-success",
+  danger: "border-l-danger",
+  warning: "border-l-warn",
+  info: "border-l-accent",
 };
 
 export function ToastHost({ children }: { children: ReactNode }) {
@@ -48,9 +56,9 @@ export function ToastHost({ children }: { children: ReactNode }) {
               key={t.id}
               role="status"
               className={[
-                "pointer-events-auto w-auto max-w-sm rounded-md border px-3 py-2",
-                "bg-surface-elev border-line text-fg",
-                "shadow-[0_8px_24px_-8px_rgba(0,0,0,0.35)]",
+                "pointer-events-auto w-auto max-w-sm rounded-lg border border-l-2 px-3 py-2",
+                "bg-surface-elev border-line text-fg shadow-md",
+                EDGE[t.color ?? "info"],
                 "flex items-start gap-2 animate-[slide-in_180ms_ease-out]",
               ].join(" ")}
             >
@@ -59,9 +67,9 @@ export function ToastHost({ children }: { children: ReactNode }) {
                 className={`mt-1 h-1.5 w-1.5 rounded-full shrink-0 ${DOT[t.color ?? "info"]}`}
               />
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-[12.5px] leading-snug">{t.title}</div>
+                <div className="font-medium text-xs leading-snug">{t.title}</div>
                 {t.description && (
-                  <div className="text-[11px] text-fg-subtle mt-0.5 break-all">{t.description}</div>
+                  <div className="text-2xs text-fg-subtle mt-0.5 break-all">{t.description}</div>
                 )}
               </div>
             </div>

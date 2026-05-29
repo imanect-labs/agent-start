@@ -9,15 +9,18 @@
     <link rel="apple-touch-icon" href="/logo.png" />
     <script>
       // Runs before paint so the correct theme class is applied on first paint.
+      // Dark is the default when nothing is stored (Linear-style dark-first).
       (() => {
         try {
           var v = localStorage.getItem("agent-start:theme");
           var dark =
             v === "dark" ||
-            ((v === null || v === "system") &&
-              window.matchMedia("(prefers-color-scheme: dark)").matches);
+            v === null ||
+            (v === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
           if (dark) document.documentElement.classList.add("dark");
-        } catch (e) {}
+        } catch (e) {
+          document.documentElement.classList.add("dark");
+        }
       })();
     </script>
     <style>
@@ -26,21 +29,21 @@
       #boot-skeleton {
         display: flex;
         height: 100dvh;
-        background: rgb(250 250 250);
-        color: rgb(24 24 27);
+        background: rgb(252 252 253);
+        color: rgb(28 29 34);
       }
       .dark #boot-skeleton {
-        background: rgb(9 9 11);
-        color: rgb(244 244 245);
+        background: rgb(8 9 11);
+        color: rgb(247 248 250);
       }
       #boot-skeleton .bs-side {
         width: 288px;
-        border-right: 1px solid rgb(228 228 231);
+        border-right: 1px solid rgb(231 232 237);
         padding: 12px;
         flex-shrink: 0;
       }
       .dark #boot-skeleton .bs-side {
-        border-color: rgb(39 39 42);
+        border-color: rgb(33 35 40);
       }
       #boot-skeleton .bs-main {
         flex: 1;
@@ -49,20 +52,20 @@
       }
       #boot-skeleton .bs-right {
         width: 320px;
-        border-left: 1px solid rgb(228 228 231);
+        border-left: 1px solid rgb(231 232 237);
         padding: 16px;
         flex-shrink: 0;
       }
       .dark #boot-skeleton .bs-right {
-        border-color: rgb(39 39 42);
+        border-color: rgb(33 35 40);
       }
       #boot-skeleton .bs-bar {
-        background: rgb(244 244 245);
+        background: rgb(244 245 248);
         border-radius: 6px;
         animation: bs-pulse 1.4s ease-in-out infinite;
       }
       .dark #boot-skeleton .bs-bar {
-        background: rgb(39 39 42);
+        background: rgb(23 24 28);
       }
       @keyframes bs-pulse {
         0%,

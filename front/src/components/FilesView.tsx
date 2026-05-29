@@ -1,6 +1,6 @@
 import useSWR from "swr";
 import { useMemo, useState } from "react";
-import { Button, Skeleton, SkeletonRows } from "@/components/ui";
+import { Button, EmptyState, ErrorState, Skeleton, SkeletonRows } from "@/components/ui";
 import { IconCheck, IconPlus, IconRefresh, IconTrash, IconX } from "@/components/icons";
 import { BranchSwitcher } from "@/components/BranchSwitcher";
 import type { DiffMode } from "@/components/tab-types";
@@ -43,14 +43,14 @@ async function post(url: string, body: unknown) {
 }
 
 function fileStatusLabel(f: GitFile): { label: string; tone: string } {
-  if (f.untracked) return { label: "??", tone: "text-emerald-500" };
+  if (f.untracked) return { label: "??", tone: "text-add" };
   const x = f.xy[0];
   const y = f.xy[1];
   // Prefer the most informative single-char status.
-  if (x === "R" || y === "R") return { label: "R", tone: "text-blue-500" };
-  if (x === "A" || y === "A") return { label: "A", tone: "text-emerald-500" };
-  if (x === "D" || y === "D") return { label: "D", tone: "text-red-500" };
-  if (x === "M" || y === "M") return { label: "M", tone: "text-amber-500" };
+  if (x === "R" || y === "R") return { label: "R", tone: "text-accent-subtle" };
+  if (x === "A" || y === "A") return { label: "A", tone: "text-add" };
+  if (x === "D" || y === "D") return { label: "D", tone: "text-del" };
+  if (x === "M" || y === "M") return { label: "M", tone: "text-warn" };
   return { label: f.xy.trim() || "?", tone: "text-fg-faint" };
 }
 
@@ -100,7 +100,14 @@ export function FilesView({
     );
   }
   if (error) {
-    return <Empty>取得に失敗: {(error as Error).message}</Empty>;
+    return (
+      <ErrorState
+        compact
+        title="git ステータスの取得に失敗しました"
+        description={(error as Error).message}
+        onRetry={() => mutate()}
+      />
+    );
   }
   if (!data?.isGit) {
     return <Empty>このセッションは git リポジトリではありません</Empty>;
@@ -139,7 +146,7 @@ export function FilesView({
       <div className="flex items-start gap-2 flex-wrap">
         <div className="flex-1 min-w-0">
           <BranchSwitcher cwd={cwd} onRepoChanged={() => mutate()} />
-          <div className="text-[11px] text-fg-faint mt-1 flex gap-2">
+          <div className="text-2xs text-fg-faint mt-1 flex gap-2">
             <span>{files.length} files</span>
             {data.upstream && <span className="truncate">↑ {data.upstream}</span>}
           </div>
@@ -155,7 +162,7 @@ export function FilesView({
       </div>
 
       {files.length === 0 ? (
-        <Empty>変更はありません</Empty>
+        <EmptyState compact icon={<IconCheck />} title="変更はありません" />
       ) : (
         <div className="space-y-3">
           {grouped.staged.length > 0 && (
@@ -264,7 +271,7 @@ function CommitBox({
         disabled={disabled}
         placeholder="コミットメッセージ"
         rows={2}
-        className="w-full resize-y rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12px] font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:opacity-50"
+        className="w-full resize-y rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring/20 disabled:opacity-50"
       />
       <Button
         variant="primary"
@@ -297,7 +304,7 @@ function FileGroup({
   const allPaths = files.map((f) => f.path);
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-fg-faint font-medium mb-1.5 flex items-center justify-between gap-2">
+      <div className="text-2xs uppercase tracking-wider text-fg-faint font-medium mb-1.5 flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5">
           <span>{title}</span>
           <span className="tabular-nums">{files.length}</span>
@@ -310,7 +317,7 @@ function FileGroup({
               disabled={busy}
               onClick={() => a.run(allPaths)}
               className={[
-                "text-[10px] px-1.5 py-0.5 rounded border border-line bg-surface hover:bg-surface-muted disabled:opacity-50",
+                "text-2xs px-1.5 py-0.5 rounded border border-line bg-surface hover:bg-surface-muted disabled:opacity-50",
                 a.danger ? "text-danger hover:border-danger/50" : "text-fg-muted",
               ].join(" ")}
             >
@@ -332,10 +339,10 @@ function FileGroup({
                 onClick={() => onSelect(f.path, mode)}
                 className="flex-1 min-w-0 text-left px-2.5 py-1.5 flex items-center gap-2 text-fg-muted"
               >
-                <span className={`shrink-0 font-mono text-[10px] w-4 text-center ${status.tone}`}>
+                <span className={`shrink-0 font-mono text-2xs w-4 text-center ${status.tone}`}>
                   {status.label}
                 </span>
-                <span className="font-mono text-[12px] truncate flex-1 min-w-0">
+                <span className="font-mono text-xs truncate flex-1 min-w-0">
                   {f.origPath ? (
                     <>
                       <span className="text-fg-faint">{f.origPath} → </span>

@@ -119,3 +119,15 @@ export const IconCheck = (p: P) => (
     <path d="m5 13 4 4L19 7" />
   </svg>
 );
+export const IconAlertTriangle = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+    <path d="M12 9v4M12 17h.01" />
+  </svg>
+);
+export const IconInbox = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+    <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z" />
+  </svg>
+);

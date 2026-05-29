@@ -122,15 +122,15 @@ export function LaunchConfirmSheet({
                       className={[
                         "h-auto min-h-[3.25rem] px-3 py-2 rounded-md border text-left transition-colors",
                         active
-                          ? "border-accent bg-accent text-accent-fg"
+                          ? "border-fg bg-accent-soft text-fg"
                           : "border-line bg-surface text-fg hover:bg-surface-muted",
                       ].join(" ")}
                     >
                       <div className="text-sm font-medium">{c.label}</div>
                       <div
                         className={[
-                          "text-[11px] font-mono truncate mt-0.5",
-                          active ? "opacity-70" : "text-fg-subtle",
+                          "text-2xs font-mono truncate mt-0.5",
+                          active ? "text-fg-muted" : "text-fg-subtle",
                         ].join(" ")}
                       >
                         {c.command || "default-shell"}

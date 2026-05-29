@@ -4,6 +4,9 @@ import { RouterProvider } from "@tanstack/react-router";
 import { SWRConfig } from "swr";
 import { router } from "./router";
 import { installAppHeightVar } from "./lib/viewportHeight";
+// Geist (Vercel's typeface) — variable weights for crisp, trustworthy UI text.
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import "./styles/globals.css";
 
 installAppHeightVar();
