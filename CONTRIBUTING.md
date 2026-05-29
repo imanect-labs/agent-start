@@ -94,7 +94,7 @@ above applies to the files you touch.
 
 ### Sign your commits (DCO)
 
-We use the [Developer Certificate of Origin](./DCO) (DCO) instead of a heavy
+We use the [Developer Certificate of Origin](./DCO) instead of a heavy
 CLA for the open-source core. Every commit must be signed off — this certifies
 you wrote the patch or otherwise have the right to submit it under the project's
 license:
@@ -105,7 +105,7 @@ git commit -s -m "feat: ..."     # appends a Signed-off-by line
 
 The sign-off must match the author and look like:
 
-```
+```text
 Signed-off-by: Jane Doe <jane@example.com>
 ```
 
