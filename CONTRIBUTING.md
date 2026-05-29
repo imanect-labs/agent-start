@@ -80,6 +80,39 @@ Use the issue templates in `.github/ISSUE_TEMPLATE/`. For security
 vulnerabilities **do not** open a public issue — follow [SECURITY.md](./SECURITY.md)
 instead.
 
+## Licensing of contributions
+
+agent-start is [open core](./LICENSING.md). Where your contribution lands
+determines its license:
+
+- Changes **outside** `enterprise/` are contributed under the **MIT License**.
+- Changes **inside** `enterprise/` are contributed under the
+  [Enterprise Edition License](./enterprise/LICENSE).
+
+By opening a PR you agree to license your contribution under whichever of the
+above applies to the files you touch.
+
+### Sign your commits (DCO)
+
+We use the [Developer Certificate of Origin](./DCO) instead of a heavy
+CLA for the open-source core. Every commit must be signed off — this certifies
+you wrote the patch or otherwise have the right to submit it under the project's
+license:
+
+```bash
+git commit -s -m "feat: ..."     # appends a Signed-off-by line
+```
+
+The sign-off must match the author and look like:
+
+```text
+Signed-off-by: Jane Doe <jane@example.com>
+```
+
+For significant contributions to the `enterprise/` directory we may additionally
+ask you to sign a Contributor License Agreement (CLA), so the project can keep
+offering the Enterprise features commercially.
+
 ## Code of conduct
 
 By participating you agree to the [Contributor Covenant Code of Conduct](./CODE_OF_CONDUCT.md).

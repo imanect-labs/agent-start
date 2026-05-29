@@ -419,4 +419,12 @@ launchctl kickstart -k gui/$(id -u)/app.agent-start
 
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+agent-start is **open core**:
+
+- Everything outside the `enterprise/` directory is **MIT** — see [LICENSE](./LICENSE).
+- The `enterprise/` directory is source-available under the
+  [Enterprise Edition License](./enterprise/LICENSE); production use requires a
+  paid subscription.
+
+See [LICENSING.md](./LICENSING.md) for the full breakdown of what is MIT vs.
+Enterprise, and how to get a commercial license.

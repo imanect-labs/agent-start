@@ -517,35 +517,37 @@ export function Terminal({
             background: theme.background,
           }}
         />
-        {!stopped && status === "connecting" && (
-          // Loading overlay shown while the WS is still connecting — most
-          // visible right after a session is created/launched, when the
-          // terminal pane is otherwise an empty black rectangle.
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="flex items-center gap-2 rounded-md border border-line bg-surface-elev/90 px-3 py-2 text-xs text-fg-subtle shadow-sm backdrop-blur-sm">
-              <Spinner size="sm" />
-              接続中…
-            </div>
-          </div>
-        )}
-        {stopped && onRestart && (
-          // Overlay anchored to the bottom of the terminal pane. Using
-          // an overlay (rather than replacing the terminal) keeps the
-          // restored scrollback visible above so the user can read the
-          // last state while deciding to revive.
-          <div className="absolute inset-x-0 bottom-0 p-3 pointer-events-none flex justify-center">
-            <div className="pointer-events-auto bg-surface-elev border border-line-strong rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 max-w-[28rem]">
-              <div className="text-xs text-fg-muted flex-1">
-                セッションは停止しています。
-                <br />
-                再開すると新しい PTY を起動します。
+        {!stopped &&
+          status === "connecting" && (
+            // Loading overlay shown while the WS is still connecting — most
+            // visible right after a session is created/launched, when the
+            // terminal pane is otherwise an empty black rectangle.
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="flex items-center gap-2 rounded-md border border-line bg-surface-elev/90 px-3 py-2 text-xs text-fg-subtle shadow-sm backdrop-blur-sm">
+                <Spinner size="sm" />
+                接続中…
               </div>
-              <Button variant="primary" size="sm" disabled={restarting} onClick={onRestart}>
-                {restarting ? "再開中…" : "再開"}
-              </Button>
             </div>
-          </div>
-        )}
+          )}
+        {stopped &&
+          onRestart && (
+            // Overlay anchored to the bottom of the terminal pane. Using
+            // an overlay (rather than replacing the terminal) keeps the
+            // restored scrollback visible above so the user can read the
+            // last state while deciding to revive.
+            <div className="absolute inset-x-0 bottom-0 p-3 pointer-events-none flex justify-center">
+              <div className="pointer-events-auto bg-surface-elev border border-line-strong rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 max-w-[28rem]">
+                <div className="text-xs text-fg-muted flex-1">
+                  セッションは停止しています。
+                  <br />
+                  再開すると新しい PTY を起動します。
+                </div>
+                <Button variant="primary" size="sm" disabled={restarting} onClick={onRestart}>
+                  {restarting ? "再開中…" : "再開"}
+                </Button>
+              </div>
+            </div>
+          )}
       </div>
 
       <div className={`${vkClass} gap-1.5 overflow-x-auto -mx-1 px-1 pt-1 pb-3 sm:pb-1`}>
