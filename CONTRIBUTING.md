@@ -80,6 +80,20 @@ Use the issue templates in `.github/ISSUE_TEMPLATE/`. For security
 vulnerabilities **do not** open a public issue — follow [SECURITY.md](./SECURITY.md)
 instead.
 
+## Licensing of contributions
+
+agent-start is [open core](./LICENSING.md). Where your contribution lands
+determines its license:
+
+- Changes **outside** `enterprise/` are contributed under the **MIT License**.
+- Changes **inside** `enterprise/` are contributed under the
+  [Enterprise Edition License](./enterprise/LICENSE).
+
+By opening a PR you agree to license your contribution under whichever of the
+above applies to the files you touch. For significant contributions we may ask
+you to sign a lightweight Contributor License Agreement (CLA) so the project can
+keep offering the Enterprise features commercially.
+
 ## Code of conduct
 
 By participating you agree to the [Contributor Covenant Code of Conduct](./CODE_OF_CONDUCT.md).

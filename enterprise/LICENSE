@@ -1,0 +1,98 @@
+The agent-start Enterprise Edition (EE) License
+
+Copyright (c) 2026 imanect-labs
+
+================================================================================
+SUMMARY (not a substitute for the terms below)
+
+The code in this directory ("enterprise/") is SOURCE-AVAILABLE, NOT open source.
+You may read it, build it, and use it to develop, test, and evaluate
+agent-start. Using these Enterprise features in PRODUCTION requires a valid
+commercial subscription from imanect-labs. The rest of the agent-start
+repository (everything outside this directory) is licensed separately under the
+MIT License — see ../LICENSE.
+================================================================================
+
+1. DEFINITIONS
+
+   "Licensor" means imanect-labs.
+
+   "EE Software" means the contents of this "enterprise/" directory, including
+   source code, configuration, and documentation, and any modifications or
+   derivative works of it.
+
+   "Subscription" means a current, paid commercial agreement with the Licensor
+   that grants the right to use the EE Software in production.
+
+   "Production Use" means any use of the EE Software other than for internal
+   development, testing, or evaluation — including, without limitation, use to
+   operate a service for, or to provide functionality to, your organization's
+   users, employees, or customers.
+
+2. GRANT FOR NON-PRODUCTION USE
+
+   Subject to the terms of this License, the Licensor grants you a worldwide,
+   royalty-free, non-exclusive, non-transferable, revocable license to:
+
+   (a) view, compile, and run the EE Software solely for the purposes of
+       development, testing, and evaluation; and
+
+   (b) prepare and submit contributions (modifications) to the EE Software back
+       to the Licensor.
+
+   This grant does NOT permit Production Use.
+
+3. GRANT FOR PRODUCTION USE
+
+   Production Use of the EE Software is permitted ONLY for the duration of, and
+   strictly in accordance with the terms of, a valid Subscription. When your
+   Subscription ends, your right to Production Use ends, and you must cease
+   Production Use of the EE Software.
+
+4. RESTRICTIONS
+
+   Except as expressly permitted above, you may not:
+
+   (a) use the EE Software in production without a valid Subscription;
+
+   (b) copy, move, or merge any part of the EE Software into the MIT-licensed
+       portion of agent-start, or into any other project, in order to relicense
+       it or circumvent this License;
+
+   (c) distribute, sublicense, sell, rent, or host the EE Software for third
+       parties except as expressly authorized in writing by the Licensor;
+
+   (d) remove or alter any license, copyright, or attribution notices; or
+
+   (e) use the Licensor's trademarks except to accurately identify the origin
+       of the EE Software.
+
+5. CONTRIBUTIONS
+
+   By submitting a contribution to the EE Software, you grant the Licensor a
+   perpetual, worldwide, royalty-free, irrevocable license to use, reproduce,
+   modify, distribute, sublicense, and commercialize that contribution as part
+   of the EE Software. The Licensor may require you to sign a separate
+   Contributor License Agreement before accepting significant contributions.
+
+6. TERMINATION
+
+   This License terminates automatically if you breach it. Upon termination you
+   must stop using the EE Software (for any purpose) and destroy all copies in
+   your possession or control. Sections 4 through 8 survive termination.
+
+7. NO WARRANTY
+
+   THE EE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+8. LIMITATION OF LIABILITY
+
+   IN NO EVENT SHALL THE LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+   OUT OF, OR IN CONNECTION WITH THE EE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+   THE EE SOFTWARE.
+
+For commercial licensing, trials, or questions: licensing@imanect.app
+(placeholder — update before launch).
