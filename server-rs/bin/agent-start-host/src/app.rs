@@ -137,6 +137,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
                     orig_path: row.orig_path,
                     live: false,
                     history,
+                    title: row.title,
                 },
             );
         }

@@ -107,7 +107,11 @@ export function IndexPage() {
   // id and reconcile when the response arrives.
   const [pendingSessions, setPendingSessions] = useState<PendingSession[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  // Names of sessions whose DELETE is in flight. They are hidden from the
+  // list immediately and stay hidden even if a background poll returns
+  // before the (slow) DELETE finishes — an optimistic cache mutate alone
+  // would get clobbered by that poll and the row would flicker back.
+  const [removingSessions, setRemovingSessions] = useState<Set<string>>(() => new Set());
   const [addOpen, setAddOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
 
@@ -160,7 +164,21 @@ export function IndexPage() {
   // main pane reflect a launch the instant the user confirms it, before the
   // host has finished creating the PTY (and worktree).
   const sessions = useMemo<TmuxSession[]>(() => {
-    if (pendingSessions.length === 0) return realSessions;
+    let visible =
+      removingSessions.size === 0
+        ? realSessions
+        : realSessions.filter((s) => !removingSessions.has(s.name));
+    // A restart is in flight: keep this session shown as live (stopped:false)
+    // even if a background poll still reports it stopped because the host
+    // hasn't finished rebuilding the PTY. Without this the row (and terminal)
+    // flickers stopped→live→stopped→live until the restart completes — the
+    // same poll-clobber the delete flow avoids with `removingSessions`.
+    if (restarting) {
+      visible = visible.map((s) =>
+        s.name === restarting && s.stopped ? { ...s, stopped: false } : s,
+      );
+    }
+    if (pendingSessions.length === 0) return visible;
     const placeholders: TmuxSession[] = pendingSessions.map((p) => ({
       name: p.tempId,
       path: p.projectPath,
@@ -171,8 +189,8 @@ export function IndexPage() {
       origPath: "",
       pending: true,
     }));
-    return [...placeholders, ...realSessions];
-  }, [realSessions, pendingSessions]);
+    return [...placeholders, ...visible];
+  }, [realSessions, pendingSessions, removingSessions, restarting]);
 
   const chatClis = useMemo(
     () => new Set((configData?.clis ?? []).filter((c) => c.mode === "chat").map((c) => c.key)),
@@ -565,20 +583,12 @@ export function IndexPage() {
 
   const handleRestartSession = useCallback(
     async (name: string) => {
+      // Marking the session `restarting` flips it to live (stopped:false) in
+      // the sessions memo immediately and poll-proof, so the terminal remounts
+      // onto the (soon) fresh PTY and shows its own "接続中…" overlay right
+      // away — without flickering back to stopped if a poll lands mid-restart.
+      // If the WS races ahead of the PTY it auto-retries with backoff.
       setRestarting(name);
-      // Optimistically flip `stopped` → live so the terminal remounts and
-      // shows its own "接続中…" overlay right away. The Terminal tab key
-      // includes the stopped flag, so this remounts onto the (soon) fresh PTY;
-      // if the WS races ahead of the PTY it auto-retries with backoff.
-      mutate(
-        "/api/sessions",
-        (cur?: { sessions: TmuxSession[] }) => ({
-          sessions: (cur?.sessions ?? []).map((s) =>
-            s.name === name ? { ...s, stopped: false } : s,
-          ),
-        }),
-        { revalidate: false },
-      );
       try {
         const res = await fetch(`/api/sessions/${encodeURIComponent(name)}/restart`, {
           method: "POST",
@@ -594,7 +604,8 @@ export function IndexPage() {
           description: (e as Error).message,
           color: "danger",
         });
-        // Roll back the optimistic flip to the server's real state.
+        // Re-sync; clearing `restarting` in `finally` drops the live override
+        // so the row reverts to the server's real (still-stopped) state.
         mutate("/api/sessions");
       } finally {
         setRestarting(null);
@@ -603,21 +614,32 @@ export function IndexPage() {
     [toast],
   );
 
+  const unhideSession = useCallback((name: string) => {
+    setRemovingSessions((prev) => {
+      if (!prev.has(name)) return prev;
+      const next = new Set(prev);
+      next.delete(name);
+      return next;
+    });
+  }, []);
+
   const handleStopConfirm = async (deleteWorktree: boolean) => {
     if (!deleteTarget) return;
     const targetName = deleteTarget.name;
-    setDeleting(true);
-    // Optimistically drop the session from the list so the sidebar reflects
-    // the removal immediately instead of waiting for the next poll.
-    mutate(
-      "/api/sessions",
-      (cur?: { sessions: TmuxSession[] }) => ({
-        sessions: (cur?.sessions ?? []).filter((s) => s.name !== targetName),
-      }),
-      { revalidate: false },
-    );
+    // Reflect the removal in the UI immediately: hide the row (poll-proof),
+    // drop its tab state, deselect it, and close the sheet. The DELETE then
+    // runs in the background; on failure we un-hide and surface a toast.
+    setRemovingSessions((prev) => new Set(prev).add(targetName));
+    setPerSession((prev) => {
+      if (!prev[targetName]) return prev;
+      const next = { ...prev };
+      delete next[targetName];
+      return next;
+    });
+    setActiveSession((cur) => (cur === targetName ? null : cur));
+    setDeleteTarget(null);
     try {
-      const url = `/api/sessions/${encodeURIComponent(deleteTarget.name)}${
+      const url = `/api/sessions/${encodeURIComponent(targetName)}${
         deleteWorktree ? "?deleteWorktree=1" : ""
       }`;
       const res = await fetch(url, { method: "DELETE" });
@@ -632,26 +654,19 @@ export function IndexPage() {
       } else {
         toast({ title: "停止しました", color: "success" });
       }
-      // Remove tab state for this session
-      setPerSession((prev) => {
-        if (!prev[deleteTarget.name]) return prev;
-        const next = { ...prev };
-        delete next[deleteTarget.name];
-        return next;
-      });
-      setActiveSession((cur) => (cur === deleteTarget.name ? null : cur));
-      setDeleteTarget(null);
-      mutate("/api/sessions");
+      // Server-confirmed gone: refetch, then drop the local hide (the
+      // session is no longer in the response, so it won't reappear).
+      await mutate("/api/sessions");
+      unhideSession(targetName);
     } catch (e) {
+      // Failed — bring the row back and tell the user.
+      unhideSession(targetName);
+      mutate("/api/sessions");
       toast({
         title: "停止失敗",
         description: (e as Error).message,
         color: "danger",
       });
-      // Restore the optimistically removed session on failure.
-      mutate("/api/sessions");
-    } finally {
-      setDeleting(false);
     }
   };
 
@@ -660,10 +675,28 @@ export function IndexPage() {
     mutate("/api/projects");
   };
 
-  const activeSessionObj = useMemo(
-    () => sessions.find((s) => s.name === activeSession) ?? null,
-    [sessions, activeSession],
-  );
+  const activeSessionObj = useMemo<TmuxSession | null>(() => {
+    const found = sessions.find((s) => s.name === activeSession) ?? null;
+    if (found) return found;
+    // A launch is in flight: `activeSession` is a temp ("pending:…") id. If the
+    // optimistic placeholder hasn't landed in `sessions` yet for this render,
+    // synthesize one so the main pane shows the launch skeleton — never the
+    // "no session selected" welcome screen — for the frame in between.
+    if (activeSession?.startsWith("pending:")) {
+      const p = pendingSessions.find((x) => x.tempId === activeSession);
+      return {
+        name: activeSession,
+        path: p?.projectPath ?? "",
+        createdAt: p?.createdAt ?? 0,
+        attached: false,
+        cli: p?.cli ?? "",
+        worktreePath: "",
+        origPath: "",
+        pending: true,
+      };
+    }
+    return null;
+  }, [sessions, activeSession, pendingSessions]);
   const activeTabs = activeSession ? perSession[activeSession] : null;
   const activeCwd =
     activeSessionObj?.worktreePath || activeSessionObj?.path || activeSessionObj?.origPath || "";
@@ -873,7 +906,7 @@ export function IndexPage() {
         target={deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleStopConfirm}
-        busy={deleting}
+        busy={false}
       />
 
       <AddProjectModal open={addOpen} onClose={() => setAddOpen(false)} />
