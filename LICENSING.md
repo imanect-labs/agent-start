@@ -59,11 +59,16 @@ Email **goto@imanect.co.jp**.
 By contributing to this repository you agree that:
 
 - Contributions to MIT-licensed code are made under the MIT License.
-- Contributions to `enterprise/` are made under the Enterprise Edition License.
+- Contributions to `enterprise/` are made under the Enterprise Edition License
+  (its contribution terms, Section 5, grant us the rights needed to keep
+  offering the EE features commercially).
 
-We may ask significant contributors to sign a lightweight Contributor License
-Agreement (CLA) so we can keep offering the EE features commercially. See
-[CONTRIBUTING.md](./CONTRIBUTING.md).
+All contributions require a **Developer Certificate of Origin (DCO)** sign-off —
+add `Signed-off-by: Your Name <you@example.com>` to each commit (`git commit -s`)
+to certify you wrote the change or otherwise have the right to submit it under
+the applicable license. The full text is in [`DCO`](./DCO). For significant
+contributions to `enterprise/` we may additionally ask you to sign a Contributor
+License Agreement (CLA). See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## A note on the open-core boundary
 

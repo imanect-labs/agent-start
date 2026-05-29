@@ -90,9 +90,28 @@ determines its license:
   [Enterprise Edition License](./enterprise/LICENSE).
 
 By opening a PR you agree to license your contribution under whichever of the
-above applies to the files you touch. For significant contributions we may ask
-you to sign a lightweight Contributor License Agreement (CLA) so the project can
-keep offering the Enterprise features commercially.
+above applies to the files you touch.
+
+### Sign your commits (DCO)
+
+We use the [Developer Certificate of Origin](./DCO) (DCO) instead of a heavy
+CLA for the open-source core. Every commit must be signed off — this certifies
+you wrote the patch or otherwise have the right to submit it under the project's
+license:
+
+```bash
+git commit -s -m "feat: ..."     # appends a Signed-off-by line
+```
+
+The sign-off must match the author and look like:
+
+```
+Signed-off-by: Jane Doe <jane@example.com>
+```
+
+For significant contributions to the `enterprise/` directory we may additionally
+ask you to sign a Contributor License Agreement (CLA), so the project can keep
+offering the Enterprise features commercially.
 
 ## Code of conduct
 
