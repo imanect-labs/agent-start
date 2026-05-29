@@ -29,11 +29,20 @@ export function WelcomeBanner({
           <span className="text-sm font-semibold tracking-tight text-fg">agent-start</span>
         </div>
       )}
-      <div className="flex-1 overflow-y-auto scroll-thin">
-        <div className="max-w-2xl mx-auto px-6 py-12">
-          {/* Hero — restrained, monochrome, content-first. */}
+      <div className="relative flex-1 overflow-y-auto scroll-thin">
+        {/* Faint accent glow behind the hero — Linear-style, very low alpha. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-72 opacity-60"
+          style={{
+            background:
+              "radial-gradient(60% 100% at 50% 0%, rgb(var(--accent) / 0.10), transparent 70%)",
+          }}
+        />
+        <div className="relative max-w-2xl mx-auto px-6 py-12">
+          {/* Hero — restrained; the icon carries a subtle accent tint. */}
           <div className="text-center">
-            <div className="mx-auto w-12 h-12 rounded-xl bg-surface border border-line flex items-center justify-center text-fg shadow-xs">
+            <div className="mx-auto w-12 h-12 rounded-xl bg-surface border border-line flex items-center justify-center text-accent-subtle shadow-[var(--shadow-sm),var(--elevate)]">
               <IconTerminal className="w-6 h-6" />
             </div>
             <h2 className="mt-5 text-2xl font-semibold tracking-tight text-fg">

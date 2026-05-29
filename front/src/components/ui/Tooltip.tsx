@@ -65,8 +65,8 @@ export function Tooltip({
           id={id}
           className={[
             "pointer-events-none absolute z-50 whitespace-nowrap",
-            "rounded-sm px-2 py-1 text-2xs font-medium",
-            "bg-neutral-strong text-neutral-strong-fg shadow-md",
+            "rounded-md px-2 py-1 text-2xs font-medium",
+            "bg-surface-elev/90 backdrop-blur-xl text-fg border border-line shadow-pop",
             SIDE[side],
           ].join(" ")}
         >

@@ -3,8 +3,8 @@ import { InputHTMLAttributes, forwardRef, ReactNode } from "react";
 type Size = "sm" | "md";
 
 const SIZE: Record<Size, string> = {
-  sm: "h-9 px-2.5 gap-1.5",
-  md: "h-10 px-3 gap-2",
+  sm: "h-8 px-2.5 gap-1.5",
+  md: "h-9 px-3 gap-2",
 };
 
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, "onChange" | "size"> & {
@@ -47,8 +47,8 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
           "group flex items-center rounded",
           SIZE[inputSize],
           "bg-surface border border-line",
-          "focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-ring/20",
-          "transition-colors",
+          "focus-within:border-accent focus-within:ring-2 focus-within:ring-ring/40",
+          "transition-[border-color,box-shadow] duration-[130ms]",
           errorText
             ? "border-danger/40 focus-within:border-danger focus-within:ring-danger/10"
             : "",

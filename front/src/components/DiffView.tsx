@@ -111,8 +111,8 @@ function UnifiedRaw({ text }: { text: string }) {
         let cls = "text-fg-muted";
         if (l.startsWith("+++") || l.startsWith("---")) cls = "text-fg-faint";
         else if (l.startsWith("@@")) cls = "text-fg-subtle";
-        else if (l.startsWith("+")) cls = "text-emerald-500";
-        else if (l.startsWith("-")) cls = "text-red-500";
+        else if (l.startsWith("+")) cls = "text-add";
+        else if (l.startsWith("-")) cls = "text-del";
         else if (l.startsWith("diff ") || l.startsWith("index ")) cls = "text-fg-faint";
         return (
           <div key={i} className={cls}>

@@ -85,11 +85,11 @@ export function Sheet({ open, onClose, children, maxWidth = "md", tall = false }
         ref={panelRef}
         tabIndex={-1}
         className={[
-          "relative bg-surface text-fg w-full outline-none",
+          "relative bg-surface-elev/95 backdrop-blur-2xl text-fg w-full outline-none",
           MAX_W[maxWidth],
           "rounded-t-2xl sm:rounded-xl",
           "border-t border-line sm:border",
-          "shadow-[0_-12px_40px_-12px_rgba(0,0,0,0.18)] sm:shadow-lg",
+          "shadow-pop",
           "flex flex-col overflow-hidden",
           // Lock height on mobile so toggling content inside (e.g. 詳細
           // オプション) doesn't jump the sheet up/down — body scrolls

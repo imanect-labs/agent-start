@@ -1,29 +1,49 @@
 import { ReactNode } from "react";
 
-type Tone = "neutral" | "accent" | "indigo" | "blue" | "emerald" | "amber" | "red" | "violet";
+// Tones derive entirely from design tokens (no saturated Tailwind hues).
+// Decorative aliases (indigo/blue/violet/emerald/amber/red) collapse onto the
+// semantic palette so callers keep working while the look stays disciplined.
+type Tone =
+  | "neutral"
+  | "accent"
+  | "success"
+  | "warn"
+  | "danger"
+  | "indigo"
+  | "blue"
+  | "violet"
+  | "emerald"
+  | "amber"
+  | "red";
 type Size = "xs" | "sm";
 
 const TONE: Record<Tone, string> = {
   neutral: "bg-surface-muted text-fg-muted border-line",
-  accent: "bg-accent-soft text-accent-subtle border-accent/20",
-  indigo: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20 dark:text-indigo-300",
-  blue: "bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-300",
-  emerald: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-300",
-  amber: "bg-amber-500/10 text-amber-700 border-amber-500/30 dark:text-amber-300",
-  red: "bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-300",
-  violet: "bg-violet-500/10 text-violet-700 border-violet-500/20 dark:text-violet-300",
+  accent: "bg-accent-soft text-accent-subtle border-accent/25",
+  success: "bg-success-soft text-success border-success/25",
+  warn: "bg-warn-soft text-warn border-warn/25",
+  danger: "bg-danger-soft text-danger border-danger/25",
+  // aliases → semantic
+  indigo: "bg-accent-soft text-accent-subtle border-accent/25",
+  blue: "bg-accent-soft text-accent-subtle border-accent/25",
+  violet: "bg-accent-soft text-accent-subtle border-accent/25",
+  emerald: "bg-success-soft text-success border-success/25",
+  amber: "bg-warn-soft text-warn border-warn/25",
+  red: "bg-danger-soft text-danger border-danger/25",
 };
 
-// Status-dot colors mirror the tone but stay legible as a tiny solid dot.
 const DOT: Record<Tone, string> = {
   neutral: "bg-fg-faint",
   accent: "bg-accent",
-  indigo: "bg-indigo-500",
-  blue: "bg-blue-500",
-  emerald: "bg-emerald-500",
-  amber: "bg-amber-500",
-  red: "bg-red-500",
-  violet: "bg-violet-500",
+  success: "bg-success",
+  warn: "bg-warn",
+  danger: "bg-danger",
+  indigo: "bg-accent",
+  blue: "bg-accent",
+  violet: "bg-accent",
+  emerald: "bg-success",
+  amber: "bg-warn",
+  red: "bg-danger",
 };
 
 const SIZE: Record<Size, string> = {

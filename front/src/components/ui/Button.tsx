@@ -13,26 +13,27 @@ type Variant =
   | "dangerOutline";
 type Size = "sm" | "md" | "lg" | "icon";
 
+// Primary/accent get a faint top inner-highlight (shadow-elevate) for the
+// crafted, slightly-raised look; the focus ring is the purple accent.
 const VARIANT: Record<Variant, string> = {
-  accent:
-    "bg-accent text-accent-fg border border-accent hover:bg-accent-hover hover:border-accent-hover",
-  primary:
-    "bg-accent text-accent-fg border border-accent hover:bg-accent-hover hover:border-accent-hover",
-  neutral: "bg-neutral-strong text-neutral-strong-fg border border-neutral-strong hover:opacity-90",
+  accent: "bg-accent text-accent-fg border border-accent/60 hover:bg-accent-hover shadow-elevate",
+  primary: "bg-accent text-accent-fg border border-accent/60 hover:bg-accent-hover shadow-elevate",
+  neutral:
+    "bg-neutral-strong text-neutral-strong-fg border border-neutral-strong shadow-elevate hover:opacity-90",
   secondary:
     "bg-surface text-fg border border-line hover:bg-surface-muted hover:border-line-strong",
   ghost:
     "bg-transparent text-fg-muted border border-transparent hover:bg-surface-muted hover:text-fg",
-  danger: "bg-danger text-danger-fg border border-danger hover:opacity-90",
+  danger: "bg-danger text-danger-fg border border-danger/60 shadow-elevate hover:opacity-90",
   dangerOutline:
-    "bg-surface text-danger border border-danger/30 hover:bg-danger/5 hover:border-danger/50",
+    "bg-transparent text-danger border border-danger/30 hover:bg-danger/10 hover:border-danger/50",
 };
 
 const SIZE: Record<Size, string> = {
-  sm: "h-8 px-3 text-xs rounded",
-  md: "h-10 px-3.5 text-sm rounded",
-  lg: "h-11 px-4 text-sm rounded",
-  icon: "h-9 w-9 text-sm rounded",
+  sm: "h-7 px-2.5 text-xs rounded",
+  md: "h-8 px-3 text-sm rounded",
+  lg: "h-9 px-4 text-sm rounded",
+  icon: "h-8 w-8 text-sm rounded",
 };
 
 const GAP: Record<Size, string> = {
@@ -73,9 +74,10 @@ export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
       disabled={isDisabled}
       className={[
         "relative inline-flex items-center justify-center whitespace-nowrap font-medium",
-        "transition-colors duration-150",
-        "outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:ring-offset-1 focus-visible:ring-offset-surface",
-        "disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none",
+        "transition-[background-color,border-color,color,box-shadow,transform,opacity] duration-[130ms] ease-out",
+        "active:scale-[0.98] motion-reduce:active:scale-100 [@media(pointer:coarse)]:active:scale-100",
+        "outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-app",
+        "disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none disabled:shadow-none",
         "select-none",
         VARIANT[variant],
         SIZE[size],

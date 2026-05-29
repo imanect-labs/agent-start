@@ -42,8 +42,22 @@ const config: Config = {
           fg: rgb("danger-fg"),
           soft: rgb("danger-soft"),
         },
-        warn: rgb("warn"),
-        success: rgb("success"),
+        warn: {
+          DEFAULT: rgb("warn"),
+          soft: rgb("warn-soft"),
+        },
+        success: {
+          DEFAULT: rgb("success"),
+          soft: rgb("success-soft"),
+        },
+        add: {
+          DEFAULT: rgb("add"),
+          soft: rgb("add-soft"),
+        },
+        del: {
+          DEFAULT: rgb("del"),
+          soft: rgb("del-soft"),
+        },
       },
       ringColor: {
         DEFAULT: rgb("ring"),
@@ -64,6 +78,8 @@ const config: Config = {
         sm: "var(--shadow-sm)",
         md: "var(--shadow-md)",
         lg: "var(--shadow-lg)",
+        pop: "var(--shadow-pop)",
+        elevate: "var(--elevate)",
       },
       borderRadius: {
         sm: "var(--radius-sm)",

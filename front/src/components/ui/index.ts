@@ -13,3 +13,4 @@ export type { SegmentOption } from "./SegmentedControl";
 export { Tabs } from "./Tabs";
 export type { TabItem } from "./Tabs";
 export { Menu, MenuButton, MenuList, MenuItem, MenuSeparator } from "./Menu";
+export { Kbd } from "./Kbd";

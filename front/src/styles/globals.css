@@ -21,56 +21,71 @@
    * value when visualViewport is reliable. */
   --app-h: 100svh;
 
-  /* Surfaces */
-  --app: 250 250 250; /* zinc-50 */
-  --surface: 255 255 255; /* white */
+  /* ----- Light — cool off-white, layered (Linear-style) ----- */
+  --app: 252 252 253;
+  --surface: 255 255 255;
   --surface-elev: 255 255 255;
-  --surface-muted: 244 244 245; /* zinc-100 */
-  --surface-sunken: 250 250 250; /* zinc-50 */
+  --surface-muted: 244 245 248;
+  --surface-sunken: 248 249 251;
 
-  /* Borders — hairline, low-contrast (Vercel-style). */
-  --border: 234 234 234; /* ~#eaeaea */
-  --border-strong: 218 218 218;
+  /* Borders — cool hairline */
+  --border: 231 232 237;
+  --border-strong: 216 218 224;
 
-  /* Text */
-  --fg: 23 23 23; /* near-black */
-  --fg-muted: 82 82 91; /* zinc-600 */
-  --fg-subtle: 115 115 115; /* neutral-500 */
-  --fg-faint: 163 163 163; /* neutral-400 */
+  /* Text — cool near-black ramp */
+  --fg: 28 29 34;
+  --fg-muted: 75 79 89;
+  --fg-subtle: 112 116 126;
+  --fg-faint: 157 161 171;
 
-  /* Accent = the monochrome primary (near-black in light, near-white in dark).
-   * Color is reserved for *meaning* only: --link/--ring (blue) for links and
-   * focus, and the status tokens below. Selected/active states use the neutral
-   * --accent-soft tint, never a saturated fill. This restraint is the whole
-   * point of the "trustworthy, Vercel-like" direction. */
-  --accent: 23 23 23; /* near-black */
-  --accent-hover: 38 38 38;
+  /* Accent — Linear purple. Reserved for selection / active / focus / primary
+   * CTA / links. Never used as a decorative fill. */
+  --accent: 94 106 210; /* #5e6ad2 */
+  --accent-hover: 79 90 192;
   --accent-fg: 255 255 255;
-  --accent-soft: 244 244 245; /* zinc-100 — subtle selected / active bg */
-  --accent-subtle: 23 23 23; /* selected text/icon = fg */
+  --accent-soft: 238 239 252; /* pale purple — selected / active bg */
+  --accent-subtle: 79 88 184; /* purple text/icon on neutral surface */
+  --link: 94 106 210;
+  --ring: 94 106 210;
 
-  /* The one signature color: Vercel blue, for links + focus rings only. */
-  --link: 0 112 243; /* #0070f3 */
-  --ring: 0 112 243;
-
-  /* Neutral-strong: the old "solid dark control" look, decoupled from the
-   * accent so it survives the Phase 2 indigo flip. */
-  --neutral-strong: 24 24 27; /* zinc-900 */
+  --neutral-strong: 28 29 34;
   --neutral-strong-fg: 255 255 255;
 
-  /* Status */
-  --danger: 220 38 38; /* red-600 */
+  /* Status — color = meaning only */
+  --danger: 220 38 38;
   --danger-fg: 255 255 255;
-  --danger-soft: 254 242 242; /* red-50 */
-  --warn: 217 119 6; /* amber-600 */
-  --success: 22 163 74; /* green-600 */
+  --danger-soft: 254 242 242;
+  --warn: 202 138 4;
+  --warn-soft: 254 249 231;
+  --success: 22 163 74;
+  --success-soft: 236 250 241;
 
-  /* Elevation — deliberately subtle; UI is defined by hairline borders, not
-   * heavy shadows. --shadow-lg mirrors Vercel's signature drop. */
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.03);
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 2px 8px -2px rgb(0 0 0 / 0.06), 0 4px 16px -4px rgb(0 0 0 / 0.05);
-  --shadow-lg: 0 8px 30px rgb(0 0 0 / 0.12);
+  /* Diff / git add-delete */
+  --add: 22 163 74;
+  --add-soft: 230 250 238;
+  --del: 220 38 38;
+  --del-soft: 253 237 237;
+
+  /* Commit-graph lanes (harmonized, cool) */
+  --lane-1: 94 106 210;
+  --lane-2: 37 99 235;
+  --lane-3: 13 148 136;
+  --lane-4: 202 138 4;
+  --lane-5: 219 39 119;
+  --lane-6: 124 58 237;
+  --lane-7: 5 150 105;
+  --lane-8: 217 119 6;
+
+  /* Elevation — subtle; a faint top highlight gives surfaces a crafted edge.
+   * --shadow-pop is the frosted overlay drop (menus / sheets / toasts). */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 1px 1px 0 rgb(0 0 0 / 0.04);
+  --shadow-md: 0 2px 8px -2px rgb(0 0 0 / 0.08), 0 8px 24px -8px rgb(0 0 0 / 0.08);
+  --shadow-lg: 0 12px 32px -4px rgb(0 0 0 / 0.14);
+  --shadow-pop:
+    0 12px 32px -6px rgb(0 0 0 / 0.16), 0 0 0 0.5px rgb(0 0 0 / 0.06),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.8);
+  --elevate: inset 0 1px 0 0 rgb(255 255 255 / 0.7);
 
   /* Radius scale */
   --radius-sm: 6px;
@@ -78,20 +93,18 @@
   --radius-lg: 12px;
   --radius-xl: 16px;
 
-  /* Terminal palette (light). Terminal.tsx reads these vars instead of
-   * hardcoding hex; .dark overrides them below. Values mirror the previous
-   * LIGHT_TERM_THEME exactly so the migration is visually lossless. */
-  --term-bg: 250 250 250; /* zinc-50 */
-  --term-fg: 24 24 27; /* zinc-900 */
-  --term-cursor: 24 24 27;
-  --term-cursor-accent: 250 250 250;
-  --term-selection: 212 212 216; /* zinc-300 */
+  /* Terminal palette (light) — cooled to match the canvas. */
+  --term-bg: 248 249 251;
+  --term-fg: 28 29 34;
+  --term-cursor: 94 106 210;
+  --term-cursor-accent: 248 249 251;
+  --term-selection: 213 216 230;
   --term-black: 39 39 42;
   --term-red: 220 38 38;
   --term-green: 22 163 74;
   --term-yellow: 202 138 4;
   --term-blue: 37 99 235;
-  --term-magenta: 147 51 234;
+  --term-magenta: 124 58 237;
   --term-cyan: 8 145 178;
   --term-white: 113 113 122;
   --term-bright-black: 82 82 91;
@@ -99,71 +112,92 @@
   --term-bright-green: 34 197 94;
   --term-bright-yellow: 234 179 8;
   --term-bright-blue: 59 130 246;
-  --term-bright-magenta: 168 85 247;
+  --term-bright-magenta: 167 139 250;
   --term-bright-cyan: 6 182 212;
-  --term-bright-white: 24 24 27;
+  --term-bright-white: 28 29 34;
 
   color-scheme: light;
 }
 
 .dark {
-  --app: 9 9 11; /* zinc-950 */
-  --surface: 24 24 27; /* zinc-900 */
-  --surface-elev: 39 39 42; /* zinc-800 */
-  --surface-muted: 39 39 42; /* zinc-800 */
-  --surface-sunken: 9 9 11;
+  /* ----- Dark (default) — deep cool near-black, layered (Linear-style) ----- */
+  --app: 8 9 11; /* #08090b */
+  --surface: 17 18 21; /* #111215 */
+  --surface-elev: 26 27 32; /* #1a1b20 popovers/menus */
+  --surface-muted: 23 24 28; /* hover / inset */
+  --surface-sunken: 8 9 11;
 
-  --border: 39 39 42; /* zinc-800 */
-  --border-strong: 63 63 70; /* zinc-700 */
+  --border: 33 35 40; /* low-contrast hairline */
+  --border-strong: 50 52 59;
 
-  --fg: 244 244 245; /* zinc-100 */
-  --fg-muted: 212 212 216; /* zinc-300 */
-  --fg-subtle: 161 161 170; /* zinc-400 */
-  --fg-faint: 113 113 122; /* zinc-500 */
+  --fg: 247 248 250; /* cool near-white */
+  --fg-muted: 178 182 191;
+  --fg-subtle: 136 141 151;
+  --fg-faint: 95 100 110;
 
-  --accent: 250 250 250; /* near-white primary */
-  --accent-hover: 228 228 231;
-  --accent-fg: 24 24 27;
-  --accent-soft: 39 39 42; /* zinc-800 — subtle selected / active bg */
-  --accent-subtle: 244 244 245; /* selected text/icon = fg */
+  --accent: 124 138 255; /* #7c8aff Linear purple (dark) */
+  --accent-hover: 154 165 255;
+  --accent-fg: 255 255 255;
+  --accent-soft: 30 32 52; /* deep purple — selected / active bg */
+  --accent-subtle: 158 167 255; /* purple text/icon on neutral surface */
+  --link: 124 138 255;
+  --ring: 124 138 255;
 
-  --link: 96 165 250; /* blue-400 — links + focus only */
-  --ring: 96 165 250;
+  --neutral-strong: 247 248 250;
+  --neutral-strong-fg: 17 18 21;
 
-  --neutral-strong: 244 244 245; /* zinc-100 */
-  --neutral-strong-fg: 24 24 27;
+  --danger: 240 110 110;
+  --danger-fg: 23 23 26;
+  --danger-soft: 48 22 24;
+  --warn: 232 179 73;
+  --warn-soft: 45 36 16;
+  --success: 64 200 126;
+  --success-soft: 17 38 28;
 
-  --danger: 248 113 113; /* red-400 */
-  --danger-fg: 24 24 27;
-  --danger-soft: 69 10 10; /* red-950-ish */
-  --warn: 251 191 36;
-  --success: 74 222 128;
+  --add: 64 200 126;
+  --add-soft: 17 38 28;
+  --del: 240 110 110;
+  --del-soft: 48 22 24;
 
-  /* Softer shadows on the dark canvas; pair with borders + inset highlight. */
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
-  --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5);
-  --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 0.6);
+  --lane-1: 124 138 255;
+  --lane-2: 96 165 250;
+  --lane-3: 45 212 191;
+  --lane-4: 251 191 36;
+  --lane-5: 244 114 182;
+  --lane-6: 167 139 250;
+  --lane-7: 52 211 153;
+  --lane-8: 250 204 21;
 
-  /* Terminal palette (dark) — mirrors the previous DARK_TERM_THEME. */
-  --term-bg: 9 9 11; /* zinc-950 */
-  --term-fg: 250 250 250;
-  --term-cursor: 250 250 250;
-  --term-cursor-accent: 9 9 11;
-  --term-selection: 63 63 70; /* zinc-700 */
-  --term-black: 39 39 42;
-  --term-red: 248 113 113;
-  --term-green: 74 222 128;
-  --term-yellow: 250 204 21;
-  --term-blue: 96 165 250;
+  /* Soft, large drops on the dark canvas; --shadow-pop adds a hairline ring +
+   * top highlight for the frosted-overlay (menu / sheet) look. */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5);
+  --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.55);
+  --shadow-lg: 0 16px 40px -8px rgb(0 0 0 / 0.6);
+  --shadow-pop:
+    0 16px 40px -8px rgb(0 0 0 / 0.7), 0 0 0 0.5px rgb(255 255 255 / 0.08),
+    inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+  --elevate: inset 0 1px 0 0 rgb(255 255 255 / 0.05);
+
+  /* Terminal palette (dark) — cooled to sit on the #08090b canvas. */
+  --term-bg: 8 9 11;
+  --term-fg: 247 248 250;
+  --term-cursor: 124 138 255;
+  --term-cursor-accent: 8 9 11;
+  --term-selection: 45 48 70;
+  --term-black: 39 41 47;
+  --term-red: 240 110 110;
+  --term-green: 64 200 126;
+  --term-yellow: 232 179 73;
+  --term-blue: 124 138 255;
   --term-magenta: 192 132 252;
-  --term-cyan: 34 211 238;
-  --term-white: 250 250 250;
-  --term-bright-black: 82 82 91;
+  --term-cyan: 45 212 191;
+  --term-white: 178 182 191;
+  --term-bright-black: 95 100 110;
   --term-bright-red: 252 165 165;
   --term-bright-green: 134 239 172;
   --term-bright-yellow: 253 224 138;
-  --term-bright-blue: 147 197 253;
+  --term-bright-blue: 158 167 255;
   --term-bright-magenta: 216 180 254;
   --term-bright-cyan: 103 232 249;
   --term-bright-white: 255 255 255;
@@ -187,7 +221,16 @@ body {
 body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: "cv11", "ss01";
+  /* Slight negative tracking is core to the Linear-grade typographic feel;
+   * headings tighten further via Tailwind's `tracking-tight`. */
+  letter-spacing: -0.011em;
+}
+
+/* Optical sizing for the Geist variable face. */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
 }
 
 button,
@@ -410,8 +453,8 @@ button:active:not(:disabled),
 }
 
 /* ---------- react-diff-view theming ---------- *
- * Override the library CSS variables so the diff blends into our theme.
- * Light: GitHub-style pale red/green; Dark: shifted to deeper tints.
+ * Override the library CSS variables to derive entirely from our --add / --del
+ * tokens (works in both themes via alpha compositing). No raw hex.
  */
 .diff-wrap {
   --diff-background-color: transparent;
@@ -419,34 +462,24 @@ button:active:not(:disabled),
   --diff-font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --diff-selection-background-color: rgb(var(--accent) / 0.18);
   --diff-selection-text-color: rgb(var(--fg));
-  --diff-gutter-insert-background-color: #ccffd8;
-  --diff-gutter-insert-text-color: #1a7f37;
-  --diff-gutter-delete-background-color: #ffd7d5;
-  --diff-gutter-delete-text-color: #b35900;
+  --diff-gutter-insert-background-color: rgb(var(--add) / 0.18);
+  --diff-gutter-insert-text-color: rgb(var(--add));
+  --diff-gutter-delete-background-color: rgb(var(--del) / 0.18);
+  --diff-gutter-delete-text-color: rgb(var(--del));
   --diff-gutter-selected-background-color: rgb(var(--accent) / 0.12);
   --diff-gutter-selected-text-color: rgb(var(--fg));
-  --diff-code-insert-background-color: #e6ffec;
+  --diff-code-insert-background-color: rgb(var(--add) / 0.1);
   --diff-code-insert-text-color: rgb(var(--fg));
-  --diff-code-delete-background-color: #ffebe9;
+  --diff-code-delete-background-color: rgb(var(--del) / 0.1);
   --diff-code-delete-text-color: rgb(var(--fg));
-  --diff-code-insert-edit-background-color: #abf2bc;
+  --diff-code-insert-edit-background-color: rgb(var(--add) / 0.28);
   --diff-code-insert-edit-text-color: rgb(var(--fg));
-  --diff-code-delete-edit-background-color: #ffc1bd;
+  --diff-code-delete-edit-background-color: rgb(var(--del) / 0.28);
   --diff-code-delete-edit-text-color: rgb(var(--fg));
   --diff-code-selected-background-color: rgb(var(--accent) / 0.12);
   --diff-code-selected-text-color: rgb(var(--fg));
   --diff-omit-gutter-line-color: rgb(var(--border-strong));
   font-size: 12px;
-}
-.dark .diff-wrap {
-  --diff-gutter-insert-background-color: rgba(46, 160, 67, 0.4);
-  --diff-gutter-insert-text-color: #7ee787;
-  --diff-gutter-delete-background-color: rgba(248, 81, 73, 0.4);
-  --diff-gutter-delete-text-color: #ffa198;
-  --diff-code-insert-background-color: rgba(46, 160, 67, 0.15);
-  --diff-code-delete-background-color: rgba(248, 81, 73, 0.15);
-  --diff-code-insert-edit-background-color: rgba(46, 160, 67, 0.4);
-  --diff-code-delete-edit-background-color: rgba(248, 81, 73, 0.4);
 }
 .diff-wrap .diff {
   font-size: 12px;
@@ -461,7 +494,7 @@ button:active:not(:disabled),
   min-width: 3em;
 }
 .diff-wrap .diff-hunk-header {
-  background: rgba(56, 139, 253, 0.1);
+  background: rgb(var(--accent) / 0.08);
   color: rgb(var(--fg-subtle));
 }
 .diff-wrap .diff-hunk-header-gutter,

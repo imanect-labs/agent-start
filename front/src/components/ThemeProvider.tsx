@@ -22,10 +22,12 @@ const ThemeCtx = createContext<Ctx | null>(null);
 const STORAGE_KEY = "agent-start:theme";
 
 function readStored(): ThemeChoice {
-  if (typeof window === "undefined") return "system";
+  // Dark-first: with nothing stored we default to dark (Linear-style), matching
+  // the pre-paint bootstrap in index.html.
+  if (typeof window === "undefined") return "dark";
   const v = window.localStorage.getItem(STORAGE_KEY);
   if (v === "light" || v === "dark" || v === "system") return v;
-  return "system";
+  return "dark";
 }
 
 function systemPrefersDark(): boolean {
@@ -43,8 +45,8 @@ function applyClass(resolved: ResolvedTheme) {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   // `theme` is the user-chosen preference (incl. "system").
   // `resolved` is the concrete light/dark currently in effect.
-  const [theme, setThemeState] = useState<ThemeChoice>("system");
-  const [resolved, setResolved] = useState<ResolvedTheme>("light");
+  const [theme, setThemeState] = useState<ThemeChoice>("dark");
+  const [resolved, setResolved] = useState<ResolvedTheme>("dark");
 
   // First mount: hydrate from localStorage + system.
   useEffect(() => {

@@ -4,8 +4,8 @@ type Elevation = "flat" | "sm" | "md";
 
 const ELEVATION: Record<Elevation, string> = {
   flat: "",
-  sm: "shadow-sm",
-  md: "shadow-md",
+  sm: "shadow-[var(--shadow-sm),var(--elevate)]",
+  md: "shadow-[var(--shadow-md),var(--elevate)]",
 };
 
 type CardProps = HTMLAttributes<HTMLDivElement> & {

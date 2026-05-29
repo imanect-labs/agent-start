@@ -43,14 +43,14 @@ async function post(url: string, body: unknown) {
 }
 
 function fileStatusLabel(f: GitFile): { label: string; tone: string } {
-  if (f.untracked) return { label: "??", tone: "text-emerald-500" };
+  if (f.untracked) return { label: "??", tone: "text-add" };
   const x = f.xy[0];
   const y = f.xy[1];
   // Prefer the most informative single-char status.
-  if (x === "R" || y === "R") return { label: "R", tone: "text-blue-500" };
-  if (x === "A" || y === "A") return { label: "A", tone: "text-emerald-500" };
-  if (x === "D" || y === "D") return { label: "D", tone: "text-red-500" };
-  if (x === "M" || y === "M") return { label: "M", tone: "text-amber-500" };
+  if (x === "R" || y === "R") return { label: "R", tone: "text-accent-subtle" };
+  if (x === "A" || y === "A") return { label: "A", tone: "text-add" };
+  if (x === "D" || y === "D") return { label: "D", tone: "text-del" };
+  if (x === "M" || y === "M") return { label: "M", tone: "text-warn" };
   return { label: f.xy.trim() || "?", tone: "text-fg-faint" };
 }
 

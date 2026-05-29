@@ -167,8 +167,8 @@ export function MenuList({
       tabIndex={-1}
       onKeyDown={onKeyDown}
       className={[
-        "absolute z-50 min-w-[10rem]",
-        "rounded-lg border border-line bg-surface-elev shadow-lg",
+        "absolute z-50 min-w-[11rem]",
+        "rounded-lg border border-line bg-surface-elev/85 backdrop-blur-xl shadow-pop",
         "p-1",
         SIDE[side],
         ALIGN[align],
