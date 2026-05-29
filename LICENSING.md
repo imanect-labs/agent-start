@@ -52,7 +52,7 @@ Code under [`enterprise/`](./enterprise/) is licensed under the
   around these terms.
 
 Want a subscription, a trial, or just to talk through whether you need one?
-Email **licensing@imanect.app** (placeholder — update before launch).
+Email **goto@imanect.co.jp**.
 
 ## Contributing
 
