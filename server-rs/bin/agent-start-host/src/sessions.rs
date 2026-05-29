@@ -43,6 +43,9 @@ pub struct SessionDirectory {
     /// sessions so the WS handler can replay last-known terminal state
     /// without a live PtySession.
     pub history: Vec<u8>,
+    /// Short human-readable title derived from the initial task. Empty
+    /// until known; the sidebar falls back to the session name.
+    pub title: String,
 }
 
 impl SessionDirectory {
@@ -60,6 +63,53 @@ impl SessionDirectory {
             cli: self.cli.clone(),
             worktree_path: self.worktree_path.clone(),
             orig_path: self.orig_path.clone(),
+            title: self.title.clone(),
         }
+    }
+}
+
+/// Derive a short, sidebar-friendly session title from an initial prompt or
+/// the first chat message: take the first non-blank line, collapse internal
+/// whitespace, and truncate to a readable length. Returns an empty string
+/// when the input has no usable text.
+pub fn summarize_title(text: &str) -> String {
+    const MAX_CHARS: usize = 80;
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("");
+    let collapsed = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.chars().count() > MAX_CHARS {
+        let head: String = collapsed.chars().take(MAX_CHARS).collect();
+        format!("{}…", head.trim_end())
+    } else {
+        collapsed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::summarize_title;
+
+    #[test]
+    fn takes_first_non_blank_line_and_collapses_whitespace() {
+        assert_eq!(
+            summarize_title("\n\n  Fix   the   login bug  \nmore details here"),
+            "Fix the login bug"
+        );
+    }
+
+    #[test]
+    fn empty_input_yields_empty_title() {
+        assert_eq!(summarize_title("   \n\t  "), "");
+    }
+
+    #[test]
+    fn long_lines_are_truncated_with_ellipsis() {
+        let title = summarize_title(&"a".repeat(100));
+        assert!(title.ends_with('…'));
+        // 80 chars of content + the ellipsis.
+        assert_eq!(title.chars().count(), 81);
     }
 }

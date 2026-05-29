@@ -253,6 +253,10 @@ pub struct Session {
     pub worktree_path: String,
     #[serde(rename = "origPath")]
     pub orig_path: String,
+    /// Short human-readable title derived from the initial task. Empty
+    /// when not yet known; the frontend falls back to the session name.
+    #[serde(default)]
+    pub title: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

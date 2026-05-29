@@ -23,6 +23,10 @@ pub fn attach_persistence(state: Shared, session: Arc<ChatSession>) {
     let weak = Arc::downgrade(&session);
     tokio::spawn(async move {
         let mut last_sid = String::new();
+        // Set the sidebar title from the first user turn — but only once, and
+        // only for sessions that don't already have one (issue launches set
+        // it at creation from the prompt).
+        let mut title_attempted = false;
         while let Some(ev) = rx.recv().await {
             // Retry on transient SQLite failures (e.g. SQLITE_BUSY) so the
             // transcript stays lossless; give up after a bounded number of
@@ -54,6 +58,50 @@ pub fn attach_persistence(state: Shared, session: Arc<ChatSession>) {
                     }
                 }
             }
+
+            if !title_attempted && ev.role == "user_input" {
+                title_attempted = true;
+                // Only fill in a title the session is still missing; an
+                // issue launch already set one at creation time.
+                let needs_title = state
+                    .sessions
+                    .read()
+                    .get(&name)
+                    .map(|d| d.title.is_empty())
+                    .unwrap_or(false);
+                if needs_title {
+                    if let Some(text) = first_user_text(&ev.json) {
+                        let title = crate::sessions::summarize_title(&text);
+                        if !title.is_empty() {
+                            if let Some(d) = state.sessions.write().get_mut(&name) {
+                                d.title = title.clone();
+                            }
+                            if let Err(e) =
+                                state::update_session_title(&state.db, &name, &title).await
+                            {
+                                tracing::warn!(error = %e, session = %name, "failed to persist session title");
+                            }
+                        }
+                    }
+                }
+            }
         }
     });
+}
+
+/// Pull the first text block out of a synthesized `user_input` envelope
+/// (`{"type":"user_input","content":[{"type":"text","text":...}, …]}`).
+fn first_user_text(json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let content = value.get("content")?.as_array()?;
+    for block in content {
+        if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+            if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                if !text.trim().is_empty() {
+                    return Some(text.to_string());
+                }
+            }
+        }
+    }
+    None
 }

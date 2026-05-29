@@ -42,6 +42,10 @@ export type TmuxSession = {
   cli: string;
   worktreePath: string;
   origPath: string;
+  /** Short human-readable title derived from the agent's task (the initial
+   * prompt, or the first chat message). Empty/undefined until known — the
+   * row falls back to the session name. */
+  title?: string;
   /** Optimistic placeholder: the session is still being created on the
    * host. Rendered with a spinner and no stop button until the real
    * session arrives from /api/sessions. */
@@ -146,7 +150,9 @@ export function Sidebar({
         const projHit =
           g.project &&
           (g.project.name.toLowerCase().includes(q) || g.project.path.toLowerCase().includes(q));
-        const matchSessions = g.sessions.filter((s) => s.name.toLowerCase().includes(q));
+        const matchSessions = g.sessions.filter(
+          (s) => s.name.toLowerCase().includes(q) || (s.title ?? "").toLowerCase().includes(q),
+        );
         if (projHit) return g; // show whole group with all sessions
         if (matchSessions.length > 0) return { ...g, sessions: matchSessions };
         return null;
@@ -515,6 +521,15 @@ function SessionRow({
   const hasWorktree = !!session.worktreePath;
   const cliLabel = CLI_LABEL[session.cli] || session.cli || "claude";
   const pending = !!session.pending;
+  const title = session.title?.trim();
+  // Prefer the task title; fall back to the project basename while pending,
+  // and to the raw session name once we have nothing better.
+  const label = pending
+    ? session.path.split("/").filter(Boolean).pop() || "セッション"
+    : title || session.name;
+  // The title is prose, so render it in the UI font; the bare session name is
+  // an identifier, so keep it monospace.
+  const labelIsTitle = !pending && !!title;
   return (
     <li
       className={[
@@ -545,12 +560,14 @@ function SessionRow({
             <IconTerminal className="w-3 h-3 text-fg-faint shrink-0" />
           )}
           <span
+            title={labelIsTitle ? `${title}\n${session.name}` : session.name}
             className={[
-              "text-[12px] font-mono truncate",
+              "text-[12px] truncate",
+              labelIsTitle ? "" : "font-mono",
               session.stopped || pending ? "text-fg-subtle" : "",
             ].join(" ")}
           >
-            {pending ? session.path.split("/").filter(Boolean).pop() || "セッション" : session.name}
+            {label}
           </span>
           {session.stopped && !pending && (
             <span className="text-[9px] uppercase tracking-wider text-warn shrink-0">stopped</span>
