@@ -193,6 +193,36 @@ async fn handle_client_message(
                 mark_running(app, name).await;
             }
         }
+        ChatClientMessage::PermissionResponse {
+            request_id,
+            allow,
+            answers,
+            message,
+        } => {
+            if let Err(e) = session
+                .respond_permission(request_id, allow, answers, message)
+                .await
+            {
+                tracing::warn!(error = %e, session = %name, "permission response failed");
+            }
+        }
+        ChatClientMessage::SetPermissionMode { mode } => {
+            let was_dead = !session.is_alive();
+            if let Err(e) = session.set_permission_mode(mode.as_deref()).await {
+                tracing::warn!(error = %e, session = %name, "permission mode switch failed");
+                session.inject(
+                    serde_json::json!({
+                        "type": "chat_error",
+                        "message": format!("権限モードの切替に失敗しました: {e}"),
+                    }),
+                    false,
+                );
+                return;
+            }
+            if was_dead {
+                mark_running(app, name).await;
+            }
+        }
     }
 }
 

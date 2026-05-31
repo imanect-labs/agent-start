@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type {
+  AskQuestion,
   AssistantBlock,
   Connection,
   Draft,
   Lifecycle,
   OutgoingImage,
+  PermissionRequest,
   RenderMsg,
   ToolResult,
   UserContentBlock,
@@ -31,6 +33,11 @@ type State = {
   model: string | null;
   lifecycle: Lifecycle;
   error: string | null;
+  /** Pending interactive permission requests (AskUserQuestion / plan), in
+   *  arrival order, keyed by `requestId` (#95). */
+  perms: PermissionRequest[];
+  /** Current permission mode reported by the CLI (`"plan"`, `"default"`…). */
+  permissionMode: string | null;
 };
 
 type Action =
@@ -43,6 +50,10 @@ type Action =
   | { t: "model"; model: string | null }
   | { t: "lifecycle"; lifecycle: Lifecycle }
   | { t: "error"; message: string | null }
+  | { t: "permAdd"; req: PermissionRequest }
+  | { t: "permResolve"; requestId: string }
+  | { t: "permClear" }
+  | { t: "permissionMode"; mode: string | null }
   | { t: "resetTransient" };
 
 function reducer(state: State, action: Action): State {
@@ -76,6 +87,19 @@ function reducer(state: State, action: Action): State {
       return { ...state, lifecycle: action.lifecycle };
     case "error":
       return { ...state, error: action.message };
+    case "permAdd": {
+      // Dedupe by requestId so a reconnect replay doesn't double-add.
+      if (state.perms.some((p) => p.requestId === action.req.requestId)) return state;
+      return { ...state, perms: [...state.perms, action.req] };
+    }
+    case "permResolve": {
+      const perms = state.perms.filter((p) => p.requestId !== action.requestId);
+      return perms.length === state.perms.length ? state : { ...state, perms };
+    }
+    case "permClear":
+      return state.perms.length === 0 ? state : { ...state, perms: [] };
+    case "permissionMode":
+      return { ...state, permissionMode: action.mode };
     case "resetTransient":
       return { ...state, draft: null, generating: false };
     default:
@@ -92,7 +116,27 @@ const initialState: State = {
   model: null,
   lifecycle: "unknown",
   error: null,
+  perms: [],
+  permissionMode: null,
 };
+
+/** Parse a `chat_permission` envelope into a typed PermissionRequest (#95). */
+function parsePermission(env: Record<string, unknown>): PermissionRequest | null {
+  const requestId = env.request_id as string | undefined;
+  const tool = env.tool as string | undefined;
+  const input = env.input as Record<string, unknown> | undefined;
+  if (!requestId || !tool) return null;
+  if (tool === "AskUserQuestion") {
+    const questions = (input?.questions as AskQuestion[] | undefined) ?? [];
+    if (questions.length === 0) return null;
+    return { requestId, tool: "AskUserQuestion", questions };
+  }
+  if (tool === "ExitPlanMode") {
+    const plan = typeof input?.plan === "string" ? (input.plan as string) : "";
+    return { requestId, tool: "ExitPlanMode", plan };
+  }
+  return null;
+}
 
 /** Flatten a tool_result `content` (string | block[]) into display text. */
 function toolResultText(content: unknown): string {
@@ -234,6 +278,39 @@ export function useChatSocket(sessionName: string) {
     }
   }, []);
 
+  const respondPermission = useCallback(
+    (
+      requestId: string,
+      allow: boolean,
+      answers?: Record<string, string | string[]>,
+      message?: string,
+    ) => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: "permission_response",
+            request_id: requestId,
+            allow,
+            answers: answers ?? null,
+            message: message ?? null,
+          }),
+        );
+      }
+      // Optimistically retire the card; the backend also emits a
+      // `chat_permission_resolved` for any other connected client.
+      dispatch({ t: "permResolve", requestId });
+    },
+    [],
+  );
+
+  const setPermissionMode = useCallback((mode: string | null) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "set_permission_mode", mode }));
+    }
+  }, []);
+
   const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
 
   return {
@@ -242,6 +319,8 @@ export function useChatSocket(sessionName: string) {
     send,
     interrupt,
     setModel,
+    respondPermission,
+    setPermissionMode,
     reconnect,
   };
 }
@@ -292,6 +371,11 @@ function handleEnvelope(env: Record<string, unknown>, h: Handlers) {
       if (env.subtype === "init" && typeof env.model === "string") {
         dispatch({ t: "model", model: env.model });
       }
+      // `init` and `status` both report the live permission mode (plan vs
+      // default); track it so the composer toggle reflects reality (#95).
+      if (typeof env.permissionMode === "string") {
+        dispatch({ t: "permissionMode", mode: env.permissionMode });
+      }
       break;
     }
     case "stream_event": {
@@ -322,11 +406,25 @@ function handleEnvelope(env: Record<string, unknown>, h: Handlers) {
       dispatch({ t: "generating", on: false });
       break;
     }
+    case "chat_permission": {
+      const req = parsePermission(env);
+      if (req) dispatch({ t: "permAdd", req });
+      break;
+    }
+    case "chat_permission_resolved": {
+      const id = env.request_id as string | undefined;
+      if (id) dispatch({ t: "permResolve", requestId: id });
+      break;
+    }
     case "chat_status": {
       const st = env.state as string | undefined;
       if (st === "running") dispatch({ t: "lifecycle", lifecycle: "running" });
-      else if (st === "dead") dispatch({ t: "lifecycle", lifecycle: "dead" });
-      else if (st === "switching") dispatch({ t: "lifecycle", lifecycle: "switching" });
+      else if (st === "dead") {
+        dispatch({ t: "lifecycle", lifecycle: "dead" });
+        // A dead process can no longer answer pending requests; drop them so
+        // the UI doesn't show un-answerable cards.
+        dispatch({ t: "permClear" });
+      } else if (st === "switching") dispatch({ t: "lifecycle", lifecycle: "switching" });
       if (typeof env.model === "string") dispatch({ t: "model", model: env.model });
       break;
     }
