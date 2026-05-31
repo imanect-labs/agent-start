@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Menu, MenuButton, MenuItem, MenuList } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { useMediaQuery } from "@/lib/useMediaQuery";
 import type { ChatModelInfo } from "@/components/ChatView";
@@ -138,10 +139,7 @@ export function ChatComposer({
 
   return (
     <div
-      className={[
-        "border-t border-line bg-surface px-3 py-2.5 sm:px-4",
-        dragOver ? "ring-2 ring-accent/50 ring-inset" : "",
-      ].join(" ")}
+      className="border-t border-line bg-surface px-3 py-2.5 sm:px-4"
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -153,97 +151,107 @@ export function ChatComposer({
         if (e.dataTransfer.files.length) void addFiles(e.dataTransfer.files);
       }}
     >
-      {images.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-2">
-          {images.map((img) => (
-            <div key={img.id} className="relative group">
-              <img
-                src={img.thumb}
-                alt="添付"
-                className="h-14 w-14 rounded-md object-cover border border-line"
+      {/* Elevated composer card: focus ring + drag-over highlight in indigo. */}
+      <div
+        className={[
+          "rounded-lg border bg-surface shadow-sm transition-colors px-3 py-2.5",
+          "focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-ring/20",
+          dragOver ? "border-accent ring-2 ring-accent/50" : "border-line",
+        ].join(" ")}
+      >
+        {images.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {images.map((img) => (
+              <div key={img.id} className="relative group">
+                <img
+                  src={img.thumb}
+                  alt="添付"
+                  className="h-14 w-14 rounded object-cover border border-line"
+                />
+                <button
+                  type="button"
+                  aria-label="画像を削除"
+                  onClick={() => setImages((prev) => prev.filter((p) => p.id !== img.id))}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-surface-elev border border-line text-fg-subtle hover:text-fg flex items-center justify-center text-2xs shadow-sm"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <textarea
+          ref={taRef}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={onKeyDown}
+          onPaste={onPaste}
+          rows={1}
+          placeholder={dead ? "メッセージを送信して会話を再開…" : "メッセージを入力…"}
+          // 16px on touch devices stops iOS Safari from auto-zooming the page
+          // when the field gains focus (it zooms any input < 16px), so the
+          // coarse-pointer size is an intentional fixed exception to the scale.
+          className="w-full resize-none bg-transparent text-sm [@media(pointer:coarse)]:text-[16px] text-fg placeholder:text-fg-faint outline-none leading-relaxed max-h-[200px]"
+        />
+
+        <div className="flex items-center gap-2 mt-2">
+          <button
+            type="button"
+            aria-label="画像を添付"
+            title="画像を添付"
+            onClick={() => fileRef.current?.click()}
+            className="w-9 h-9 inline-flex items-center justify-center rounded text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
+          >
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="w-4 h-4">
+              <path
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                d="M13.5 7l-5 5a2 2 0 102.8 2.8l5-5a3.5 3.5 0 10-5-5l-5.3 5.3a5 5 0 107 7l4.5-4.5"
               />
+            </svg>
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept={ALLOWED.join(",")}
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) void addFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+
+          <ModelPicker
+            models={models}
+            current={currentModel}
+            onSelect={onSetModel}
+            disabled={disabled}
+          />
+
+          <div className="ml-auto flex items-center gap-2">
+            <SendKeyHint sendKey={sendKey} coarse={coarse} />
+            {generating ? (
               <button
                 type="button"
-                aria-label="画像を削除"
-                onClick={() => setImages((prev) => prev.filter((p) => p.id !== img.id))}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-surface-elev border border-line text-fg-subtle hover:text-fg flex items-center justify-center text-[11px] shadow-sm"
+                onClick={onInterrupt}
+                className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded bg-surface-muted text-fg border border-line-strong hover:bg-surface-elev transition-colors text-sm font-medium"
               >
-                ×
+                <span className="w-2.5 h-2.5 rounded-[2px] bg-fg animate-pulse" />
+                停止
               </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <textarea
-        ref={taRef}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        onPaste={onPaste}
-        rows={1}
-        placeholder={dead ? "メッセージを送信して会話を再開…" : "メッセージを入力…"}
-        // 16px on touch devices stops iOS Safari from auto-zooming the page
-        // when the field gains focus (it zooms any input < 16px).
-        className="w-full resize-none bg-transparent text-[14px] [@media(pointer:coarse)]:text-[16px] text-fg placeholder:text-fg-faint outline-none leading-relaxed max-h-[200px]"
-      />
-
-      <div className="flex items-center gap-2 mt-2">
-        <button
-          type="button"
-          aria-label="画像を添付"
-          title="画像を添付"
-          onClick={() => fileRef.current?.click()}
-          className="w-9 h-9 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
-        >
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="w-4 h-4">
-            <path
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              d="M13.5 7l-5 5a2 2 0 102.8 2.8l5-5a3.5 3.5 0 10-5-5l-5.3 5.3a5 5 0 107 7l4.5-4.5"
-            />
-          </svg>
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept={ALLOWED.join(",")}
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files) void addFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-
-        <ModelPicker
-          models={models}
-          current={currentModel}
-          onSelect={onSetModel}
-          disabled={disabled}
-        />
-
-        <div className="ml-auto flex items-center gap-2">
-          <SendKeyHint sendKey={sendKey} coarse={coarse} />
-          {generating ? (
-            <button
-              type="button"
-              onClick={onInterrupt}
-              className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg bg-surface-muted text-fg border border-line-strong hover:bg-surface-elev transition-colors text-[13px] font-medium"
-            >
-              <span className="w-2.5 h-2.5 rounded-[2px] bg-fg" />
-              停止
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!canSend}
-              className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg bg-accent text-accent-fg hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-[13px] font-medium"
-            >
-              送信
-            </button>
-          )}
+            ) : (
+              <button
+                type="button"
+                onClick={submit}
+                disabled={!canSend}
+                className="inline-flex items-center gap-1.5 h-9 px-4 rounded bg-accent text-accent-fg hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+              >
+                送信
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -253,7 +261,7 @@ export function ChatComposer({
 function SendKeyHint({ sendKey, coarse }: { sendKey: SendKey; coarse: boolean }) {
   if (coarse) return null;
   return (
-    <span className="hidden sm:inline text-[10px] text-fg-faint">
+    <span className="hidden sm:inline text-2xs text-fg-faint">
       {sendKey === "enter" ? "Enter で送信 / Shift+Enter 改行" : "Ctrl+Enter で送信"}
     </span>
   );
@@ -270,17 +278,6 @@ function ModelPicker({
   onSelect: (model: string) => void;
   disabled: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
-
   if (models.length === 0) return null;
   // `current` is usually the resolved id from system:init (e.g.
   // "claude-opus-4-7"); show a humanized name and match menu items by family.
@@ -288,44 +285,37 @@ function ModelPicker({
   const label = prettyModel(current);
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
+    <Menu>
+      <MenuButton
         disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-surface-muted border border-line text-[12px] text-fg-muted hover:text-fg hover:border-line-strong disabled:opacity-40 transition-colors"
         title="モデルを切り替え"
+        className="inline-flex items-center gap-1 h-7 px-2 rounded bg-surface-muted border border-line text-xs text-fg-muted hover:text-fg hover:border-line-strong disabled:opacity-40 transition-colors"
       >
         <span className="w-1.5 h-1.5 rounded-full bg-accent" />
         {label}
-      </button>
-      {open && (
-        <div className="absolute bottom-full left-0 mb-1.5 z-30 min-w-[160px] bg-surface-elev border border-line rounded-lg shadow-lg py-1">
-          {models.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                if (!isActive(m.id)) onSelect(m.id);
-              }}
-              className={[
-                "w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2",
-                isActive(m.id) ? "text-fg" : "text-fg-muted hover:bg-surface-muted",
-              ].join(" ")}
-            >
+      </MenuButton>
+      <MenuList side="top" className="min-w-[160px]">
+        {models.map((m) => (
+          <MenuItem
+            key={m.id}
+            active={isActive(m.id)}
+            leftIcon={
               <span
                 className={[
                   "w-1.5 h-1.5 rounded-full",
                   isActive(m.id) ? "bg-accent" : "bg-transparent",
                 ].join(" ")}
               />
-              {m.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+            }
+            onSelect={() => {
+              if (!isActive(m.id)) onSelect(m.id);
+            }}
+          >
+            {m.label}
+          </MenuItem>
+        ))}
+      </MenuList>
+    </Menu>
   );
 }
 

@@ -43,7 +43,7 @@ export function UpdateBanner() {
   return (
     <div
       role="status"
-      className="fixed inset-x-0 top-0 z-[150] flex items-center justify-center gap-2 border-b border-line bg-surface-elev px-3 py-1.5 text-[12px] text-fg safe-top"
+      className="fixed inset-x-0 top-0 z-[150] flex items-center justify-center gap-2 border-b border-line bg-surface-elev px-3 py-1.5 text-xs text-fg safe-top"
     >
       <span>
         Update available: <span className="font-medium">{info.latest}</span>{" "}

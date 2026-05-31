@@ -37,7 +37,7 @@ export function DeleteConfirmSheet({ target, onClose, onConfirm, busy }: Props) 
           <span className="ml-2">を停止する</span>
         </div>
         {hasWt && (
-          <div className="flex items-start justify-between gap-3 p-3.5 border border-amber-500/30 bg-amber-500/5 rounded-lg">
+          <div className="flex items-start justify-between gap-3 p-3.5 border border-warn/30 bg-warn-soft rounded-lg">
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-fg">worktree も削除する</div>
               <div className="text-xs text-fg-subtle break-all mt-1 font-mono">

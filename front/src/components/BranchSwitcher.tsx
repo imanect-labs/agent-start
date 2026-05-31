@@ -144,7 +144,7 @@ export function BranchSwitcher({
           <IconBranch className="w-3.5 h-3.5 text-fg-faint shrink-0" />
           <span className="font-mono truncate">{current?.name ?? "(detached)"}</span>
           {current && (current.ahead > 0 || current.behind > 0) && (
-            <span className="text-[10px] text-fg-faint shrink-0">
+            <span className="text-2xs text-fg-faint shrink-0">
               {current.ahead ? `↑${current.ahead}` : ""}
               {current.behind ? `↓${current.behind}` : ""}
             </span>
@@ -170,7 +170,7 @@ export function BranchSwitcher({
                     <span className="w-3 shrink-0 text-accent">
                       {b.current ? <IconCheck className="w-3 h-3" /> : null}
                     </span>
-                    <span className="font-mono text-[12px] truncate">{b.name}</span>
+                    <span className="font-mono text-xs truncate">{b.name}</span>
                   </button>
                   {!b.current && (
                     <button
@@ -195,7 +195,7 @@ export function BranchSwitcher({
                     if (e.key === "Enter") create();
                   }}
                   placeholder="新しいブランチ名"
-                  className="flex-1 min-w-0 rounded border border-line bg-surface px-2 py-1 text-[12px] font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+                  className="flex-1 min-w-0 rounded border border-line bg-surface px-2 py-1 text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
                 />
                 <button
                   type="button"
@@ -241,7 +241,7 @@ function SyncButton({
       type="button"
       disabled={busy}
       onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1 text-[11px] text-fg-muted hover:bg-surface-muted disabled:opacity-50"
+      className="inline-flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1 text-2xs text-fg-muted hover:bg-surface-muted disabled:opacity-50"
     >
       <IconRefresh className={`w-3 h-3 ${busy ? "animate-spin" : ""}`} />
       {label}

@@ -116,7 +116,7 @@ function FileLeaf({
     >
       <span className="w-3.5 shrink-0" />
       <span className="w-3.5 h-3.5 inline-block shrink-0" />
-      <span className="truncate text-fg-muted text-[12px]">{entry.name}</span>
+      <span className="truncate text-fg-muted text-xs">{entry.name}</span>
     </button>
   );
 }

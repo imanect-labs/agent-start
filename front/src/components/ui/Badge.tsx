@@ -1,35 +1,80 @@
 import { ReactNode } from "react";
 
-type Tone = "neutral" | "blue" | "emerald" | "amber" | "red" | "violet";
+// Tones derive entirely from design tokens (no saturated Tailwind hues).
+// Decorative aliases (indigo/blue/violet/emerald/amber/red) collapse onto the
+// semantic palette so callers keep working while the look stays disciplined.
+type Tone =
+  | "neutral"
+  | "accent"
+  | "success"
+  | "warn"
+  | "danger"
+  | "indigo"
+  | "blue"
+  | "violet"
+  | "emerald"
+  | "amber"
+  | "red";
+type Size = "xs" | "sm";
 
 const TONE: Record<Tone, string> = {
   neutral: "bg-surface-muted text-fg-muted border-line",
-  blue: "bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-300",
-  emerald: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20 dark:text-emerald-300",
-  amber: "bg-amber-500/10 text-amber-700 border-amber-500/30 dark:text-amber-300",
-  red: "bg-red-500/10 text-red-600 border-red-500/20 dark:text-red-300",
-  violet: "bg-violet-500/10 text-violet-700 border-violet-500/20 dark:text-violet-300",
+  accent: "bg-accent-soft text-accent-subtle border-accent/25",
+  success: "bg-success-soft text-success border-success/25",
+  warn: "bg-warn-soft text-warn border-warn/25",
+  danger: "bg-danger-soft text-danger border-danger/25",
+  // aliases → semantic
+  indigo: "bg-accent-soft text-accent-subtle border-accent/25",
+  blue: "bg-accent-soft text-accent-subtle border-accent/25",
+  violet: "bg-accent-soft text-accent-subtle border-accent/25",
+  emerald: "bg-success-soft text-success border-success/25",
+  amber: "bg-warn-soft text-warn border-warn/25",
+  red: "bg-danger-soft text-danger border-danger/25",
+};
+
+const DOT: Record<Tone, string> = {
+  neutral: "bg-fg-faint",
+  accent: "bg-accent",
+  success: "bg-success",
+  warn: "bg-warn",
+  danger: "bg-danger",
+  indigo: "bg-accent",
+  blue: "bg-accent",
+  violet: "bg-accent",
+  emerald: "bg-success",
+  amber: "bg-warn",
+  red: "bg-danger",
+};
+
+const SIZE: Record<Size, string> = {
+  xs: "text-2xs px-1.5 py-0.5 gap-1",
+  sm: "text-xs px-2 py-0.5 gap-1.5",
 };
 
 export function Badge({
   tone = "neutral",
+  size = "xs",
+  dot = false,
   children,
   className = "",
 }: {
   tone?: Tone;
-  children: ReactNode;
+  size?: Size;
+  /** Render a leading status dot in the tone color. */
+  dot?: boolean;
+  children?: ReactNode;
   className?: string;
 }) {
   return (
     <span
       className={[
-        "inline-flex items-center gap-1",
-        "text-[10px] font-medium leading-none",
-        "px-1.5 py-1 rounded border",
+        "inline-flex items-center font-medium leading-none rounded-sm border",
+        SIZE[size],
         TONE[tone],
         className,
       ].join(" ")}
     >
+      {dot && <span className={["inline-block w-1.5 h-1.5 rounded-full", DOT[tone]].join(" ")} />}
       {children}
     </span>
   );

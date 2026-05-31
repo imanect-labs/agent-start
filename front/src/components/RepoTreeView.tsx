@@ -48,7 +48,7 @@ export function RepoTreeView({
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto scroll-thin p-2 text-[13px]">
+    <div className="flex-1 min-h-0 overflow-auto scroll-thin p-2 text-xs">
       {entries.map((e) => (
         <Node key={e.path} cwd={cwd} entry={e} depth={0} onOpenFile={onOpenFile} />
       ))}
@@ -108,10 +108,7 @@ function Node({
       {open && (
         <div>
           {isLoading && (
-            <div
-              className="text-[11px] text-fg-faint"
-              style={{ paddingLeft: (depth + 1) * 14 + 22 }}
-            >
+            <div className="text-2xs text-fg-faint" style={{ paddingLeft: (depth + 1) * 14 + 22 }}>
               …
             </div>
           )}

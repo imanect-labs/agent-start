@@ -29,20 +29,67 @@ const config: Config = {
           DEFAULT: rgb("accent"),
           hover: rgb("accent-hover"),
           fg: rgb("accent-fg"),
+          soft: rgb("accent-soft"),
+          subtle: rgb("accent-subtle"),
         },
+        neutral: {
+          strong: rgb("neutral-strong"),
+          "strong-fg": rgb("neutral-strong-fg"),
+        },
+        link: rgb("link"),
         danger: {
           DEFAULT: rgb("danger"),
           fg: rgb("danger-fg"),
           soft: rgb("danger-soft"),
         },
-        warn: rgb("warn"),
-        success: rgb("success"),
+        warn: {
+          DEFAULT: rgb("warn"),
+          soft: rgb("warn-soft"),
+        },
+        success: {
+          DEFAULT: rgb("success"),
+          soft: rgb("success-soft"),
+        },
+        add: {
+          DEFAULT: rgb("add"),
+          soft: rgb("add-soft"),
+        },
+        del: {
+          DEFAULT: rgb("del"),
+          soft: rgb("del-soft"),
+        },
       },
       ringColor: {
         DEFAULT: rgb("ring"),
       },
+      fontSize: {
+        // Unified type scale (retires arbitrary text-[Npx] usages).
+        // Each entry: [size, lineHeight].
+        "2xs": ["0.6875rem", { lineHeight: "1rem" }], // 11 / 16
+        xs: ["0.75rem", { lineHeight: "1rem" }], // 12 / 16
+        sm: ["0.84375rem", { lineHeight: "1.25rem" }], // 13.5 / 20
+        base: ["0.9375rem", { lineHeight: "1.5rem" }], // 15 / 24
+        lg: ["1.125rem", { lineHeight: "1.625rem" }], // 18 / 26
+        xl: ["1.375rem", { lineHeight: "1.875rem" }], // 22 / 30
+        "2xl": ["1.75rem", { lineHeight: "2.125rem" }], // 28 / 34
+      },
+      boxShadow: {
+        xs: "var(--shadow-xs)",
+        sm: "var(--shadow-sm)",
+        md: "var(--shadow-md)",
+        lg: "var(--shadow-lg)",
+        pop: "var(--shadow-pop)",
+        elevate: "var(--elevate)",
+      },
+      borderRadius: {
+        sm: "var(--radius-sm)",
+        DEFAULT: "var(--radius)",
+        lg: "var(--radius-lg)",
+        xl: "var(--radius-xl)",
+      },
       fontFamily: {
         sans: [
+          "Geist Variable",
           "ui-sans-serif",
           "system-ui",
           "-apple-system",
@@ -54,6 +101,7 @@ const config: Config = {
           "sans-serif",
         ],
         mono: [
+          "Geist Mono Variable",
           "ui-monospace",
           "SFMono-Regular",
           "Menlo",

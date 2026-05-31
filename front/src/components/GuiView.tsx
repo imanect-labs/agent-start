@@ -99,7 +99,7 @@ sudo pacman -S tigervnc novnc python-websockify`}
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-app">
-      <div className="px-3 py-1.5 text-[11px] text-fg-faint border-b border-line">
+      <div className="px-3 py-1.5 text-2xs text-fg-faint border-b border-line">
         <code>DISPLAY=:{state.display}</code> でセッション内から GUI アプリを起動できます
       </div>
       <iframe

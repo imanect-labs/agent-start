@@ -20,15 +20,17 @@ const fetcher = (url: string) =>
     return json;
   });
 
+// Lane colors come from the harmonized --lane-N tokens (theme-aware) rather
+// than raw hex, so the graph matches the rest of the palette in both themes.
 const LANE_COLORS = [
-  "#3b82f6",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#ec4899",
-  "#14b8a6",
-  "#eab308",
+  "rgb(var(--lane-1))",
+  "rgb(var(--lane-2))",
+  "rgb(var(--lane-3))",
+  "rgb(var(--lane-4))",
+  "rgb(var(--lane-5))",
+  "rgb(var(--lane-6))",
+  "rgb(var(--lane-7))",
+  "rgb(var(--lane-8))",
 ];
 
 const ROW_H = 44;
@@ -151,7 +153,7 @@ export function CommitGraphView({ cwd }: { cwd: string }) {
                 cy={cy}
                 r={4}
                 fill={LANE_COLORS[row.lane % LANE_COLORS.length]}
-                stroke="var(--color-surface, #fff)"
+                stroke="rgb(var(--app))"
                 strokeWidth={1.5}
               />
             );
@@ -170,17 +172,15 @@ export function CommitGraphView({ cwd }: { cwd: string }) {
                 {row.c.refs.map((r) => (
                   <span
                     key={r}
-                    className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20"
+                    className="shrink-0 text-2xs font-mono px-1.5 py-0.5 rounded-full bg-accent/10 text-accent border border-accent/20"
                   >
                     {r}
                   </span>
                 ))}
-                <span className="text-[13px] truncate flex-1 min-w-0">{row.c.subject}</span>
-                <span className="shrink-0 font-mono text-[11px] text-fg-faint">
-                  {row.c.shortSha}
-                </span>
+                <span className="text-xs truncate flex-1 min-w-0">{row.c.subject}</span>
+                <span className="shrink-0 font-mono text-2xs text-fg-faint">{row.c.shortSha}</span>
               </div>
-              <div className="text-[11px] text-fg-faint truncate">
+              <div className="text-2xs text-fg-faint truncate">
                 {row.c.authorName} · {relTime(row.c.authoredAt)}
               </div>
             </li>

@@ -89,7 +89,7 @@ function SubTab({
       type="button"
       onClick={onClick}
       className={[
-        "px-2.5 py-1 rounded text-[11px] uppercase tracking-wider font-medium transition-colors",
+        "px-2.5 py-1 rounded text-2xs uppercase tracking-wider font-medium transition-colors",
         active ? "bg-surface-muted text-fg" : "text-fg-subtle hover:text-fg",
       ].join(" ")}
     >

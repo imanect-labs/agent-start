@@ -146,7 +146,7 @@ export function IssuesSheet({ isOpen, projectName, projectPath, onClose, onLaunc
                         onClick={() => setSelected(it.number)}
                         className="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-md border border-line bg-surface hover:bg-surface-muted transition-colors"
                       >
-                        <span className="text-[11px] font-mono text-fg-faint shrink-0 tabular-nums">
+                        <span className="text-2xs font-mono text-fg-faint shrink-0 tabular-nums">
                           #{it.number}
                         </span>
                         <span className="flex-1 min-w-0 text-sm text-fg truncate">{it.title}</span>
@@ -193,7 +193,7 @@ export function IssuesSheet({ isOpen, projectName, projectPath, onClose, onLaunc
               <h2 className="text-base font-semibold text-fg flex-1 min-w-0">{detail.title}</h2>
               <Badge tone={detail.state === "OPEN" ? "emerald" : "violet"}>{detail.state}</Badge>
             </div>
-            <div className="text-[11px] text-fg-faint mb-4">
+            <div className="text-2xs text-fg-faint mb-4">
               #{detail.number} · {detail.author}
               {detail.labels.length > 0 && (
                 <span className="ml-2 inline-flex gap-1">

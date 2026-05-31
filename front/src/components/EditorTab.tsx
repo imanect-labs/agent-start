@@ -6,7 +6,7 @@ import { json } from "@codemirror/lang-json";
 import { rust } from "@codemirror/lang-rust";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Spinner } from "@/components/ui";
+import { ErrorState, Spinner } from "@/components/ui";
 import { useToast } from "@/components/Toast";
 import { useTheme } from "@/components/ThemeProvider";
 
@@ -48,6 +48,7 @@ export function EditorTab({ path, view, onViewChange, onDirtyChange }: Props) {
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const initialContentRef = useRef<string>("");
 
   useEffect(() => {
@@ -75,7 +76,7 @@ export function EditorTab({ path, view, onViewChange, onDirtyChange }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, reloadKey]);
 
   const dirty = content !== initialContentRef.current;
   useEffect(() => {
@@ -150,8 +151,8 @@ export function EditorTab({ path, view, onViewChange, onDirtyChange }: Props) {
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-app">
       <div className="px-3 py-1.5 border-b border-line bg-surface flex items-center gap-2">
-        <div className="text-[11px] font-mono text-fg-subtle truncate flex-1">{path}</div>
-        {dirty && <span className="text-[10px] text-warn">未保存</span>}
+        <div className="text-2xs font-mono text-fg-subtle truncate flex-1">{path}</div>
+        {dirty && <span className="text-2xs text-warn">未保存</span>}
         <div className="inline-flex rounded-md border border-line overflow-hidden">
           <ViewToggle active={view === "edit"} onClick={() => onViewChange("edit")}>
             編集
@@ -170,7 +171,7 @@ export function EditorTab({ path, view, onViewChange, onDirtyChange }: Props) {
           onClick={save}
           disabled={!dirty || saving}
           className={[
-            "h-7 min-w-[68px] inline-flex items-center justify-center px-2.5 text-[12px] rounded-md border transition-colors",
+            "h-7 min-w-[68px] inline-flex items-center justify-center px-2.5 text-xs rounded-md border transition-colors",
             !dirty || saving
               ? "border-line text-fg-faint cursor-not-allowed"
               : "border-accent bg-accent text-accent-fg hover:opacity-90",
@@ -187,7 +188,11 @@ export function EditorTab({ path, view, onViewChange, onDirtyChange }: Props) {
             <Spinner size="md" />
           </div>
         ) : error ? (
-          <div className="p-4 text-sm text-danger">読み込めません: {error}</div>
+          <ErrorState
+            title="ファイルを読み込めません"
+            description={error}
+            onRetry={() => setReloadKey((k) => k + 1)}
+          />
         ) : view === "preview" && isMarkdown ? (
           <div className="md-preview p-6 overflow-y-auto h-full max-w-3xl mx-auto text-sm">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
@@ -232,7 +237,7 @@ function ViewToggle({
       disabled={disabled}
       title={title}
       className={[
-        "px-2.5 h-7 text-[12px] transition-colors",
+        "px-2.5 h-7 text-xs transition-colors",
         active
           ? "bg-surface-muted text-fg"
           : disabled
