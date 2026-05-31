@@ -272,15 +272,22 @@ export function IndexPage() {
     });
   }, []);
 
-  // Drop optimistic launched rows once the real /api/sessions list includes
-  // them, so the authoritative row (with worktree/title/attached state) takes
-  // over and we never render a duplicate.
+  // Drop an optimistic launched row once the real /api/sessions list includes
+  // it AND the entry has aged past a short grace window. The grace matters: a
+  // poll dispatched before this session existed can resolve *after* the first
+  // one that includes it and briefly drop the row again — pruning on the very
+  // first appearance would leave that gap uncovered and the row would chatter
+  // (gone → back → gone). While the entry lingers the sessions memo dedupes it
+  // against the real row, so there's no duplicate; it only fills stale gaps.
   useEffect(() => {
     if (launchedSessions.length === 0) return;
     const realNames = new Set(realSessions.map((s) => s.name));
-    if (launchedSessions.some((s) => realNames.has(s.name))) {
-      setLaunchedSessions((prev) => prev.filter((s) => !realNames.has(s.name)));
-    }
+    const GRACE_MS = 6000;
+    const now = Date.now();
+    const next = launchedSessions.filter(
+      (s) => !(realNames.has(s.name) && now - s.createdAt > GRACE_MS),
+    );
+    if (next.length !== launchedSessions.length) setLaunchedSessions(next);
   }, [realSessions, launchedSessions]);
 
   const selectTab = useCallback(
