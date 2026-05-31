@@ -37,12 +37,6 @@ type PendingSession = {
   cli: string;
   createWorktree: boolean;
   createdAt: number;
-  /** Real session name assigned by the host (known after POST succeeds). The
-   *  placeholder is kept — still showing the launch skeleton — until a session
-   *  with this name actually appears in /api/sessions, at which point a
-   *  reconciliation effect adopts it. This avoids any frame where the active
-   *  id resolves to nothing and the welcome screen flashes. */
-  realName?: string;
 };
 
 function makePendingId(): string {
@@ -112,6 +106,10 @@ export function IndexPage() {
   // flight. The host assigns the real name, so we track these by a temporary
   // id and reconcile when the response arrives.
   const [pendingSessions, setPendingSessions] = useState<PendingSession[]>([]);
+  // Sessions whose POST has succeeded but that may not be in /api/sessions yet
+  // (a revalidation can dedupe against an in-flight poll and resolve stale).
+  // Merged into the list poll-proof until the real row lands, then pruned.
+  const [launchedSessions, setLaunchedSessions] = useState<TmuxSession[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   // Names of sessions whose DELETE is in flight. They are hidden from the
   // list immediately and stay hidden even if a background poll returns
@@ -184,6 +182,15 @@ export function IndexPage() {
         s.name === restarting && s.stopped ? { ...s, stopped: false } : s,
       );
     }
+    // Merge just-launched sessions that the real list hasn't surfaced yet so
+    // the row appears the instant POST succeeds, regardless of poll timing.
+    if (launchedSessions.length > 0) {
+      const realNames = new Set(visible.map((s) => s.name));
+      const extra = launchedSessions.filter(
+        (s) => !realNames.has(s.name) && !removingSessions.has(s.name),
+      );
+      if (extra.length > 0) visible = [...extra, ...visible];
+    }
     if (pendingSessions.length === 0) return visible;
     const placeholders: TmuxSession[] = pendingSessions.map((p) => ({
       name: p.tempId,
@@ -196,7 +203,7 @@ export function IndexPage() {
       pending: true,
     }));
     return [...placeholders, ...visible];
-  }, [realSessions, pendingSessions, removingSessions, restarting]);
+  }, [realSessions, pendingSessions, removingSessions, restarting, launchedSessions]);
 
   const chatClis = useMemo(
     () => new Set((configData?.clis ?? []).filter((c) => c.mode === "chat").map((c) => c.key)),
@@ -265,20 +272,16 @@ export function IndexPage() {
     });
   }, []);
 
-  // Adopt an optimistic placeholder once its real session shows up in
-  // /api/sessions: focus it, seed its tabs, then drop the placeholder. Holding
-  // the placeholder (which still renders the launch skeleton) until the real
-  // row exists guarantees the main pane never falls back to the welcome screen
-  // in the gap between "launching" and "launched".
+  // Drop optimistic launched rows once the real /api/sessions list includes
+  // them, so the authoritative row (with worktree/title/attached state) takes
+  // over and we never render a duplicate.
   useEffect(() => {
-    const ready = pendingSessions.filter(
-      (p) => p.realName && realSessions.some((s) => s.name === p.realName),
-    );
-    if (ready.length === 0) return;
-    for (const p of ready) openSession(p.realName as string, p.cli);
-    const adopted = new Set(ready.map((p) => p.tempId));
-    setPendingSessions((prev) => prev.filter((p) => !adopted.has(p.tempId)));
-  }, [pendingSessions, realSessions, openSession]);
+    if (launchedSessions.length === 0) return;
+    const realNames = new Set(realSessions.map((s) => s.name));
+    if (launchedSessions.some((s) => realNames.has(s.name))) {
+      setLaunchedSessions((prev) => prev.filter((s) => !realNames.has(s.name)));
+    }
+  }, [realSessions, launchedSessions]);
 
   const selectTab = useCallback(
     (tabId: string) => {
@@ -584,18 +587,34 @@ export function IndexPage() {
         description: json.name,
         color: "success",
       });
-      // Tag the placeholder with the real session name and pull in the list.
-      // The reconciliation effect adopts the placeholder (focus + tabs) and
-      // drops it only once the real session is actually present, so the main
-      // pane goes Pending → real with no welcome-screen gap. If the name is
-      // missing (shouldn't happen) just drop the placeholder.
-      await mutate("/api/sessions");
       if (typeof json.name === "string") {
         const realName: string = json.name;
         const realCli: string = typeof json.cli === "string" ? json.cli : o.cli;
-        setPendingSessions((prev) =>
-          prev.map((p) => (p.tempId === tempId ? { ...p, realName, cli: realCli } : p)),
-        );
+        const worktreePath: string = typeof json.worktreePath === "string" ? json.worktreePath : "";
+        const cwd: string = typeof json.cwd === "string" ? json.cwd : projectPath;
+        // Adopt the real session immediately. We can't rely on a revalidation
+        // here: `mutate("/api/sessions")` can dedupe against an in-flight poll
+        // dispatched before this session existed and resolve stale, so the row
+        // wouldn't show until the next 5s poll — leaving the launch skeleton
+        // (and the sidebar placeholder) lingering. Instead push a poll-proof
+        // optimistic row that the sessions memo merges in until the real list
+        // catches up (see `launchedSessions`), focus it, and drop the spinner.
+        const launched: TmuxSession = {
+          name: realName,
+          path: worktreePath || cwd,
+          createdAt: Date.now(),
+          attached: false,
+          cli: realCli,
+          worktreePath,
+          origPath: worktreePath ? projectPath : "",
+          title: "",
+        };
+        setLaunchedSessions((prev) => [...prev.filter((s) => s.name !== realName), launched]);
+        openSession(realName, realCli);
+        setPendingSessions((prev) => prev.filter((p) => p.tempId !== tempId));
+        // Pull authoritative data (worktree badge, title, …) in the background;
+        // the optimistic row is poll-proof until it lands.
+        mutate("/api/sessions");
       } else {
         setPendingSessions((prev) => prev.filter((p) => p.tempId !== tempId));
       }
@@ -665,6 +684,10 @@ export function IndexPage() {
     // drop its tab state, deselect it, and close the sheet. The DELETE then
     // runs in the background; on failure we restore the above and surface a toast.
     setRemovingSessions((prev) => new Set(prev).add(targetName));
+    // Also drop any optimistic launched row for it, otherwise it would
+    // reappear once `removingSessions` is cleared but the poll hasn't yet
+    // dropped the (now-deleted) session.
+    setLaunchedSessions((prev) => prev.filter((s) => s.name !== targetName));
     setPerSession((prev) => {
       if (!prev[targetName]) return prev;
       const next = { ...prev };
