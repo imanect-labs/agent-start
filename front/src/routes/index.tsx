@@ -37,6 +37,12 @@ type PendingSession = {
   cli: string;
   createWorktree: boolean;
   createdAt: number;
+  /** Real session name assigned by the host (known after POST succeeds). The
+   *  placeholder is kept — still showing the launch skeleton — until a session
+   *  with this name actually appears in /api/sessions, at which point a
+   *  reconciliation effect adopts it. This avoids any frame where the active
+   *  id resolves to nothing and the welcome screen flashes. */
+  realName?: string;
 };
 
 function makePendingId(): string {
@@ -258,6 +264,21 @@ export function IndexPage() {
       return { ...prev, [name]: { tabs: [tab], activeTabId: id } };
     });
   }, []);
+
+  // Adopt an optimistic placeholder once its real session shows up in
+  // /api/sessions: focus it, seed its tabs, then drop the placeholder. Holding
+  // the placeholder (which still renders the launch skeleton) until the real
+  // row exists guarantees the main pane never falls back to the welcome screen
+  // in the gap between "launching" and "launched".
+  useEffect(() => {
+    const ready = pendingSessions.filter(
+      (p) => p.realName && realSessions.some((s) => s.name === p.realName),
+    );
+    if (ready.length === 0) return;
+    for (const p of ready) openSession(p.realName as string, p.cli);
+    const adopted = new Set(ready.map((p) => p.tempId));
+    setPendingSessions((prev) => prev.filter((p) => !adopted.has(p.tempId)));
+  }, [pendingSessions, realSessions, openSession]);
 
   const selectTab = useCallback(
     (tabId: string) => {
@@ -563,12 +584,21 @@ export function IndexPage() {
         description: json.name,
         color: "success",
       });
-      // Pull in the real session, then switch the active session to it before
-      // dropping the placeholder so the main pane never flashes the welcome
-      // screen during the swap.
+      // Tag the placeholder with the real session name and pull in the list.
+      // The reconciliation effect adopts the placeholder (focus + tabs) and
+      // drops it only once the real session is actually present, so the main
+      // pane goes Pending → real with no welcome-screen gap. If the name is
+      // missing (shouldn't happen) just drop the placeholder.
       await mutate("/api/sessions");
-      if (typeof json.name === "string") openSession(json.name, json.cli);
-      setPendingSessions((prev) => prev.filter((p) => p.tempId !== tempId));
+      if (typeof json.name === "string") {
+        const realName: string = json.name;
+        const realCli: string = typeof json.cli === "string" ? json.cli : o.cli;
+        setPendingSessions((prev) =>
+          prev.map((p) => (p.tempId === tempId ? { ...p, realName, cli: realCli } : p)),
+        );
+      } else {
+        setPendingSessions((prev) => prev.filter((p) => p.tempId !== tempId));
+      }
     } catch (e) {
       // Roll back the placeholder and leave the user where they were.
       setPendingSessions((prev) => prev.filter((p) => p.tempId !== tempId));
