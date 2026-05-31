@@ -474,7 +474,14 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
                 match tokio::fs::read(&index_path).await {
                     Ok(body) => (
                         StatusCode::OK,
-                        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                        [
+                            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                            // index.html references content-hashed bundles, so it
+                            // must never be served stale — otherwise the browser
+                            // keeps loading an old bundle after a redeploy. Force
+                            // revalidation (the hashed assets stay cacheable).
+                            (header::CACHE_CONTROL, "no-cache, must-revalidate"),
+                        ],
                         body,
                     )
                         .into_response(),
@@ -587,7 +594,12 @@ async fn serve_embedded_index(uri: Uri) -> axum::response::Response {
     match FrontAssets::get("index.html") {
         Some(file) => (
             StatusCode::OK,
-            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            [
+                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                // Never serve a stale index.html — it points at content-hashed
+                // bundles, so a cached copy would pin the browser to old JS.
+                (header::CACHE_CONTROL, "no-cache, must-revalidate"),
+            ],
             file.data.into_owned(),
         )
             .into_response(),
