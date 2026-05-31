@@ -50,6 +50,9 @@ export type TmuxSession = {
    * host. Rendered with a spinner and no stop button until the real
    * session arrives from /api/sessions. */
   pending?: boolean;
+  /** A DELETE is in flight for this session. The row stays visible with a
+   * loading indicator until the host confirms removal, then it drops out. */
+  deleting?: boolean;
 };
 
 const CLI_LABEL: Record<string, string> = {
@@ -521,6 +524,7 @@ function SessionRow({
   const hasWorktree = !!session.worktreePath;
   const cliLabel = CLI_LABEL[session.cli] || session.cli || "claude";
   const pending = !!session.pending;
+  const deleting = !!session.deleting;
   const title = session.title?.trim();
   // Prefer the task title; fall back to the project basename while pending,
   // and to the raw session name once we have nothing better.
@@ -534,12 +538,13 @@ function SessionRow({
     <li
       className={[
         "group ml-4 flex items-start gap-1.5 px-1.5 py-2 rounded-md min-h-[44px]",
-        "cursor-pointer",
+        deleting ? "cursor-default opacity-60" : "cursor-pointer",
         active ? "bg-accent/10 text-fg" : "hover:bg-surface-muted text-fg-muted",
       ].join(" ")}
-      onClick={onOpen}
+      onClick={deleting ? undefined : onOpen}
+      aria-busy={deleting || undefined}
     >
-      {pending ? (
+      {pending || deleting ? (
         <span className="mt-1 inline-flex w-2 h-2 items-center justify-center shrink-0">
           <Spinner size="xs" />
         </span>
@@ -580,6 +585,11 @@ function SessionRow({
               <span>·</span>
               <span className="text-warn">起動中…</span>
             </>
+          ) : deleting ? (
+            <>
+              <span>·</span>
+              <span className="text-danger">削除中…</span>
+            </>
           ) : (
             <>
               <span>·</span>
@@ -588,7 +598,7 @@ function SessionRow({
           )}
         </div>
       </div>
-      {!pending && (
+      {!pending && !deleting && (
         <button
           type="button"
           onClick={(e) => {

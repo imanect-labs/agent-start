@@ -111,11 +111,14 @@ export function IndexPage() {
   // Merged into the list poll-proof until the real row lands, then pruned.
   const [launchedSessions, setLaunchedSessions] = useState<TmuxSession[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
-  // Names of sessions whose DELETE is in flight. They are hidden from the
-  // list immediately and stay hidden even if a background poll returns
-  // before the (slow) DELETE finishes — an optimistic cache mutate alone
-  // would get clobbered by that poll and the row would flicker back.
-  const [removingSessions, setRemovingSessions] = useState<Set<string>>(() => new Set());
+  // Sessions whose DELETE is in flight, keyed by name → a snapshot of the row.
+  // The row stays visible with a loading indicator until the host confirms
+  // removal, then it drops out. We keep the snapshot because the host removes
+  // the session from its map before the (slow) worktree teardown finishes, so
+  // a poll mid-delete would otherwise drop the row before we're done.
+  const [deletingSessions, setDeletingSessions] = useState<Map<string, TmuxSession>>(
+    () => new Map(),
+  );
   const [addOpen, setAddOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
 
@@ -168,15 +171,26 @@ export function IndexPage() {
   // main pane reflect a launch the instant the user confirms it, before the
   // host has finished creating the PTY (and worktree).
   const sessions = useMemo<TmuxSession[]>(() => {
-    let visible =
-      removingSessions.size === 0
-        ? realSessions
-        : realSessions.filter((s) => !removingSessions.has(s.name));
+    let visible = realSessions;
+    // A DELETE is in flight: flag the row so it renders a loading state, and
+    // keep it visible from a snapshot even if a poll already dropped it (the
+    // host removes the session before the slow worktree teardown finishes).
+    if (deletingSessions.size > 0) {
+      const present = new Set(realSessions.map((s) => s.name));
+      visible = realSessions.map((s) =>
+        deletingSessions.has(s.name) ? { ...s, deleting: true } : s,
+      );
+      const orphaned: TmuxSession[] = [];
+      for (const [name, snap] of deletingSessions) {
+        if (!present.has(name)) orphaned.push({ ...snap, deleting: true });
+      }
+      if (orphaned.length > 0) visible = [...visible, ...orphaned];
+    }
     // A restart is in flight: keep this session shown as live (stopped:false)
     // even if a background poll still reports it stopped because the host
     // hasn't finished rebuilding the PTY. Without this the row (and terminal)
     // flickers stopped→live→stopped→live until the restart completes — the
-    // same poll-clobber the delete flow avoids with `removingSessions`.
+    // same poll-clobber the delete flow avoids by snapshotting deleting rows.
     if (restarting) {
       visible = visible.map((s) =>
         s.name === restarting && s.stopped ? { ...s, stopped: false } : s,
@@ -187,7 +201,7 @@ export function IndexPage() {
     if (launchedSessions.length > 0) {
       const realNames = new Set(visible.map((s) => s.name));
       const extra = launchedSessions.filter(
-        (s) => !realNames.has(s.name) && !removingSessions.has(s.name),
+        (s) => !realNames.has(s.name) && !deletingSessions.has(s.name),
       );
       if (extra.length > 0) visible = [...extra, ...visible];
     }
@@ -203,7 +217,7 @@ export function IndexPage() {
       pending: true,
     }));
     return [...placeholders, ...visible];
-  }, [realSessions, pendingSessions, removingSessions, restarting, launchedSessions]);
+  }, [realSessions, pendingSessions, deletingSessions, restarting, launchedSessions]);
 
   const chatClis = useMemo(
     () => new Set((configData?.clis ?? []).filter((c) => c.mode === "chat").map((c) => c.key)),
@@ -670,10 +684,10 @@ export function IndexPage() {
     [toast],
   );
 
-  const unhideSession = useCallback((name: string) => {
-    setRemovingSessions((prev) => {
+  const clearDeleting = useCallback((name: string) => {
+    setDeletingSessions((prev) => {
       if (!prev.has(name)) return prev;
-      const next = new Set(prev);
+      const next = new Map(prev);
       next.delete(name);
       return next;
     });
@@ -682,26 +696,27 @@ export function IndexPage() {
   const handleStopConfirm = async (deleteWorktree: boolean) => {
     if (!deleteTarget) return;
     const targetName = deleteTarget.name;
-    // Snapshot what we're about to optimistically drop so a failed DELETE can
-    // restore it fully — otherwise the row comes back without its tabs and the
-    // user is left on the welcome screen.
-    const removedTabs = perSession[targetName];
-    const wasActive = activeSession === targetName;
-    // Reflect the removal in the UI immediately: hide the row (poll-proof),
-    // drop its tab state, deselect it, and close the sheet. The DELETE then
-    // runs in the background; on failure we restore the above and surface a toast.
-    setRemovingSessions((prev) => new Set(prev).add(targetName));
-    // Also drop any optimistic launched row for it, otherwise it would
-    // reappear once `removingSessions` is cleared but the poll hasn't yet
-    // dropped the (now-deleted) session.
-    setLaunchedSessions((prev) => prev.filter((s) => s.name !== targetName));
-    setPerSession((prev) => {
-      if (!prev[targetName]) return prev;
-      const next = { ...prev };
-      delete next[targetName];
+    // Loading → confirmed → removed. Keep the row visible with a loading
+    // indicator (from a snapshot, so a poll dropping it mid-delete can't make
+    // it vanish early) and close the sheet. Only once the host confirms do we
+    // drop the tabs/selection and let the row fall out of the list.
+    const snapshot = sessions.find((s) => s.name === targetName);
+    setDeletingSessions((prev) => {
+      const next = new Map(prev);
+      next.set(
+        targetName,
+        snapshot ?? {
+          name: targetName,
+          path: deleteTarget.worktreePath || deleteTarget.origPath || "",
+          createdAt: 0,
+          attached: false,
+          cli: "",
+          worktreePath: deleteTarget.worktreePath,
+          origPath: deleteTarget.origPath,
+        },
+      );
       return next;
     });
-    setActiveSession((cur) => (cur === targetName ? null : cur));
     setDeleteTarget(null);
     try {
       const url = `/api/sessions/${encodeURIComponent(targetName)}${
@@ -710,6 +725,18 @@ export function IndexPage() {
       const res = await fetch(url, { method: "DELETE" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      // Confirmed gone: drop tab state + selection and any optimistic launched
+      // row, refetch, then clear the loading flag so the row falls out.
+      setPerSession((prev) => {
+        if (!prev[targetName]) return prev;
+        const next = { ...prev };
+        delete next[targetName];
+        return next;
+      });
+      setActiveSession((cur) => (cur === targetName ? null : cur));
+      setLaunchedSessions((prev) => prev.filter((s) => s.name !== targetName));
+      await mutate("/api/sessions");
+      clearDeleting(targetName);
       if (json.worktreeError) {
         toast({
           title: "停止 (worktree 削除失敗)",
@@ -719,19 +746,9 @@ export function IndexPage() {
       } else {
         toast({ title: "停止しました", color: "success" });
       }
-      // Server-confirmed gone: refetch, then drop the local hide (the
-      // session is no longer in the response, so it won't reappear).
-      await mutate("/api/sessions");
-      unhideSession(targetName);
     } catch (e) {
-      // Failed — bring the row back with its tabs and selection, then tell
-      // the user. Only restore tabs if the user hasn't reopened the session
-      // (which would have reseeded perSession) in the meantime.
-      if (removedTabs) {
-        setPerSession((prev) => (prev[targetName] ? prev : { ...prev, [targetName]: removedTabs }));
-      }
-      if (wasActive) setActiveSession((cur) => cur ?? targetName);
-      unhideSession(targetName);
+      // Failed — stop the loading indicator and leave the row in place.
+      clearDeleting(targetName);
       mutate("/api/sessions");
       toast({
         title: "停止失敗",
