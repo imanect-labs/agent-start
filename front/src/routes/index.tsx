@@ -626,9 +626,14 @@ export function IndexPage() {
   const handleStopConfirm = async (deleteWorktree: boolean) => {
     if (!deleteTarget) return;
     const targetName = deleteTarget.name;
+    // Snapshot what we're about to optimistically drop so a failed DELETE can
+    // restore it fully — otherwise the row comes back without its tabs and the
+    // user is left on the welcome screen.
+    const removedTabs = perSession[targetName];
+    const wasActive = activeSession === targetName;
     // Reflect the removal in the UI immediately: hide the row (poll-proof),
     // drop its tab state, deselect it, and close the sheet. The DELETE then
-    // runs in the background; on failure we un-hide and surface a toast.
+    // runs in the background; on failure we restore the above and surface a toast.
     setRemovingSessions((prev) => new Set(prev).add(targetName));
     setPerSession((prev) => {
       if (!prev[targetName]) return prev;
@@ -659,7 +664,13 @@ export function IndexPage() {
       await mutate("/api/sessions");
       unhideSession(targetName);
     } catch (e) {
-      // Failed — bring the row back and tell the user.
+      // Failed — bring the row back with its tabs and selection, then tell
+      // the user. Only restore tabs if the user hasn't reopened the session
+      // (which would have reseeded perSession) in the meantime.
+      if (removedTabs) {
+        setPerSession((prev) => (prev[targetName] ? prev : { ...prev, [targetName]: removedTabs }));
+      }
+      if (wasActive) setActiveSession((cur) => cur ?? targetName);
       unhideSession(targetName);
       mutate("/api/sessions");
       toast({
