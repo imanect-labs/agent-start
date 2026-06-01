@@ -557,4 +557,22 @@ pub enum ChatClientMessage {
     Interrupt,
     /// Switch the active model (respawns the conversation with `--resume`).
     SetModel { model: String },
+    /// Answer a pending AskUserQuestion / ExitPlanMode permission request
+    /// (#95). `answers` carries the selected labels for AskUserQuestion
+    /// (`{ "<question>": "<label>" | ["<label>", ...] }`); `message` is an
+    /// optional rejection note when `allow` is false.
+    PermissionResponse {
+        request_id: String,
+        allow: bool,
+        #[serde(default)]
+        answers: Option<serde_json::Value>,
+        #[serde(default)]
+        message: Option<String>,
+    },
+    /// Toggle the session's permission mode, e.g. enter/leave plan mode
+    /// (#95). `mode = None` restores the default. Respawns with `--resume`.
+    SetPermissionMode {
+        #[serde(default)]
+        mode: Option<String>,
+    },
 }

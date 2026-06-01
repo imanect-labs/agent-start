@@ -27,6 +27,8 @@ export function ChatComposer({
   onSend,
   onInterrupt,
   onSetModel,
+  planMode,
+  onSetPlanMode,
   generating,
   disabled,
   dead,
@@ -37,6 +39,8 @@ export function ChatComposer({
   onSend: (text: string, images: OutgoingImage[]) => boolean;
   onInterrupt: () => void;
   onSetModel: (model: string) => void;
+  planMode: boolean;
+  onSetPlanMode: (on: boolean) => void;
   generating: boolean;
   disabled: boolean;
   dead: boolean;
@@ -222,6 +226,31 @@ export function ChatComposer({
           onSelect={onSetModel}
           disabled={disabled}
         />
+
+        <button
+          type="button"
+          onClick={() => onSetPlanMode(!planMode)}
+          disabled={disabled}
+          aria-pressed={planMode}
+          title={
+            planMode
+              ? "計画モード: オン（実行前に計画を提示して承認を求めます）"
+              : "計画モード: オフ"
+          }
+          className={[
+            "inline-flex items-center gap-1 h-7 px-2 rounded-md border text-[12px] transition-colors disabled:opacity-40",
+            planMode
+              ? "border-accent bg-accent/10 text-accent"
+              : "border-line bg-surface-muted text-fg-muted hover:text-fg hover:border-line-strong",
+          ].join(" ")}
+        >
+          <span
+            className={["w-1.5 h-1.5 rounded-full", planMode ? "bg-accent" : "bg-fg-faint"].join(
+              " ",
+            )}
+          />
+          計画
+        </button>
 
         <div className="ml-auto flex items-center gap-2">
           <SendKeyHint sendKey={sendKey} coarse={coarse} />

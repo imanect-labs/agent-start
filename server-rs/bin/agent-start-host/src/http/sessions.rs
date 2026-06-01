@@ -231,6 +231,7 @@ async fn start_chat_session(app: &Shared, args: StartChatArgs<'_>) -> Response {
         extra_args: extra.to_string(),
         env,
         model: cfg.chat.default_model.clone(),
+        permission_mode: None,
         resume: None,
         start_seq: 0,
     };

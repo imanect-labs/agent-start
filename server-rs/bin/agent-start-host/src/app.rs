@@ -255,6 +255,7 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
                         std::path::Path::new(&cwd),
                     ),
                     model: cfg.chat.default_model.clone(),
+                    permission_mode: None,
                     resume: if row.claude_session_id.is_empty() {
                         None
                     } else {

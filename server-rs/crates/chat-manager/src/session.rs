@@ -14,7 +14,7 @@
 
 use crate::error::ChatError;
 use parking_lot::Mutex;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -39,13 +39,19 @@ pub struct ChatSpawnSpec {
     pub shell: String,
     /// The `claude` program/command (from `CliConfig.command`).
     pub command: String,
-    /// Skip-permissions flag — chat mode requires it (decision 7).
+    /// Legacy skip-permissions flag. Chat no longer skips permissions
+    /// (#95): it spawns with `--permission-prompt-tool stdio` so AskUserQuestion
+    /// and plan approval can surface, auto-allowing every other tool. Kept on
+    /// the spec for config compatibility but not added to the command line.
     pub skip_permissions_flag: Option<String>,
     /// Sanitized extra args appended verbatim.
     pub extra_args: String,
     pub env: Vec<(String, String)>,
     /// Initial model (`--model`), or None for the CLI default.
     pub model: Option<String>,
+    /// Permission mode (`--permission-mode`), e.g. `"plan"` to make Claude
+    /// draft a plan and call ExitPlanMode for approval (#95). `None` = default.
+    pub permission_mode: Option<String>,
     /// Resume an existing Claude conversation (`--resume <id>`).
     pub resume: Option<String>,
     /// First `_seq` to assign to committed messages — seeded from SQLite
@@ -92,7 +98,18 @@ pub struct ChatSession {
     /// here (in addition to the lossy live broadcast) so the host can write
     /// the transcript to SQLite without dropping messages under backpressure.
     commit_tx: Mutex<Option<tokio::sync::mpsc::UnboundedSender<CommitEvent>>>,
+    /// In-flight `can_use_tool` requests awaiting a user decision (#95),
+    /// keyed by the CLI's `request_id`. Only AskUserQuestion / ExitPlanMode
+    /// land here — every other tool is auto-allowed inline.
+    pending_perms: Mutex<HashMap<String, PendingPerm>>,
     manager: Weak<crate::manager::ChatManager>,
+}
+
+/// A tool-permission request forwarded to the UI, retained so the user's
+/// reply can be turned into the matching `control_response`.
+struct PendingPerm {
+    tool_name: String,
+    input: serde_json::Value,
 }
 
 /// A committed (persistable) chat message, delivered to the host's
@@ -125,6 +142,7 @@ impl ChatSession {
             tx,
             inflight: Arc::new(Mutex::new(VecDeque::new())),
             commit_tx: Mutex::new(None),
+            pending_perms: Mutex::new(HashMap::new()),
             manager,
         })
     }
@@ -143,8 +161,43 @@ impl ChatSession {
         self.model.lock().clone()
     }
 
+    /// The permission mode the process was (re)spawned with (`"plan"` etc.),
+    /// or `None` for the default. Surfaced on every `chat_status` so the UI
+    /// toggle survives reconnects / model switches (#95).
+    pub fn permission_mode(&self) -> Option<String> {
+        self.spec.lock().permission_mode.clone()
+    }
+
     pub fn claude_session_id(&self) -> String {
         self.claude_session_id.lock().clone()
+    }
+
+    /// Emit a `chat_status` envelope carrying the current model + permission
+    /// mode. Centralized so every status frame keeps the same shape and the
+    /// UI never loses the plan-mode toggle on a reconnect or respawn (#95).
+    fn inject_status(&self, state: &str) {
+        self.inject(
+            serde_json::json!({
+                "type": "chat_status",
+                "state": state,
+                "model": self.current_model(),
+                "permissionMode": self.permission_mode(),
+            }),
+            false,
+        );
+    }
+
+    /// Drain pending permission requests, emitting a `chat_permission_resolved`
+    /// for each so live clients retire the card and reconnect replay nets the
+    /// stale `chat_permission` (which lives in `inflight`) back out (#95).
+    fn resolve_all_pending(&self) {
+        let ids: Vec<String> = self.pending_perms.lock().drain().map(|(k, _)| k).collect();
+        for id in ids {
+            self.inject(
+                serde_json::json!({"type": "chat_permission_resolved", "request_id": id}),
+                false,
+            );
+        }
     }
 
     /// Snapshot the in-flight buffer plus a live receiver, taken together so
@@ -292,15 +345,9 @@ impl ChatSession {
         }
         *self.model.lock() = Some(model.to_string());
         self.kill();
-        self.inject(
-            serde_json::json!({"type": "chat_status", "state": "switching", "model": model}),
-            false,
-        );
+        self.inject_status("switching");
         self.start().await?;
-        self.inject(
-            serde_json::json!({"type": "chat_status", "state": "running", "model": model}),
-            false,
-        );
+        self.inject_status("running");
         Ok(())
     }
 
@@ -335,11 +382,7 @@ impl ChatSession {
             );
         }
         self.start().await?;
-        let model = self.current_model();
-        self.inject(
-            serde_json::json!({"type": "chat_status", "state": "running", "model": model}),
-            false,
-        );
+        self.inject_status("running");
         Ok(())
     }
 
@@ -399,7 +442,7 @@ impl ChatSession {
                             continue;
                         }
                         if let Some(session) = weak.upgrade() {
-                            session.handle_stdout_line(&line);
+                            session.handle_stdout_line(&line).await;
                         } else {
                             break;
                         }
@@ -420,11 +463,25 @@ impl ChatSession {
 
         *self.stdin.lock().await = Some(stdin);
         *self.proc.lock() = Some(Proc { child, reader });
+
+        // Interactive permissions handshake (#95): the CLI only starts routing
+        // `can_use_tool` over stdio after it receives an `initialize` control
+        // request. stdin is read in order, so sending it before the first user
+        // turn is enough — no need to await the reply.
+        let init = serde_json::json!({
+            "type": "control_request",
+            "request_id": format!("init-{}", my_gen),
+            "request": {"subtype": "initialize", "hooks": {}}
+        })
+        .to_string();
+        if let Err(e) = self.write_line(&init).await {
+            tracing::warn!(session = %self.name, error = %e, "failed to send chat initialize handshake");
+        }
         Ok(())
     }
 
     /// Parse one stdout JSON line, classify it, and broadcast an envelope.
-    fn handle_stdout_line(&self, line: &str) {
+    async fn handle_stdout_line(&self, line: &str) {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
             tracing::debug!(target: "chat", session = %self.name, "non-JSON stdout: {line}");
             return;
@@ -433,6 +490,22 @@ impl ChatSession {
         match ty {
             // Housekeeping — dropped (decision 3).
             "rate_limit_event" => {}
+            // Tool-permission request (#95): auto-allow everything except the
+            // two interactive tools, which we forward to the UI and answer
+            // when the user replies.
+            "control_request" => {
+                let subtype = value
+                    .get("request")
+                    .and_then(|r| r.get("subtype"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if subtype == "can_use_tool" {
+                    self.handle_can_use_tool(&value).await;
+                }
+            }
+            // Replies to our own control requests (initialize / allow). Internal
+            // bookkeeping — never shown to the browser.
+            "control_response" => {}
             "system" => {
                 // Capture session id + model from init for resume/switch.
                 if value.get("subtype").and_then(|v| v.as_str()) == Some("init") {
@@ -462,6 +535,121 @@ impl ChatSession {
         }
     }
 
+    /// Classify a `can_use_tool` request: auto-allow ordinary tools inline,
+    /// or forward AskUserQuestion / ExitPlanMode to the UI for a decision.
+    async fn handle_can_use_tool(&self, value: &serde_json::Value) {
+        let request_id = value
+            .get("request_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        if request_id.is_empty() {
+            return;
+        }
+        let req = value.get("request");
+        let tool_name = req
+            .and_then(|r| r.get("tool_name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let input = req
+            .and_then(|r| r.get("input"))
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+
+        match tool_name.as_str() {
+            "AskUserQuestion" | "ExitPlanMode" => {
+                self.pending_perms.lock().insert(
+                    request_id.clone(),
+                    PendingPerm {
+                        tool_name: tool_name.clone(),
+                        input: input.clone(),
+                    },
+                );
+                self.inject(
+                    serde_json::json!({
+                        "type": "chat_permission",
+                        "request_id": request_id,
+                        "tool": tool_name,
+                        "input": input,
+                    }),
+                    false,
+                );
+            }
+            _ => {
+                let line = control_response_line(
+                    &request_id,
+                    serde_json::json!({"behavior": "allow", "updatedInput": input}),
+                );
+                if let Err(e) = self.write_line(&line).await {
+                    tracing::warn!(session = %self.name, error = %e, "failed to auto-allow tool");
+                }
+            }
+        }
+    }
+
+    /// Resolve a pending AskUserQuestion / ExitPlanMode request with the
+    /// user's decision (#95). A missing `request_id` (already answered or a
+    /// stale reconnect double-submit) is a no-op.
+    pub async fn respond_permission(
+        &self,
+        request_id: String,
+        allow: bool,
+        answers: Option<serde_json::Value>,
+        message: Option<String>,
+    ) -> Result<(), ChatError> {
+        let Some(pending) = self.pending_perms.lock().remove(&request_id) else {
+            return Ok(());
+        };
+        let response = if allow {
+            let mut updated_input = pending.input;
+            if pending.tool_name == "AskUserQuestion" {
+                if let (Some(obj), Some(answers)) = (updated_input.as_object_mut(), answers) {
+                    obj.insert("answers".into(), answers);
+                }
+            }
+            serde_json::json!({"behavior": "allow", "updatedInput": updated_input})
+        } else {
+            serde_json::json!({
+                "behavior": "deny",
+                "message": message.unwrap_or_else(|| "ユーザーが拒否しました。".into()),
+            })
+        };
+        let line = control_response_line(&request_id, response);
+        // Tell any reconnecting client to retire the card it replayed.
+        self.inject(
+            serde_json::json!({"type": "chat_permission_resolved", "request_id": request_id}),
+            false,
+        );
+        self.write_line(&line).await
+    }
+
+    /// Switch the permission mode (e.g. toggle plan mode) by respawning with
+    /// `--resume <id> --permission-mode <mode>` (#95). Mirrors `switch_model`.
+    pub async fn set_permission_mode(
+        self: &Arc<Self>,
+        mode: Option<&str>,
+    ) -> Result<(), ChatError> {
+        if let Some(m) = mode {
+            validate_token(m)?;
+        }
+        let _guard = self.lifecycle.lock().await;
+        let sid = self.claude_session_id();
+        {
+            let mut spec = self.spec.lock();
+            spec.permission_mode = mode.map(|m| m.to_string());
+            if !sid.is_empty() {
+                spec.resume = Some(sid);
+            }
+            spec.start_seq = self.seq.load(Ordering::SeqCst);
+        }
+        self.kill();
+        self.inject_status("switching");
+        self.start().await?;
+        self.inject_status("running");
+        Ok(())
+    }
+
     fn on_reader_end(&self, my_gen: u64) {
         // A respawn bumps the generation; if ours is stale this EOF belongs
         // to a process we already replaced, so ignore it.
@@ -474,15 +662,16 @@ impl ChatSession {
         if let Ok(mut stdin) = self.stdin.try_lock() {
             *stdin = None;
         }
+        // Any unanswered permission requests died with the process; retire them
+        // (this also scrubs the replayed `chat_permission` cards from inflight)
+        // so a revive doesn't try to answer a stale request_id.
+        self.resolve_all_pending();
         // A resumed process that died before its `system:init` means the
         // resume id is stale; the next revive starts a fresh conversation.
         if !self.saw_init.load(Ordering::SeqCst) && self.spec.lock().resume.is_some() {
             self.resume_suspect.store(true, Ordering::SeqCst);
         }
-        self.inject(
-            serde_json::json!({"type": "chat_status", "state": "dead"}),
-            false,
-        );
+        self.inject_status("dead");
         if let Some(mgr) = self.manager.upgrade() {
             mgr.fire_exit(&self.name);
         }
@@ -498,6 +687,9 @@ impl ChatSession {
         if let Ok(mut stdin) = self.stdin.try_lock() {
             *stdin = None;
         }
+        // Retire any pending permission cards (and scrub their inflight replay)
+        // so a respawn doesn't leave stale, un-answerable prompts (#95).
+        self.resolve_all_pending();
     }
 }
 
@@ -509,6 +701,20 @@ pub struct ChatImage {
     pub data: String,
     /// Optional small thumbnail (data URL) for transcript display.
     pub thumb: Option<String>,
+}
+
+/// Build the stream-json line that answers a `can_use_tool` request. `inner`
+/// is the `{behavior, ...}` decision object (#95).
+fn control_response_line(request_id: &str, inner: serde_json::Value) -> String {
+    serde_json::json!({
+        "type": "control_response",
+        "response": {
+            "subtype": "success",
+            "request_id": request_id,
+            "response": inner,
+        }
+    })
+    .to_string()
 }
 
 fn build_cmdline(spec: &ChatSpawnSpec) -> Result<String, ChatError> {
@@ -524,9 +730,19 @@ fn build_cmdline(spec: &ChatSpawnSpec) -> Result<String, ChatError> {
         "stream-json".into(),
         "--verbose".into(),
         "--include-partial-messages".into(),
+        // Interactive permissions (#95): route tool approvals over stdio so
+        // AskUserQuestion / ExitPlanMode reach the UI. Every other tool is
+        // auto-allowed by the reader, so the UX matches the old skip-permissions
+        // path while letting questions and plans surface. Requires the
+        // `initialize` handshake we send on spawn — without it the CLI never
+        // emits `can_use_tool`.
+        "--permission-prompt-tool".into(),
+        "stdio".into(),
     ];
-    if let Some(flag) = &spec.skip_permissions_flag {
-        parts.push(flag.clone());
+    if let Some(mode) = &spec.permission_mode {
+        validate_token(mode)?;
+        parts.push("--permission-mode".into());
+        parts.push(mode.clone());
     }
     if let Some(model) = &spec.model {
         validate_token(model)?;
@@ -574,6 +790,7 @@ mod tests {
             extra_args: String::new(),
             env: vec![],
             model: None,
+            permission_mode: None,
             resume: None,
             start_seq: 0,
         }
@@ -584,7 +801,9 @@ mod tests {
         let c = build_cmdline(&base_spec()).unwrap();
         assert!(c.starts_with("claude -p --input-format stream-json"));
         assert!(c.contains("--include-partial-messages"));
-        assert!(c.contains("--dangerously-skip-permissions"));
+        // #95: chat is interactive, not skip-permissions.
+        assert!(c.contains("--permission-prompt-tool stdio"));
+        assert!(!c.contains("--dangerously-skip-permissions"));
     }
 
     #[test]
@@ -595,6 +814,24 @@ mod tests {
         let c = build_cmdline(&s).unwrap();
         assert!(c.contains("--model opus"));
         assert!(c.contains("--resume abc-123"));
+    }
+
+    #[test]
+    fn cmdline_plan_mode() {
+        let mut s = base_spec();
+        s.permission_mode = Some("plan".into());
+        let c = build_cmdline(&s).unwrap();
+        assert!(c.contains("--permission-mode plan"));
+    }
+
+    #[test]
+    fn control_response_shape() {
+        let line = control_response_line("req-1", serde_json::json!({"behavior": "allow", "x": 1}));
+        let v: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(v["type"], "control_response");
+        assert_eq!(v["response"]["subtype"], "success");
+        assert_eq!(v["response"]["request_id"], "req-1");
+        assert_eq!(v["response"]["response"]["behavior"], "allow");
     }
 
     #[test]

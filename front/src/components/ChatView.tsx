@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Spinner } from "@/components/ui";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatMessage, DraftView, TypingIndicator } from "@/components/chat/ChatMessage";
+import { PermissionView } from "@/components/chat/PermissionCards";
 import { useChatSocket } from "@/lib/useChatSocket";
 import { prettyModel } from "@/lib/chat-types";
 
@@ -40,7 +41,7 @@ export function ChatView({
     if (el && atBottomRef.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [chat.messages, chat.draft, chat.generating]);
+  }, [chat.messages, chat.draft, chat.generating, chat.perms]);
 
   const isEmpty = chat.messages.length === 0 && !chat.draft && !chat.generating;
   const dead = chat.lifecycle === "dead";
@@ -73,8 +74,16 @@ export function ChatView({
             {chat.messages.map((m) => (
               <ChatMessage key={m.seq} msg={m} toolResults={chat.toolResults} />
             ))}
-            {chat.generating && !chat.draft && <TypingIndicator />}
             {chat.draft && <DraftView draft={chat.draft} />}
+            {chat.perms.map((req) => (
+              <PermissionView
+                key={req.requestId}
+                req={req}
+                onRespond={chat.respondPermission}
+                disabled={chat.connection !== "open"}
+              />
+            ))}
+            {chat.generating && !chat.draft && chat.perms.length === 0 && <TypingIndicator />}
           </div>
         )}
       </div>
@@ -97,6 +106,8 @@ export function ChatView({
         onSend={chat.send}
         onInterrupt={chat.interrupt}
         onSetModel={chat.setModel}
+        planMode={chat.permissionMode === "plan"}
+        onSetPlanMode={(on) => chat.setPermissionMode(on ? "plan" : null)}
         generating={chat.generating}
         disabled={chat.connection !== "open"}
         dead={dead}

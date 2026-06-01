@@ -37,6 +37,23 @@ export type Draft = { kind: "thinking" | "text"; text: string };
 export type Connection = "connecting" | "open" | "closed";
 export type Lifecycle = "running" | "dead" | "switching" | "unknown";
 
+/** One question inside an AskUserQuestion tool call (#95). */
+export type AskQuestion = {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: { label: string; description?: string }[];
+};
+
+/**
+ * An interactive tool-permission request awaiting the user's decision (#95).
+ * Surfaced by the backend as a `chat_permission` envelope; the answer is sent
+ * back over the socket and retired by a `chat_permission_resolved` envelope.
+ */
+export type PermissionRequest =
+  | { requestId: string; tool: "AskUserQuestion"; questions: AskQuestion[] }
+  | { requestId: string; tool: "ExitPlanMode"; plan: string };
+
 /**
  * Humanize a Claude model id for display. The picker sends short aliases
  * (`opus`/`sonnet`/`haiku`) but `system:init` reports the resolved id like

@@ -34,7 +34,7 @@ CLI ベースではなく **チャット UI ベース**で Claude エージェ�
 | 4 | プロセス寿命 | タブ起動時 spawn・セッション停止まで常駐・WS 切断では殺さない。再接続リプレイ用イベント履歴バッファあり |
 | 5 | 永続化 | `--resume` で会話継続。履歴 + `claude_session_id` を SQLite 保存。再起動後も続行可 |
 | 6 | 保存粒度 | 論理メッセージ単位（user / assistant / result）。`stream_event` デルタ非保存。thinking は保存 + 折り畳み表示 |
-| 7 | 許可フロー | 初版は skip-permissions 前提（対話的許可 UI なし・skip 必須）。対話 UI は #84 に分離 |
+| 7 | 許可フロー | ~~初版は skip-permissions 前提~~ → **#95 で対話化**。`--permission-prompt-tool stdio` で起動し、spawn 直後に `initialize` ハンドシェイク（claude 2.1.159 で必須）を送って `can_use_tool` を有効化。**AskUserQuestion / ExitPlanMode のみ UI に転送**（`chat_permission` エンベロープ）、他ツールは reader が即 auto-allow（旧 skip 相当の体感）。回答は `permission_response` で返し `control_response` を stdin へ。plan モードはコンポーザの「計画」トグル（`--permission-mode plan` で `--resume` 張り替え）。汎用ツール許可 UI は引き続き #84 |
 | 8 | モデル選択 | 起動時 `--model`。**途中切替は `--resume <session_id> --model <new>` で chat プロセスを張り替え**（`/model` はヘッドレス不可と判明）。現在値は `system:init.model` 同期。候補は config.json 定義（opus/sonnet/haiku） |
 | 9 | `/コマンド` | **廃止**。ヘッドレス stream-json ではスラッシュコマンド不可と判明（フェーズ0）。コンポーザは素のテキスト入力。将来 Claude が対応したら再検討 |
 | 10 | 添付 | 画像のみ base64 インライン（WS メッセージ同梱・サイズ上限あり）。ファイル添付は将来 |
