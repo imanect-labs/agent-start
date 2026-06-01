@@ -718,6 +718,7 @@ export function IndexPage() {
       return next;
     });
     setDeleteTarget(null);
+    const startedAt = Date.now();
     try {
       const url = `/api/sessions/${encodeURIComponent(targetName)}${
         deleteWorktree ? "?deleteWorktree=1" : ""
@@ -725,6 +726,14 @@ export function IndexPage() {
       const res = await fetch(url, { method: "DELETE" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      // A no-worktree delete returns in ~10ms — far too fast to see. Hold the
+      // loading state for a minimum so "削除中…" actually registers before the
+      // row drops. Slower (worktree) deletes already exceed this and aren't padded.
+      const MIN_VISIBLE_MS = 500;
+      const elapsed = Date.now() - startedAt;
+      if (elapsed < MIN_VISIBLE_MS) {
+        await new Promise((resolve) => setTimeout(resolve, MIN_VISIBLE_MS - elapsed));
+      }
       // Confirmed gone: drop tab state + selection and any optimistic launched
       // row, refetch, then clear the loading flag so the row falls out.
       setPerSession((prev) => {
