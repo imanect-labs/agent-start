@@ -9,6 +9,7 @@
 
 - [auth.md](./auth.md) — 認証（Forward-Auth 既定）
 - [data-scoping.md](./data-scoping.md) — マルチユーザーのデータ/リソース・スコープ
+- [credentials.md](./credentials.md) — ユーザー別サブスクリプション / 資格情報の管理
 - [isolation.md](./isolation.md) — 超軽量な環境隔離
 - [observability.md](./observability.md) — OpenTelemetry 監視
 
@@ -53,6 +54,7 @@
 
 - **認証（[auth.md](./auth.md)）**: `AUTH_MODE=proxy`（既定）でリバースプロキシ/Forward-Auth が SSO を終端し信頼ヘッダを注入。代替 `AUTH_MODE=local` は SQLite ローカルアカウント（argon2id + Cookie セッション）。WebSocket/プロキシは upgrade GET の Cookie/ヘッダで認証。
 - **データ/リソース・スコープ（[data-scoping.md](./data-scoping.md)）**: ユーザー所有テーブルに `owner_id` を追加、`state` クエリと in-memory マネージャのキーを namespace 化。ユーザー別 FS レイアウト `~/.agent-start/users/<uid>/`。既存単一ユーザーデータは seed admin へ移行。
+- **サブスク/資格情報（[credentials.md](./credentials.md)）**: `claude`/`codex` のサブスク認証は per-user HOME に保存される。隔離設計の per-user `HOME` 割り当てで自動分離。各ユーザーが自分で `claude login`/`codex login`（推奨）、または API キーをユーザー単位で暗号化保存し env 注入。
 - **環境隔離（[isolation.md](./isolation.md)）**: `systemd-run --uid --scope -p MemoryMax/CPUQuota/TasksMax`（専用 OS ユーザー）を Primary、bubblewrap を Fallback、none を Degraded とする `Sandbox` トレイト抽象。
 - **監視（[observability.md](./observability.md)）**: OTLP エクスポートのみ。`OTEL_EXPORTER_OTLP_ENDPOINT` 設定時のみ有効化。自己ホストは `grafana/otel-lgtm` 単一コンテナを「設定一つ」の例として提示。
 
@@ -65,6 +67,7 @@
 | D3 | マネージャは共有のまま**キーを namespace 化** | per-user 分割はメモリ/ライフサイクル複雑 | マネージャの per-user シャーディング |
 | D4 | 隔離は **systemd-run + 専用 OS uid** Primary | イメージ不要・実 UID 分離・実 cgroup 制限で「超軽量」 | Docker/Podman（重い）、完全自前 ns+cgroup ラッパ（再発明） |
 | D5 | 監視は **OTLP のみ・未設定で no-op** | 本体を基盤非依存に保つ・差し替え自由 | Prometheus pull の埋め込み |
+| D6 | サブスクは **per-user HOME に各自ログイン**（OAuth）、API キーは per-user 暗号化保存 | サブスクはシート単位（規約）・OAuth トークンは CLI が HOME 管理 | 単一ログイン共有（規約違反・現状の単一ユーザー核） |
 
 ## 6. ロードマップ
 

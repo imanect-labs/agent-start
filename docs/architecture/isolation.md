@@ -62,6 +62,7 @@ systemd-run --uid=<u> --gid=<g> --scope --quiet \
 - **systemd/uid モデル**: 別 uid + `HOME=users/<uid>/home`、per-user ディレクトリは当該 uid 所有 `0700`。unix 権限で他ユーザーの worktree を読めない。追加ハードニング: `-p ProtectHome=` / `-p PrivateTmp=yes` / `-p ReadWritePaths=`。
 - **bwrap モデル**: `bwrap --unshare-user --unshare-pid --die-with-parent --ro-bind / / --bind users/<uid> /home/agent --chdir <cwd> ...`（per-user 書込可 root + read-only system）。
 - いずれも per-user パスを env 注入（`sessions.rs::launch_env` で `HOME` / `AGENT_START_HOME` / `AGENT_START_PROJECTS` / `AGENT_START_WORKTREE_ROOT` をユーザーのサブツリーに）。
+- この per-user `HOME` 割り当ては、`claude`/`codex` のサブスク資格情報（`~/.claude/`・`~/.codex/`）の分離も同時に実現する。詳細は [credentials.md](./credentials.md)。
 
 ## 資源制限（cgroup v2）
 
