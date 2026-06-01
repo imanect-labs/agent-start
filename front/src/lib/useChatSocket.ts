@@ -308,6 +308,9 @@ export function useChatSocket(sessionName: string) {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "set_permission_mode", mode }));
+      // Reflect the intent immediately so the toggle feels responsive; the
+      // backend's `chat_status` confirms (or corrects) it after the respawn.
+      dispatch({ t: "permissionMode", mode });
     }
   }, []);
 
@@ -426,6 +429,14 @@ function handleEnvelope(env: Record<string, unknown>, h: Handlers) {
         dispatch({ t: "permClear" });
       } else if (st === "switching") dispatch({ t: "lifecycle", lifecycle: "switching" });
       if (typeof env.model === "string") dispatch({ t: "model", model: env.model });
+      // A mode switch reports the new permission mode here (the value may be
+      // null when leaving plan mode), so reconcile the composer toggle (#95).
+      if ("permissionMode" in env) {
+        dispatch({
+          t: "permissionMode",
+          mode: typeof env.permissionMode === "string" ? env.permissionMode : null,
+        });
+      }
       break;
     }
     case "chat_error": {
