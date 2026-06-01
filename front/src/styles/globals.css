@@ -90,12 +90,20 @@
   color-scheme: dark;
 }
 
-html,
-body {
+html {
   height: 100%;
-  /* The app shell is sized to the viewport (`--app-h`) and manages its own
-   * inner scroll regions, so the document itself must never scroll. Without
-   * this the root page rubber-bands ("バインバイン") on touch/trackpad. */
+}
+
+body {
+  /* Lock the layout viewport to the viewport box. With the body fixed, iOS
+   * can't scroll the *page* to lift a focused input above the on-screen
+   * keyboard (which used to shove the header off-screen and forced a
+   * `scrollTo(0,0)` tug-of-war — the cause of the PWA up/down jitter). The
+   * app shell sizes itself to the *visual* viewport via `--app-h` and manages
+   * its own inner scroll regions, so the document itself never scrolls — which
+   * also stops the root page rubber-banding ("バインバイン") on touch/trackpad. */
+  position: fixed;
+  inset: 0;
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior: none;
