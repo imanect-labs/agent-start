@@ -81,6 +81,7 @@ async fn handle(socket: WebSocket, session: Arc<ChatSession>, app: Shared, name:
         "type": "chat_status",
         "state": state_str,
         "model": session.current_model(),
+        "permissionMode": session.permission_mode(),
         "replayDone": true,
     })
     .to_string();

@@ -286,19 +286,18 @@ export function useChatSocket(sessionName: string) {
       message?: string,
     ) => {
       const ws = wsRef.current;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: "permission_response",
-            request_id: requestId,
-            allow,
-            answers: answers ?? null,
-            message: message ?? null,
-          }),
-        );
-      }
-      // Optimistically retire the card; the backend also emits a
-      // `chat_permission_resolved` for any other connected client.
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(
+        JSON.stringify({
+          type: "permission_response",
+          request_id: requestId,
+          allow,
+          answers: answers ?? null,
+          message: message ?? null,
+        }),
+      );
+      // Retire the card only after the answer is actually enqueued; the
+      // backend also emits `chat_permission_resolved` for other clients.
       dispatch({ t: "permResolve", requestId });
     },
     [],

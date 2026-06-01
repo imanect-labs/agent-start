@@ -161,8 +161,43 @@ impl ChatSession {
         self.model.lock().clone()
     }
 
+    /// The permission mode the process was (re)spawned with (`"plan"` etc.),
+    /// or `None` for the default. Surfaced on every `chat_status` so the UI
+    /// toggle survives reconnects / model switches (#95).
+    pub fn permission_mode(&self) -> Option<String> {
+        self.spec.lock().permission_mode.clone()
+    }
+
     pub fn claude_session_id(&self) -> String {
         self.claude_session_id.lock().clone()
+    }
+
+    /// Emit a `chat_status` envelope carrying the current model + permission
+    /// mode. Centralized so every status frame keeps the same shape and the
+    /// UI never loses the plan-mode toggle on a reconnect or respawn (#95).
+    fn inject_status(&self, state: &str) {
+        self.inject(
+            serde_json::json!({
+                "type": "chat_status",
+                "state": state,
+                "model": self.current_model(),
+                "permissionMode": self.permission_mode(),
+            }),
+            false,
+        );
+    }
+
+    /// Drain pending permission requests, emitting a `chat_permission_resolved`
+    /// for each so live clients retire the card and reconnect replay nets the
+    /// stale `chat_permission` (which lives in `inflight`) back out (#95).
+    fn resolve_all_pending(&self) {
+        let ids: Vec<String> = self.pending_perms.lock().drain().map(|(k, _)| k).collect();
+        for id in ids {
+            self.inject(
+                serde_json::json!({"type": "chat_permission_resolved", "request_id": id}),
+                false,
+            );
+        }
     }
 
     /// Snapshot the in-flight buffer plus a live receiver, taken together so
@@ -310,15 +345,9 @@ impl ChatSession {
         }
         *self.model.lock() = Some(model.to_string());
         self.kill();
-        self.inject(
-            serde_json::json!({"type": "chat_status", "state": "switching", "model": model}),
-            false,
-        );
+        self.inject_status("switching");
         self.start().await?;
-        self.inject(
-            serde_json::json!({"type": "chat_status", "state": "running", "model": model}),
-            false,
-        );
+        self.inject_status("running");
         Ok(())
     }
 
@@ -353,11 +382,7 @@ impl ChatSession {
             );
         }
         self.start().await?;
-        let model = self.current_model();
-        self.inject(
-            serde_json::json!({"type": "chat_status", "state": "running", "model": model}),
-            false,
-        );
+        self.inject_status("running");
         Ok(())
     }
 
@@ -618,22 +643,10 @@ impl ChatSession {
             }
             spec.start_seq = self.seq.load(Ordering::SeqCst);
         }
-        let model = self.current_model();
         self.kill();
-        self.inject(
-            serde_json::json!({"type": "chat_status", "state": "switching", "model": model}),
-            false,
-        );
+        self.inject_status("switching");
         self.start().await?;
-        self.inject(
-            serde_json::json!({
-                "type": "chat_status",
-                "state": "running",
-                "model": model,
-                "permissionMode": mode,
-            }),
-            false,
-        );
+        self.inject_status("running");
         Ok(())
     }
 
@@ -649,18 +662,16 @@ impl ChatSession {
         if let Ok(mut stdin) = self.stdin.try_lock() {
             *stdin = None;
         }
-        // Any unanswered permission requests died with the process; clear them
+        // Any unanswered permission requests died with the process; retire them
+        // (this also scrubs the replayed `chat_permission` cards from inflight)
         // so a revive doesn't try to answer a stale request_id.
-        self.pending_perms.lock().clear();
+        self.resolve_all_pending();
         // A resumed process that died before its `system:init` means the
         // resume id is stale; the next revive starts a fresh conversation.
         if !self.saw_init.load(Ordering::SeqCst) && self.spec.lock().resume.is_some() {
             self.resume_suspect.store(true, Ordering::SeqCst);
         }
-        self.inject(
-            serde_json::json!({"type": "chat_status", "state": "dead"}),
-            false,
-        );
+        self.inject_status("dead");
         if let Some(mgr) = self.manager.upgrade() {
             mgr.fire_exit(&self.name);
         }
@@ -676,7 +687,9 @@ impl ChatSession {
         if let Ok(mut stdin) = self.stdin.try_lock() {
             *stdin = None;
         }
-        self.pending_perms.lock().clear();
+        // Retire any pending permission cards (and scrub their inflight replay)
+        // so a respawn doesn't leave stale, un-answerable prompts (#95).
+        self.resolve_all_pending();
     }
 }
 

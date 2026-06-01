@@ -133,6 +133,7 @@ function QuestionBlock({
               type="button"
               onClick={() => onToggle(opt.label)}
               disabled={disabled}
+              aria-pressed={active}
               className={[
                 "w-full text-left rounded-lg border px-3 py-2 transition-colors disabled:opacity-40",
                 active
