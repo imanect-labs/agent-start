@@ -42,10 +42,17 @@ export type TmuxSession = {
   cli: string;
   worktreePath: string;
   origPath: string;
+  /** Short human-readable title derived from the agent's task (the initial
+   * prompt, or the first chat message). Empty/undefined until known — the
+   * row falls back to the session name. */
+  title?: string;
   /** Optimistic placeholder: the session is still being created on the
    * host. Rendered with a spinner and no stop button until the real
    * session arrives from /api/sessions. */
   pending?: boolean;
+  /** A DELETE is in flight for this session. The row stays visible with a
+   * loading indicator until the host confirms removal, then it drops out. */
+  deleting?: boolean;
 };
 
 const CLI_LABEL: Record<string, string> = {
@@ -146,7 +153,9 @@ export function Sidebar({
         const projHit =
           g.project &&
           (g.project.name.toLowerCase().includes(q) || g.project.path.toLowerCase().includes(q));
-        const matchSessions = g.sessions.filter((s) => s.name.toLowerCase().includes(q));
+        const matchSessions = g.sessions.filter(
+          (s) => s.name.toLowerCase().includes(q) || (s.title ?? "").toLowerCase().includes(q),
+        );
         if (projHit) return g; // show whole group with all sessions
         if (matchSessions.length > 0) return { ...g, sessions: matchSessions };
         return null;
@@ -515,16 +524,27 @@ function SessionRow({
   const hasWorktree = !!session.worktreePath;
   const cliLabel = CLI_LABEL[session.cli] || session.cli || "claude";
   const pending = !!session.pending;
+  const deleting = !!session.deleting;
+  const title = session.title?.trim();
+  // Prefer the task title; fall back to the project basename while pending,
+  // and to the raw session name once we have nothing better.
+  const label = pending
+    ? session.path.split("/").filter(Boolean).pop() || "セッション"
+    : title || session.name;
+  // The title is prose, so render it in the UI font; the bare session name is
+  // an identifier, so keep it monospace.
+  const labelIsTitle = !pending && !!title;
   return (
     <li
       className={[
         "group ml-4 flex items-start gap-1.5 px-1.5 py-2 rounded-md min-h-[44px]",
-        "cursor-pointer",
+        deleting ? "cursor-default opacity-60" : "cursor-pointer",
         active ? "bg-accent/10 text-fg" : "hover:bg-surface-muted text-fg-muted",
       ].join(" ")}
-      onClick={onOpen}
+      onClick={deleting ? undefined : onOpen}
+      aria-busy={deleting || undefined}
     >
-      {pending ? (
+      {pending || deleting ? (
         <span className="mt-1 inline-flex w-2 h-2 items-center justify-center shrink-0">
           <Spinner size="xs" />
         </span>
@@ -545,12 +565,14 @@ function SessionRow({
             <IconTerminal className="w-3 h-3 text-fg-faint shrink-0" />
           )}
           <span
+            title={labelIsTitle ? `${title}\n${session.name}` : session.name}
             className={[
-              "text-[12px] font-mono truncate",
+              "text-[12px] truncate",
+              labelIsTitle ? "" : "font-mono",
               session.stopped || pending ? "text-fg-subtle" : "",
             ].join(" ")}
           >
-            {pending ? session.path.split("/").filter(Boolean).pop() || "セッション" : session.name}
+            {label}
           </span>
           {session.stopped && !pending && (
             <span className="text-[9px] uppercase tracking-wider text-warn shrink-0">stopped</span>
@@ -563,6 +585,11 @@ function SessionRow({
               <span>·</span>
               <span className="text-warn">起動中…</span>
             </>
+          ) : deleting ? (
+            <>
+              <span>·</span>
+              <span className="text-danger">削除中…</span>
+            </>
           ) : (
             <>
               <span>·</span>
@@ -571,7 +598,7 @@ function SessionRow({
           )}
         </div>
       </div>
-      {!pending && (
+      {!pending && !deleting && (
         <button
           type="button"
           onClick={(e) => {

@@ -69,6 +69,7 @@ pub async fn start_session(
         is_chat,
         extra,
         prompt,
+        title,
     } = prepared;
 
     let base_name = resolved
@@ -101,6 +102,7 @@ pub async fn start_session(
                 worktree_path: worktree_path.as_deref(),
                 extra: &extra,
                 prompt: prompt.as_deref(),
+                title: &title,
             },
         )
         .await;
@@ -148,6 +150,7 @@ pub async fn start_session(
             worktree_path: &wt_str,
             orig_path: &orig_str,
             pid: session.pid().map(|v| v as i64),
+            title: &title,
         },
     )
     .await
@@ -166,6 +169,7 @@ pub async fn start_session(
             orig_path: orig_str,
             live: true,
             history: Vec::new(),
+            title,
         },
     );
 
@@ -190,6 +194,9 @@ struct StartChatArgs<'a> {
     worktree_path: Option<&'a StdPath>,
     extra: &'a str,
     prompt: Option<&'a str>,
+    /// Title derived from the prompt at creation; empty for prompt-less
+    /// chat launches (filled in later from the first chat message).
+    title: &'a str,
 }
 
 /// Spawn a headless chat conversation (#34) instead of a PTY. Mirrors the
@@ -207,6 +214,7 @@ async fn start_chat_session(app: &Shared, args: StartChatArgs<'_>) -> Response {
         worktree_path,
         extra,
         prompt,
+        title,
     } = args;
 
     let cli_conf = match cfg.clis.get(cli_key) {
@@ -264,6 +272,7 @@ async fn start_chat_session(app: &Shared, args: StartChatArgs<'_>) -> Response {
             worktree_path: &wt_str,
             orig_path: &orig_str,
             pid: None,
+            title,
         },
     )
     .await
@@ -282,6 +291,7 @@ async fn start_chat_session(app: &Shared, args: StartChatArgs<'_>) -> Response {
             orig_path: orig_str,
             live: true,
             history: Vec::new(),
+            title: title.to_string(),
         },
     );
 
@@ -459,6 +469,8 @@ struct Prepared {
     extra: String,
     /// Initial prompt (trimmed + capped), if any.
     prompt: Option<String>,
+    /// Short title derived from the prompt; empty when there is no prompt.
+    title: String,
 }
 
 fn prepare_start(body: &StartSessionRequest) -> Erred<Prepared> {
@@ -511,6 +523,14 @@ fn prepare_start(body: &StartSessionRequest) -> Erred<Prepared> {
         }
     });
 
+    // Derive a sidebar title from the prompt up front. Prompt-less launches
+    // (e.g. a plain chat session) get an empty title here; chat-mode fills it
+    // in from the first user message instead.
+    let title = prompt
+        .as_deref()
+        .map(crate::sessions::summarize_title)
+        .unwrap_or_default();
+
     // Chat mode never builds a PTY command line; it spawns the headless
     // process from its components in `start_session`. The stored `command`
     // is just a human-readable descriptor.
@@ -540,6 +560,7 @@ fn prepare_start(body: &StartSessionRequest) -> Erred<Prepared> {
         is_chat,
         extra,
         prompt,
+        title,
     })
 }
 

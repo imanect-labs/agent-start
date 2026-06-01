@@ -117,6 +117,7 @@ export function MainPane({
 
   const active = tabs.tabs.find((t) => t.id === tabs.activeTabId) ?? null;
   const cliLabel = CLI_LABEL[session.cli] || session.cli;
+  const sessionTitle = session.title?.trim();
   const hasWorktree = !!session.worktreePath;
   const cwd = session.worktreePath || session.path;
   const toast = useToast();
@@ -184,7 +185,12 @@ export function MainPane({
                 session.stopped ? "bg-warn" : session.attached ? "bg-success" : "bg-fg-faint",
               ].join(" ")}
             />
-            <span className="font-mono text-sm text-fg truncate">{session.name}</span>
+            <span
+              className={["text-sm text-fg truncate", sessionTitle ? "" : "font-mono"].join(" ")}
+              title={sessionTitle ? `${sessionTitle}\n${session.name}` : session.name}
+            >
+              {sessionTitle || session.name}
+            </span>
             <div className="hidden sm:flex items-center gap-1.5 flex-wrap">
               <Badge tone="violet">{cliLabel}</Badge>
               {hasWorktree && <Badge tone="amber">worktree</Badge>}

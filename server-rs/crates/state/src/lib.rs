@@ -38,6 +38,11 @@ pub struct SessionRow {
     /// for PTY sessions or before the first `system:init` arrives.
     #[serde(default)]
     pub claude_session_id: String,
+    /// Short human-readable title derived from the initial task. Empty
+    /// until known (set at creation from the prompt, or from the first
+    /// chat message).
+    #[serde(default)]
+    pub title: String,
 }
 
 impl SessionRow {
@@ -53,6 +58,7 @@ impl SessionRow {
             pid: row.try_get("pid").ok(),
             status: row.get("status"),
             claude_session_id: row.try_get("claude_session_id").unwrap_or_default(),
+            title: row.try_get("title").unwrap_or_default(),
         }
     }
 }
@@ -82,6 +88,7 @@ impl From<&SessionRow> for agent_start_api::Session {
             cli: row.cli.clone(),
             worktree_path: row.worktree_path.clone(),
             orig_path: row.orig_path.clone(),
+            title: row.title.clone(),
         }
     }
 }
@@ -115,13 +122,15 @@ pub struct NewSession<'a> {
     pub worktree_path: &'a str,
     pub orig_path: &'a str,
     pub pid: Option<i64>,
+    /// Short title derived from the initial prompt; empty when unknown.
+    pub title: &'a str,
 }
 
 pub async fn insert_session(db: &Db, s: NewSession<'_>) -> Result<(), StateError> {
     let now = Utc::now().timestamp_millis();
     sqlx::query(
-        "INSERT INTO sessions (name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running')",
+        "INSERT INTO sessions (name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, title) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?)",
     )
     .bind(s.name)
     .bind(now)
@@ -131,15 +140,27 @@ pub async fn insert_session(db: &Db, s: NewSession<'_>) -> Result<(), StateError
     .bind(s.worktree_path)
     .bind(s.orig_path)
     .bind(s.pid)
+    .bind(s.title)
     .execute(db)
     .await?;
+    Ok(())
+}
+
+/// Set (or update) the human-readable title for a session. Used when the
+/// title is only known after the first chat message arrives.
+pub async fn update_session_title(db: &Db, name: &str, title: &str) -> Result<(), StateError> {
+    sqlx::query("UPDATE sessions SET title = ? WHERE name = ?")
+        .bind(title)
+        .bind(name)
+        .execute(db)
+        .await?;
     Ok(())
 }
 
 pub async fn list_sessions(db: &Db, prefix: &str) -> Result<Vec<SessionRow>, StateError> {
     let like = format!("{prefix}%");
     let rows = sqlx::query(
-        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id \
+        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id, title \
          FROM sessions \
          WHERE status = 'running' AND name LIKE ? \
          ORDER BY created_at_ms DESC",
@@ -154,7 +175,7 @@ pub async fn list_sessions(db: &Db, prefix: &str) -> Result<Vec<SessionRow>, Sta
 /// sessions whose worktree still exists on disk.
 pub async fn list_all_sessions(db: &Db) -> Result<Vec<SessionRow>, StateError> {
     let rows = sqlx::query(
-        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id \
+        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id, title \
          FROM sessions ORDER BY created_at_ms DESC",
     )
     .fetch_all(db)
@@ -164,7 +185,7 @@ pub async fn list_all_sessions(db: &Db) -> Result<Vec<SessionRow>, StateError> {
 
 pub async fn get_session(db: &Db, name: &str) -> Result<Option<SessionRow>, StateError> {
     let row = sqlx::query(
-        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id \
+        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id, title \
          FROM sessions WHERE name = ?",
     )
     .bind(name)
