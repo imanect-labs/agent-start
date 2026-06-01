@@ -10,6 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Screenshots / demo GIF in `docs/screenshots/` (TODO).
 
+## [0.2.2] - 2026-06-01
+
+Permission-prompt UI for the chat mode plus chat-UI and host robustness fixes.
+
+### Added
+- **Ask-question & plan-approval permission UI for chat mode** (#95): the
+  headless Claude chat now surfaces `AskUserQuestion` and `ExitPlanMode`
+  prompts interactively, reflecting the plan-mode toggle state from
+  `chat_status`.
+- Open-core licensing: MIT core + Enterprise Edition, DCO sign-off for
+  contributions, and a Japanese licensing overview report.
+
+### Fixed
+- **Host never serves a stale `index.html`**, so freshly built front-end
+  bundles are picked up reliably.
+- Chat-UI session create/delete robustness: instant create/delete, a
+  loading state on the session row during delete, optimistic-row grace
+  windows, and tab/selection restore when a delete fails.
+- PWA header stays visible when the chat input is focused on iOS.
+
 ## [0.2.1] - 2026-05-28
 
 Mobile + welcome-screen polish. Wraps up the remaining sub-issues of #88.
