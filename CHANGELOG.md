@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Screenshots / demo GIF in `docs/screenshots/` (TODO).
 
+## [0.2.3] - 2026-06-01
+
+Chat-UI fix for iOS PWAs.
+
+### Fixed
+- **iOS PWA chat no longer jitters up and down** while the on-screen
+  keyboard is up (#103). The layout viewport is now locked
+  (`body { position: fixed; inset: 0 }`) so iOS can't scroll the page to
+  lift a focused field, removing the `window.scrollTo(0, 0)` tug-of-war
+  against iOS's own focus handling that caused the bounce. `--app-h`
+  resizes are coalesced per frame and written only on change.
+
 ## [0.2.2] - 2026-06-01
 
 Permission-prompt UI for the chat mode plus chat-UI and host robustness fixes.
