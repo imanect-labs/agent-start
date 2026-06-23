@@ -22,7 +22,7 @@ jobs:
     name: Build front-end bundle
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # On workflow_dispatch the user supplies an existing tag; check it out
           # so the build matches the tag exactly. On tag push, github.ref is
@@ -78,7 +78,7 @@ jobs:
             use_cross: false
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
@@ -158,7 +158,7 @@ jobs:
     needs: build-host
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
