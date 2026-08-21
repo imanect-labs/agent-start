@@ -7,24 +7,11 @@
 //! work the user shouldn't lose track of.
 
 use agent_start_api::Session;
-use std::path::Path as StdPath;
 
 /// Environment handed to a freshly spawned session process (PTY or chat).
-/// Exposes the worktree/orig paths and session name to the agent CLI.
-pub fn launch_env(orig: &StdPath, name: &str, cwd: &StdPath) -> Vec<(String, String)> {
-    vec![
-        (
-            "AGENT_START_ROOT_PATH".into(),
-            orig.to_string_lossy().into_owned(),
-        ),
-        ("AGENT_START_WORKSPACE_NAME".into(), name.to_string()),
-        (
-            "AGENT_START_WORKSPACE_PATH".into(),
-            cwd.to_string_lossy().into_owned(),
-        ),
-        ("TERM".into(), "xterm-256color".into()),
-    ]
-}
+/// Lives in `workspace-manager` so the node runtime, which spawns the
+/// same agents on remote machines, cannot drift from it.
+pub use workspace_manager::launch_env;
 
 #[derive(Debug, Clone)]
 pub struct SessionDirectory {
@@ -46,6 +33,11 @@ pub struct SessionDirectory {
     /// Short human-readable title derived from the initial task. Empty
     /// until known; the sidebar falls back to the session name.
     pub title: String,
+    /// Cluster node running the session. Empty for the local node.
+    pub node_id: String,
+    /// Human-readable node name, filled in only for remote sessions so
+    /// the UI can badge them without a lookup.
+    pub node_name: String,
 }
 
 impl SessionDirectory {
@@ -64,6 +56,8 @@ impl SessionDirectory {
             worktree_path: self.worktree_path.clone(),
             orig_path: self.orig_path.clone(),
             title: self.title.clone(),
+            node_id: self.node_id.clone(),
+            node_name: self.node_name.clone(),
         }
     }
 }

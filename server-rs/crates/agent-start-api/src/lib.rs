@@ -257,6 +257,12 @@ pub struct Session {
     /// when not yet known; the frontend falls back to the session name.
     #[serde(default)]
     pub title: String,
+    /// Cluster node running this session. Empty for the local node, so
+    /// single-host clients can keep ignoring the field entirely.
+    #[serde(rename = "nodeId", default)]
+    pub node_id: String,
+    #[serde(rename = "nodeName", default)]
+    pub node_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -280,6 +286,23 @@ pub struct StartSessionRequest {
     /// for the bare-shell CLI.
     #[serde(default)]
     pub prompt: Option<String>,
+    /// CPU (thousandths of a core) the session reserves on its node.
+    #[serde(rename = "cpuMillis", default)]
+    pub cpu_millis: Option<u32>,
+    /// Memory (MiB) the session reserves on its node.
+    #[serde(rename = "memMb", default)]
+    pub mem_mb: Option<u32>,
+    /// Minimum isolation the session needs: `process`, `container` or
+    /// `microvm`. Nodes that cannot provide it are not considered.
+    #[serde(default)]
+    pub isolation: Option<String>,
+    /// `key=value` node labels that must all match.
+    #[serde(rename = "nodeSelector", default)]
+    pub node_selector: Option<Vec<String>>,
+    /// Pin the session to one node by id, bypassing scoring (the node
+    /// still has to pass the hard filters).
+    #[serde(rename = "nodeId", default)]
+    pub node_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -290,6 +313,94 @@ pub struct StartSessionResponse {
     pub cwd: String,
     #[serde(rename = "worktreePath")]
     pub worktree_path: Option<String>,
+    #[serde(rename = "nodeId", default)]
+    pub node_id: String,
+    #[serde(rename = "nodeName", default)]
+    pub node_name: String,
+}
+
+// ---- cluster ---------------------------------------------------------
+
+/// One node in `GET /api/nodes`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeSummary {
+    pub id: String,
+    pub name: String,
+    /// `ready` | `notready` | `cordoned` | `lost`.
+    pub status: String,
+    pub connected: bool,
+    pub cordoned: bool,
+    /// True for the node running inside the control-plane process.
+    #[serde(rename = "isLocal")]
+    pub is_local: bool,
+    pub version: String,
+    pub os: String,
+    pub arch: String,
+    /// Isolation profiles this node can provide.
+    pub executors: Vec<String>,
+    #[serde(rename = "capacityCpuMillis")]
+    pub capacity_cpu_millis: u32,
+    #[serde(rename = "capacityMemMb")]
+    pub capacity_mem_mb: u32,
+    #[serde(rename = "reservedCpuMillis")]
+    pub reserved_cpu_millis: u32,
+    #[serde(rename = "reservedMemMb")]
+    pub reserved_mem_mb: u32,
+    #[serde(rename = "maxSessions")]
+    pub max_sessions: u32,
+    #[serde(rename = "cpuUtil")]
+    pub cpu_util: f32,
+    #[serde(rename = "memUtil")]
+    pub mem_util: f32,
+    pub load1: f32,
+    pub labels: Vec<NodeLabel>,
+    pub sessions: Vec<String>,
+    #[serde(rename = "cachedProjects")]
+    pub cached_projects: usize,
+    #[serde(rename = "lastHeartbeatMs")]
+    pub last_heartbeat_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeLabel {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodesBody {
+    pub nodes: Vec<NodeSummary>,
+    /// True when the host runs a scheduler at all (`--role all` /
+    /// `--role control`). The UI hides cluster affordances otherwise.
+    pub clustered: bool,
+}
+
+/// Partial update for `PATCH /api/nodes/:id`.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct NodePatch {
+    pub labels: Option<Vec<NodeLabel>>,
+    #[serde(rename = "maxSessions")]
+    pub max_sessions: Option<u32>,
+    pub cordoned: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct JoinTokenRequest {
+    /// Lifetime in seconds; defaults to one hour.
+    #[serde(rename = "ttlSecs")]
+    pub ttl_secs: Option<u64>,
+    /// How many nodes may register with it; defaults to one.
+    pub uses: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JoinTokenResponse {
+    pub token: String,
+    #[serde(rename = "expiresAtMs")]
+    pub expires_at_ms: i64,
+    pub uses: u32,
+    /// Ready-to-paste command for the new node.
+    pub command: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

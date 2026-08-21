@@ -1,6 +1,7 @@
 # agent-start マルチノード / クラウド環境 設計・ロードマップ
 
-> Status: **Draft (設計合意待ち)** / 2026-08
+> Status: **Phase 0〜1 実装済み** / 2026-08
+> 実装状況は §5 のロードマップに反映（Phase 0 / Phase 1 = 完了）。
 > 対象バージョン: v0.2.x の単機構成 → v0.3〜v0.5 のクラスタ構成
 > 関連: [ROADMAP.md](./ROADMAP.md)（単機の機能ロードマップ。本書はその上に乗る分散レイヤ）
 
@@ -531,33 +532,49 @@ K8s クラスタと tailnet 上の実機は**同じ control plane に登録さ�
 AI エージェント主体・数週間スケール。**各フェーズ単体で使える状態を保つ**ことを制約にする。
 週数は目安（1 人 + エージェント並列前提）。
 
-### Phase 0 — 内部抽象の切り出し（0.5 週）
+### Phase 0 — 内部抽象の切り出し（完了）
 
 現状の挙動を一切変えずに、後のフェーズが乗る足場を作る。
 
-- [ ] `executor` クレート新設。`Executor` trait と `process` バックエンド
-- [ ] `http/sessions.rs` のセッション起動処理を `executor::process` 経由に置換
-- [ ] `cluster-proto` クレート（フレーム型のみ、まだ誰も使わない）
-- [ ] `metrics-probe` クレート（`sysinfo` で CPU/mem/load を取る）
-- [ ] `--role` フラグを追加（`all` のみ実装、他はエラー）
+- [x] `executor` クレート新設。`Executor` trait と `process` バックエンド
+- [x] セッション起動処理を `executor` 経由に置換（node runtime 側で `launch_plan` → PTY）
+- [x] `cluster-proto` クレート（フレーム型 + loopback / WS 両対応のリンク）
+- [x] `metrics-probe` クレート（`sysinfo` + EWMA で CPU/mem/load を取る）
+- [x] `--role` フラグ（`all` / `control` / `node`）
 
-**受入条件**: 既存の全テスト green、UI の挙動が完全に同じ。
+**受入条件**: 既存の全テスト green、UI の挙動が完全に同じ。 ✅
 
-### Phase 1 — マルチノード最小構成（1 週） ★最初の山
+### Phase 1 — マルチノード最小構成（完了） ★最初の山
 
-- [ ] `cluster-control`: ノードレジストリ、join token、heartbeat 受領、`GET /api/nodes`
-- [ ] `cluster-node`: 中央への outbound WS 接続、hello / heartbeat / metrics 送出
-- [ ] スケジューラ v1: フィルタ（Ready / スロット / requests）+ スコア（実測負荷）+ lease
-- [ ] relay v1: `/ws/terminal` を「ノード上の PTY」へ多重化して中継
-- [ ] `--role all` はループバックトランスポートで control+node 同居（互換維持）
-- [ ] ノードローカルの bare clone キャッシュ + worktree（`node_repo_cache` 報告つき）
-- [ ] UI: ノード一覧画面、セッションカードに「どのノードで動いているか」を表示
+- [x] `cluster-control`: ノードレジストリ、join token（TTL / 使用回数、ハッシュ保存）、
+      heartbeat 受領、`GET/PATCH/DELETE /api/nodes`、`POST /api/join-tokens`
+- [x] `cluster-node`: 中央への outbound WS 接続（指数バックオフ再接続）、
+      hello / heartbeat / metrics 送出、node identity の永続化とトークン回転
+- [x] スケジューラ v1: フィルタ（Ready / cordon / スロット / requests / isolation / labels）
+      + スコア（予約 + 実測負荷 + キャッシュ親和性 + warm-up ペナルティ）+ lease
+- [x] relay v1: `/ws/terminal` を「ノード上の PTY」へ多重化して中継（既存ワイヤ形式のまま）
+- [x] `--role all` はループバックトランスポートで control+node 同居（互換維持）
+- [x] ノードローカルの bare mirror キャッシュ + worktree（`node_repo_cache` 報告つき）
+- [x] UI: `/nodes` 画面、セッション行に実行ノードのバッジ
+- [x] CLI: `agent-start node list / cordon / uncordon / token`
 
-**受入条件**: 2 台のノードを登録し、セッションを 5 本連続で作ると
+**受入条件**: 2 台のノードを登録し、セッションを連続で作ると
 **空いている方に自動で分散**し、ブラウザからどちらのターミナルも同じように操作できる。
-片方を停止すると `NotReady` になり、新規は残った方に行く。
+片方を停止すると `NotReady` になり、新規は残った方に行く。 ✅
 
-### Phase 2 — タスクキューと非同期→PR（1 週）
+実装中に見つけて直した問題（いずれも回帰テスト付き）:
+
+| 問題 | 影響 | 対処 |
+| --- | --- | --- |
+| ノードが「同名のパスが存在する」だけで同一プロジェクトとみなしていた | 別マシンの `~/projects/api` が別物でも取り違える | ローカルノード以外には `local_path` を渡さない。リモートは必ず mirror 経由 |
+| セッション名が秒単位のため同秒内で衝突 | worktree / ブランチ / 主キーの奪い合い | 名前に 4 文字のランダム接尾辞を追加 |
+| `git worktree add` の base をブランチ名で渡していた | git の DWIM が `-b` を無視して別ブランチを作る / bare mirror で `invalid reference` | base を **コミット SHA に解決してから**渡す |
+| 同一プロジェクトの並行セッションが同時に mirror を clone | 片方が他方の途中の clone を消して双方失敗 | プロジェクト単位の非同期ロックで直列化 |
+| 切断済みノードのフレーム送信が成功していた | ターミナルが繋がったまま無反応になる | `connected` チェック + 切断時に writer を abort |
+| `run()` 終了後もリンクの sender を保持 | ノードが再接続できない | 終了時に sender を解放 |
+| `Resources::default()` が「典型的な要求量」= 非ゼロ | 予約量が初期値ぶん水増しされる | `Default` はゼロ、要求量は `default_request()` |
+
+### Phase 2 — タスクキューと非同期→PR（1 週） ← 次
 
 - [ ] `tasks` テーブル + キューイング（`SKIP LOCKED`）+ lease 期限切れの再キュー
 - [ ] `POST /api/tasks` と一覧 / 詳細 / キャンセル / リトライ
@@ -639,6 +656,16 @@ IDE がリモートノードのセッションに対して開く。
 5. **メトリクスの保持期間**と `node_metrics` の肥大化対策（TimescaleDB は使わない前提でよいか）。
 
 ---
+
+### Phase 1 で意図的に残した範囲
+
+- **chat モードのセッションはホストローカル**。transcript 永続化と `--resume` が
+  ホスト側にあるため、ノード分散は Phase 2 と合わせて行う。
+- **リモートセッションの git / ファイル / code-server API はホストローカルのまま**。
+  ワークツリーが別マシンにあるため現状は失敗する。Phase 5 の relay 拡張で対応。
+- **リモートセッションの restart / 追加ウィンドウは 409 を返す**。再開はタスクキュー
+  （Phase 2）で扱うのが筋。
+- **認証はまだ無い**。join token はノード参加のみを守る。ユーザ認証は Phase 3。
 
 ## 7. 最初の一歩
 

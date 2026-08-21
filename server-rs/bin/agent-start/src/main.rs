@@ -4,8 +4,9 @@
 //! over tailnet.
 
 use agent_start_api::{
-    CloneRequest, DeleteSessionResponse, ImportRequest, ProjectOpResponse, ProjectsBody,
-    SessionsBody, StartSessionRequest, StartSessionResponse, UpdateCheckBody, VersionBody,
+    CloneRequest, DeleteSessionResponse, ImportRequest, JoinTokenResponse, NodeSummary, NodesBody,
+    ProjectOpResponse, ProjectsBody, SessionsBody, StartSessionRequest, StartSessionResponse,
+    UpdateCheckBody, VersionBody,
 };
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand};
@@ -60,6 +61,11 @@ enum Cmd {
         #[command(subcommand)]
         cmd: SessionCmd,
     },
+    /// Inspect the cluster's nodes.
+    Node {
+        #[command(subcommand)]
+        cmd: NodeCmd,
+    },
     /// List projects via the running host (alias for `project list`).
     #[command(hide = true)]
     Projects,
@@ -105,6 +111,25 @@ enum SessionCmd {
     Stop { name: String },
 }
 
+#[derive(Debug, Subcommand)]
+enum NodeCmd {
+    /// List registered nodes and their load.
+    List,
+    /// Stop scheduling new sessions onto a node (running ones continue).
+    Cordon { id: String },
+    /// Resume scheduling onto a cordoned node.
+    Uncordon { id: String },
+    /// Issue a join token for a new node.
+    Token {
+        /// Lifetime in seconds (default 3600).
+        #[arg(long)]
+        ttl: Option<u64>,
+        /// How many nodes may use it (default 1).
+        #[arg(long)]
+        uses: Option<u32>,
+    },
+}
+
 #[derive(Debug, Args)]
 struct SessionCreateArgs {
     /// Path of the project to launch the session in.
@@ -125,6 +150,21 @@ struct SessionCreateArgs {
     /// Extra flag to pass through to the CLI (repeatable).
     #[arg(long = "arg")]
     extra: Vec<String>,
+    /// CPU to reserve on the node, in thousandths of a core (1000 = 1 core).
+    #[arg(long)]
+    cpu_millis: Option<u32>,
+    /// Memory to reserve on the node, in MiB.
+    #[arg(long)]
+    mem_mb: Option<u32>,
+    /// Minimum isolation: process, container, or microvm.
+    #[arg(long)]
+    isolation: Option<String>,
+    /// Require a node label, `key=value` (repeatable).
+    #[arg(long = "node-label")]
+    node_labels: Vec<String>,
+    /// Pin the session to a specific node id.
+    #[arg(long)]
+    node: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -178,8 +218,80 @@ async fn main() -> Result<()> {
         Cmd::Session {
             cmd: SessionCmd::Stop { name },
         } => session_stop(&resolve_url(cli.url.as_deref())?, &name, json, quiet).await,
+        Cmd::Node { cmd } => node_cmd(&resolve_url(cli.url.as_deref())?, cmd, json, quiet).await,
         Cmd::Update(args) => run_update(args),
     }
+}
+
+// --- cluster -----------------------------------------------------------------
+
+async fn node_cmd(url: &str, cmd: NodeCmd, json: bool, quiet: bool) -> Result<()> {
+    match cmd {
+        NodeCmd::List => {
+            let res: NodesBody = get_json(url, "/api/nodes").await?;
+            if json {
+                println!("{}", serde_json::to_string(&res)?);
+                return Ok(());
+            }
+            if !res.clustered {
+                info(quiet, "this host runs no scheduler");
+                return Ok(());
+            }
+            for n in res.nodes {
+                let used = if n.capacity_cpu_millis == 0 {
+                    0
+                } else {
+                    n.reserved_cpu_millis * 100 / n.capacity_cpu_millis
+                };
+                println!(
+                    "{}\t{}\t{}\t{} sessions\tcpu {:.0}% (reserved {}%)\t{}",
+                    n.id,
+                    n.name,
+                    n.status,
+                    n.sessions.len(),
+                    n.cpu_util * 100.0,
+                    used,
+                    if n.is_local { "local" } else { "remote" }
+                );
+            }
+            Ok(())
+        }
+        NodeCmd::Cordon { id } => set_cordon(url, &id, true, json, quiet).await,
+        NodeCmd::Uncordon { id } => set_cordon(url, &id, false, json, quiet).await,
+        NodeCmd::Token { ttl, uses } => {
+            let body = serde_json::json!({ "ttlSecs": ttl, "uses": uses });
+            let res: JoinTokenResponse = post_json(url, "/api/join-tokens", &body).await?;
+            if json {
+                println!("{}", serde_json::to_string(&res)?);
+            } else {
+                println!("{}", res.token);
+                info(quiet, format!("run on the new node:\n  {}", res.command));
+            }
+            Ok(())
+        }
+    }
+}
+
+async fn set_cordon(url: &str, id: &str, cordoned: bool, json: bool, quiet: bool) -> Result<()> {
+    let body = serde_json::json!({ "cordoned": cordoned });
+    let res: NodeSummary = patch_json(url, &format!("/api/nodes/{id}"), &body).await?;
+    if json {
+        println!("{}", serde_json::to_string(&res)?);
+    } else {
+        info(
+            quiet,
+            format!(
+                "node {} is now {}",
+                res.name,
+                if res.cordoned {
+                    "cordoned"
+                } else {
+                    "schedulable"
+                }
+            ),
+        );
+    }
+    Ok(())
 }
 
 fn resolve_url(url: Option<&str>) -> Result<String> {
@@ -254,6 +366,20 @@ async fn post_json<B: Serialize, T: DeserializeOwned>(
         .send()
         .await
         .with_context(|| format!("POST {url}{path} failed (is the host running?)"))?;
+    read_body(resp).await
+}
+
+async fn patch_json<B: Serialize, T: DeserializeOwned>(
+    url: &str,
+    path: &str,
+    body: &B,
+) -> Result<T> {
+    let resp = reqwest::Client::new()
+        .patch(format!("{url}{path}"))
+        .json(body)
+        .send()
+        .await
+        .with_context(|| format!("PATCH {url}{path} failed (is the host running?)"))?;
     read_body(resp).await
 }
 
@@ -524,14 +650,30 @@ async fn session_create(url: &str, args: SessionCreateArgs, json: bool, quiet: b
         extra_args,
         create_worktree: Some(args.worktree),
         prompt: args.prompt,
+        cpu_millis: args.cpu_millis,
+        mem_mb: args.mem_mb,
+        isolation: args.isolation,
+        node_selector: if args.node_labels.is_empty() {
+            None
+        } else {
+            Some(args.node_labels)
+        },
+        node_id: args.node,
     };
     let res: StartSessionResponse = post_json(url, "/api/sessions", &body).await?;
     if json {
         println!("{}", serde_json::to_string(&res)?);
     } else {
+        // Name the node only when it is not this host, so single-host
+        // output is unchanged.
+        let where_ = if res.node_name.is_empty() {
+            res.cwd.clone()
+        } else {
+            format!("{} on {}", res.cwd, res.node_name)
+        };
         info(
             quiet,
-            format!("started session {} ({}) in {}", res.name, res.cli, res.cwd),
+            format!("started session {} ({}) in {where_}", res.name, res.cli),
         );
     }
     Ok(())

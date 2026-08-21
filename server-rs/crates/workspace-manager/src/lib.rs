@@ -23,11 +23,66 @@ pub fn slugify(name: &str) -> String {
     }
 }
 
-/// `<prefix><slug>-<unix-seconds>`
+/// Stable identifier for a project, derived from its path on the
+/// control plane. It names the node-local mirror cache directory, so it
+/// must be filesystem-safe and stable across restarts — but it never
+/// needs to agree between two different control planes.
+pub fn project_id(path: &Path) -> String {
+    // FNV-1a over the full path disambiguates same-named projects under
+    // different roots without pulling in a hash crate.
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in path.to_string_lossy().as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "project".into());
+    let slug: String = slugify(&name).chars().take(32).collect();
+    format!("{slug}-{hash:016x}")
+}
+
+/// Environment handed to a freshly spawned session process (PTY or
+/// chat), so the agent CLI can find its own workspace. Lives here
+/// because both the HTTP layer and the node runtime spawn agents and
+/// the two must agree on the variable names.
+pub fn launch_env(orig: &Path, name: &str, cwd: &Path) -> Vec<(String, String)> {
+    vec![
+        (
+            "AGENT_START_ROOT_PATH".into(),
+            orig.to_string_lossy().into_owned(),
+        ),
+        ("AGENT_START_WORKSPACE_NAME".into(), name.to_string()),
+        (
+            "AGENT_START_WORKSPACE_PATH".into(),
+            cwd.to_string_lossy().into_owned(),
+        ),
+        ("TERM".into(), "xterm-256color".into()),
+    ]
+}
+
+/// `<prefix><slug>-<unix-seconds><suffix>`
+///
+/// The seconds alone are not enough: a scheduler placing a burst of
+/// sessions across a cluster easily creates several within the same
+/// second, and a collision means two sessions fighting over one
+/// worktree, one branch and one primary key. The four-character suffix
+/// keeps the name readable while making that practically impossible.
 pub fn session_name(prefix: &str, project_name: &str) -> String {
     let slug: String = slugify(project_name).chars().take(32).collect();
     let ts = chrono::Utc::now().timestamp();
-    format!("{prefix}{slug}-{ts}")
+    format!("{prefix}{slug}-{ts}{}", short_suffix())
+}
+
+/// Four lowercase base-36 characters (~1.7M values) from the OS RNG.
+fn short_suffix() -> String {
+    const ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let bytes = uuid::Uuid::new_v4().into_bytes();
+    bytes[..4]
+        .iter()
+        .map(|b| ALPHABET[(*b as usize) % ALPHABET.len()] as char)
+        .collect()
 }
 
 const SESSION_NAME_ALLOWED: &str =
@@ -166,5 +221,24 @@ mod tests {
         let n = session_name("cc-", "my project");
         assert!(n.starts_with("cc-my-project-"));
         assert!(is_valid_session_name(&n));
+    }
+
+    #[test]
+    fn session_names_do_not_collide_within_one_second() {
+        // A cluster places bursts of sessions; second-resolution names
+        // alone would hand two of them the same worktree and branch.
+        let names: std::collections::HashSet<String> =
+            (0..500).map(|_| session_name("cc-", "demo")).collect();
+        assert_eq!(names.len(), 500, "duplicate session names generated");
+    }
+
+    #[test]
+    fn project_id_separates_same_named_projects_under_different_roots() {
+        let a = project_id(Path::new("/srv/work/api"));
+        let b = project_id(Path::new("/home/me/api"));
+        assert_ne!(a, b);
+        assert!(a.starts_with("api-"), "unreadable id: {a}");
+        // Stable across calls — it names a cache directory.
+        assert_eq!(a, project_id(Path::new("/srv/work/api")));
     }
 }

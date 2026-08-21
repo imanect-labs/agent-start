@@ -5,6 +5,11 @@ members = [
     "bin/agent-start",
     "crates/agent-start-api",
     "crates/workspace-manager",
+    "crates/cluster-proto",
+    "crates/cluster-control",
+    "crates/cluster-node",
+    "crates/executor",
+    "crates/metrics-probe",
     "crates/pty-manager",
     "crates/chat-manager",
     "crates/code-server-manager",
@@ -31,6 +36,11 @@ code-server-manager = { path = "crates/code-server-manager" }
 novnc-manager = { path = "crates/novnc-manager" }
 state          = { path = "crates/state" }
 workspace-manager = { path = "crates/workspace-manager" }
+cluster-proto   = { path = "crates/cluster-proto" }
+cluster-control = { path = "crates/cluster-control" }
+cluster-node    = { path = "crates/cluster-node" }
+executor        = { path = "crates/executor" }
+metrics-probe   = { path = "crates/metrics-probe" }
 
 anyhow = "1"
 thiserror = "1"
@@ -54,6 +64,15 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 portable-pty = "0.9"
 libc = "0.2"
+async-trait = "0.1"
+base64 = "0.22"
+sha2 = "0.10"
+sysinfo = "0.38"
+tokio-tungstenite = { version = "0.30", default-features = false, features = [
+    "connect",
+    "handshake",
+    "rustls-tls-webpki-roots",
+] }
 
 [profile.release]
 lto = "thin"

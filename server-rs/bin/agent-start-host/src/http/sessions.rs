@@ -14,6 +14,8 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use cluster_control::Demand;
+use cluster_proto::{AssignSpec, IsolationProfile, ProjectRef, Resources};
 use pty_manager::PtySpawnSpec;
 use serde::Deserialize;
 use std::path::{Path as StdPath, PathBuf};
@@ -35,11 +37,29 @@ fn boom(msg: impl Into<String>) -> Box<Response> {
 }
 
 pub async fn list_sessions(State(app): State<Shared>) -> Response {
-    let dirs = app.sessions.read();
-    let mut out = Vec::with_capacity(dirs.len());
-    for d in dirs.values() {
-        let attached = app.pty.attached_count(&d.name) > 0;
-        out.push(d.to_api(attached));
+    let mut out = {
+        let dirs = app.sessions.read();
+        let mut out = Vec::with_capacity(dirs.len());
+        for d in dirs.values() {
+            // A relayed session has no local PTY, so the local attach
+            // count is only meaningful for sessions on this host.
+            let attached = app.pty.attached_count(&d.name) > 0;
+            out.push(d.to_api(attached));
+        }
+        out
+    };
+    // Resolve node ids to names for the UI badge. Nodes that have since
+    // been removed keep their id, which is still better than nothing.
+    if let Some(control) = app.cluster.as_ref() {
+        let local = control.local_node_id();
+        for s in &mut out {
+            if s.node_id.is_empty() || Some(&s.node_id) == local.as_ref() {
+                continue;
+            }
+            if let Some(view) = control.node(&s.node_id) {
+                s.node_name = view.info.name;
+            }
+        }
     }
     out.sort_by_key(|s| std::cmp::Reverse(s.created_at));
     Json(SessionsBody { sessions: out }).into_response()
@@ -78,18 +98,15 @@ pub async fn start_session(
         .unwrap_or_else(|| "project".into());
     let name = workspace_manager::session_name(&cfg.session_prefix, &base_name);
 
-    let (cwd, worktree_path) = match maybe_create_worktree(&resolved, &name, create_wt) {
-        Ok(v) => v,
-        Err(resp) => return *resp,
-    };
-
-    // Both the PTY `claude` and the chat `claude` run the same binary, so
-    // mark the worktree Claude-trusted for either.
-    if cli_key == "claude" || is_chat {
-        let _ = workspace_manager::mark_claude_trusted(&cwd);
-    }
-
+    // Chat-mode conversations still run on this host: their transcript
+    // persistence and `--resume` handling are host-local (see
+    // `crate::chat`). Scheduling them across nodes is Phase 2 work.
     if is_chat {
+        let (cwd, worktree_path) = match maybe_create_worktree(&resolved, &name, create_wt) {
+            Ok(v) => v,
+            Err(resp) => return *resp,
+        };
+        let _ = workspace_manager::mark_claude_trusted(&cwd);
         return start_chat_session(
             &app,
             StartChatArgs {
@@ -108,49 +125,83 @@ pub async fn start_session(
         .await;
     }
 
-    let env = crate::sessions::launch_env(&resolved, &name, &cwd);
-    let spec = PtySpawnSpec {
-        name: name.clone(),
-        window: 0,
-        cwd: cwd.clone(),
-        shell: cfg.shell.clone(),
-        command: command.clone(),
-        env,
-        cols: 80,
-        rows: 24,
+    let Some(control) = app.cluster.clone() else {
+        return err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "this host runs no scheduler (started with --role node)",
+        );
     };
 
-    let session = match app.pty.spawn(spec) {
-        Ok(s) => s,
+    // A project reaches another node through its `origin` remote. Without
+    // one it can only run where the files already are.
+    let clone_url = git_ops::origin_url(&resolved);
+    let local_only = clone_url.is_none();
+    let project = ProjectRef {
+        id: workspace_manager::project_id(&resolved),
+        name: base_name.clone(),
+        local_path: resolved.to_string_lossy().into_owned(),
+        clone_url,
+    };
+
+    let demand = Demand {
+        requests: requests_from(&body),
+        isolation: isolation_from(&body),
+        label_selector: match selector_from(&body) {
+            Ok(v) => v,
+            Err(resp) => return *resp,
+        },
+        project_id: project.id.clone(),
+        pinned_node: body.node_id.clone().filter(|s| !s.is_empty()),
+        local_only,
+    };
+
+    let spec = AssignSpec {
+        session: name.clone(),
+        cli: cli_key.clone(),
+        command: command.clone(),
+        shell: cfg.shell.clone(),
+        project,
+        create_worktree: create_wt,
+        // The PTY and chat `claude` are the same binary, and either
+        // needs the worktree marked trusted before it starts.
+        mark_claude_trusted: cli_key == "claude",
+        requests: demand.requests,
+        isolation: demand.isolation,
+        env: Vec::new(),
+    };
+
+    let placed = match control.start_session(spec, demand).await {
+        Ok(p) => p,
         Err(e) => {
-            if let Some(wt) = worktree_path.as_deref() {
-                let _ = git_ops::remove_worktree(wt, Some(&resolved), true);
-            }
-            return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
+            let status = match &e {
+                cluster_control::StartError::NoFit(_) => StatusCode::SERVICE_UNAVAILABLE,
+                cluster_control::StartError::Timeout { .. } => StatusCode::GATEWAY_TIMEOUT,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            return err(status, e.to_string());
         }
     };
 
-    let wt_str = worktree_path
-        .as_ref()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let orig_str = if worktree_path.is_some() {
-        resolved.to_string_lossy().into_owned()
-    } else {
-        String::new()
-    };
+    let assigned = &placed.assigned;
+    tracing::info!(
+        session = %name,
+        node = %placed.node_name,
+        local = placed.is_local,
+        "session scheduled"
+    );
 
     if let Err(e) = state::insert_session(
         &app.db,
         state::NewSession {
             name: &name,
             cli: &cli_key,
-            cwd: &cwd.to_string_lossy(),
+            cwd: &assigned.cwd,
             command: &command,
-            worktree_path: &wt_str,
-            orig_path: &orig_str,
-            pid: session.pid().map(|v| v as i64),
+            worktree_path: &assigned.worktree_path,
+            orig_path: &assigned.orig_path,
+            pid: assigned.pid.map(|v| v as i64),
             title: &title,
+            node_id: &placed.node_id,
         },
     )
     .await
@@ -164,12 +215,18 @@ pub async fn start_session(
             name: name.clone(),
             created_at_ms: chrono::Utc::now().timestamp_millis(),
             cli: cli_key.clone(),
-            cwd: cwd.to_string_lossy().into_owned(),
-            worktree_path: wt_str,
-            orig_path: orig_str,
+            cwd: assigned.cwd.clone(),
+            worktree_path: assigned.worktree_path.clone(),
+            orig_path: assigned.orig_path.clone(),
             live: true,
             history: Vec::new(),
             title,
+            node_id: placed.node_id.clone(),
+            node_name: if placed.is_local {
+                String::new()
+            } else {
+                placed.node_name.clone()
+            },
         },
     );
 
@@ -177,10 +234,46 @@ pub async fn start_session(
         name,
         command,
         cli: cli_key,
-        cwd: cwd.to_string_lossy().into_owned(),
-        worktree_path: worktree_path.map(|p| p.to_string_lossy().into_owned()),
+        cwd: assigned.cwd.clone(),
+        worktree_path: if assigned.worktree_path.is_empty() {
+            None
+        } else {
+            Some(assigned.worktree_path.clone())
+        },
+        node_id: placed.node_id,
+        node_name: placed.node_name,
     })
     .into_response()
+}
+
+/// Resource reservation for one session: what the request asked for, or
+/// a modest default that lets a laptop host a few agents at once.
+fn requests_from(body: &StartSessionRequest) -> Resources {
+    let default = Resources::default_request();
+    Resources {
+        cpu_millis: body
+            .cpu_millis
+            .filter(|v| *v > 0)
+            .unwrap_or(default.cpu_millis),
+        mem_mb: body.mem_mb.filter(|v| *v > 0).unwrap_or(default.mem_mb),
+    }
+}
+
+fn isolation_from(body: &StartSessionRequest) -> IsolationProfile {
+    match body.isolation.as_deref().map(str::trim) {
+        Some("container") => IsolationProfile::Container,
+        Some("microvm") => IsolationProfile::MicroVm,
+        _ => IsolationProfile::Process,
+    }
+}
+
+fn selector_from(body: &StartSessionRequest) -> Erred<Vec<(String, String)>> {
+    let Some(raw) = body.node_selector.as_ref() else {
+        return Ok(Vec::new());
+    };
+    raw.iter()
+        .map(|s| crate::cluster::parse_label(s).map_err(bad))
+        .collect()
 }
 
 /// Inputs for `start_chat_session`, grouped to keep the arg list sane.
@@ -274,6 +367,9 @@ async fn start_chat_session(app: &Shared, args: StartChatArgs<'_>) -> Response {
             orig_path: &orig_str,
             pid: None,
             title,
+            // Chat conversations are host-local for now (see the note in
+            // `start_session`), so they carry the local node's id.
+            node_id: &local_node_id(app),
         },
     )
     .await
@@ -293,6 +389,8 @@ async fn start_chat_session(app: &Shared, args: StartChatArgs<'_>) -> Response {
             live: true,
             history: Vec::new(),
             title: title.to_string(),
+            node_id: local_node_id(app),
+            node_name: String::new(),
         },
     );
 
@@ -302,8 +400,20 @@ async fn start_chat_session(app: &Shared, args: StartChatArgs<'_>) -> Response {
         cli: cli_key.to_string(),
         cwd: cwd.to_string_lossy().into_owned(),
         worktree_path: worktree_path.map(|p| p.to_string_lossy().into_owned()),
+        node_id: local_node_id(app),
+        node_name: String::new(),
     })
     .into_response()
+}
+
+/// Id of the in-process node, or empty when this host runs no scheduler.
+/// Sessions the host starts itself are attributed to it so the registry
+/// and the session list agree on where things are running.
+fn local_node_id(app: &Shared) -> String {
+    app.cluster
+        .as_ref()
+        .and_then(|c| c.local_node_id())
+        .unwrap_or_default()
 }
 
 /// POST `/api/sessions/:name/restart` — bring a session that was
@@ -322,6 +432,15 @@ pub async fn restart_session(State(app): State<Shared>, Path(name): Path<String>
     };
     if dir.live {
         return err(StatusCode::CONFLICT, "session is already running");
+    }
+    if !is_local_session(&app, &name) {
+        // Restart re-spawns a PTY from this host's filesystem, which is
+        // meaningless for a worktree that lives on another machine.
+        // Cross-node restart arrives with the task queue in Phase 2.
+        return err(
+            StatusCode::CONFLICT,
+            "this session ran on another node; start a new session instead",
+        );
     }
 
     let row = match state::get_session(&app.db, &name).await {
@@ -395,8 +514,20 @@ pub async fn restart_session(State(app): State<Shared>, Path(name): Path<String>
         } else {
             Some(row.worktree_path)
         },
+        node_id: row.node_id,
+        node_name: String::new(),
     })
     .into_response()
+}
+
+/// True when the session's PTY lives in this process. Sessions started
+/// before the cluster layer, and everything on the in-process node,
+/// answer yes — which is what keeps the single-host paths unchanged.
+pub(crate) fn is_local_session(app: &Shared, name: &str) -> bool {
+    match app.cluster.as_ref() {
+        Some(control) => control.is_local_session(name),
+        None => true,
+    }
 }
 
 pub async fn delete_session(
@@ -414,6 +545,16 @@ pub async fn delete_session(
     let delete_wt = q.delete_worktree.as_deref() == Some("1");
 
     let dir = app.sessions.read().get(&name).cloned();
+    let local = is_local_session(&app, &name);
+
+    // A session on another node is torn down by that node: it owns the
+    // PTY and the worktree. Everything below this point is host-local
+    // bookkeeping that applies either way.
+    if !local {
+        if let Some(control) = app.cluster.as_ref() {
+            control.cancel_session(&name, delete_wt).await;
+        }
+    }
 
     for window in app.pty.remove_session(&name) {
         window.kill();
@@ -430,7 +571,12 @@ pub async fn delete_session(
 
     let mut worktree_removed = false;
     let mut worktree_error: Option<String> = None;
-    if delete_wt {
+    if delete_wt && !local {
+        // Reported optimistically: the node performs the removal
+        // asynchronously and there is nothing here to inspect.
+        worktree_removed = true;
+    }
+    if delete_wt && local {
         if let Some(d) = dir.as_ref() {
             if !d.worktree_path.is_empty() {
                 let wt = PathBuf::from(&d.worktree_path);
