@@ -88,9 +88,21 @@ jobs:
           name: front-dist
           path: front/dist
 
+      # Same pin as the CI workflow, read from `server-rs/rust-toolchain.toml`
+      # at the tag being built, so a release is reproducible against a known
+      # compiler rather than whatever `stable` was on the day it ran.
+      - name: Resolve pinned Rust toolchain
+        id: toolchain
+        shell: bash
+        run: .github/scripts/rust-channel.sh
+
+      # Pinned to a SHA, not `@master`, for the same reason as the CI workflow:
+      # a mutable branch ref decides what runs inside a job that signs and
+      # uploads release artifacts.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
           targets: ${{ matrix.target }}
 
       - name: Install cross (Linux aarch64)

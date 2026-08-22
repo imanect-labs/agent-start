@@ -1,3 +1,22 @@
+# The compiler this project is *built and tested with*, and the only place that
+# version is written down: CI reads `channel` out of this file, so a bump here
+# is a bump everywhere — and it arrives as a PR whose CI run proves the new
+# compiler is happy before it reaches main.
+#
+# Not to be confused with `rust-version` in Cargo.toml. That is the MSRV — the
+# oldest compiler this crate claims to support, for people who consume it — and
+# it is deliberately far behind. This pin is what we develop against.
+#
+# Pinned rather than `stable` on purpose. Tracking `stable` meant every
+# six-week release could turn main red on its own: a new clippy lint fires
+# against untouched code, and suddenly no PR can go green until someone
+# notices and fixes a file they never opened (see #119).
+#
+# Bumping: edit `channel` here, then run the same three checks CI does —
+# `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and
+# `cargo test --all` — fix whatever the new compiler found, and open that as
+# its own PR. `rustfmt` output shifts between releases, so skipping the format
+# check just moves the failure into CI.
 [toolchain]
-channel = "stable"
+channel = "1.98.0"
 components = ["rustfmt", "clippy"]

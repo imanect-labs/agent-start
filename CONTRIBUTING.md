@@ -5,7 +5,26 @@ covers the setup you need before opening a PR.
 
 ## Toolchain
 
-- **Rust** (stable, ≥ `rust-version` declared in `server-rs/Cargo.toml`)
+- **Rust** — pinned in [`server-rs/rust-toolchain.toml`](./server-rs/rust-toolchain.toml).
+  `rustup` picks it up automatically when you run `cargo` inside `server-rs/`,
+  and CI installs the same version, so what fails locally fails in CI and vice
+  versa.
+
+  The pin is deliberate: while CI tracked `stable`, a Rust release could turn
+  `main` red on its own — a new clippy lint fires against code nobody touched,
+  and no PR can go green until someone fixes a file unrelated to their change.
+
+  This is a different number from `rust-version` in `server-rs/Cargo.toml`.
+  That one is the MSRV, the oldest compiler the crates claim to support; the
+  pin is the one compiler we develop and test against. Raising the pin does
+  not raise the MSRV.
+
+  **Bumping the version** is its own PR: edit `channel` in that file, run the
+  three checks CI runs — `cargo fmt --check`,
+  `cargo clippy --all-targets -- -D warnings`, and `cargo test --all` in
+  `server-rs/` — fix whatever the new compiler found, and ship the two
+  together. Nothing else needs editing: the workflows read the version out of
+  that file.
 - **Vite+ CLI (`vp`)** — bundles `vite` / `vitest` / `oxlint` / `oxfmt` / `tsgo`
   / a Node runtime. Install once:
 

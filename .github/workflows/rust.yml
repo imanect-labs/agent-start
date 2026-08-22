@@ -14,13 +14,29 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Every job installs the toolchain named in `server-rs/rust-toolchain.toml`
+# rather than whatever `stable` happens to be today. `dtolnay/rust-toolchain`
+# does not read that file itself, so each job reads `channel` out of it and
+# passes it in — which keeps one source of truth and makes a version bump a
+# reviewable one-line diff.
+#
+# The action is pinned to a commit SHA rather than `@master`. A branch ref is
+# mutable: whoever can move it decides what runs in a job that holds this
+# repository's token. The SHA is `master`'s head, so the behaviour is the same
+# one CI already runs — only now it cannot change underneath us. Dependabot
+# bumps this like any other dependency (see `.github/dependabot.yml`), so the
+# pin stays current without anyone watching upstream by hand.
+
 jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - id: toolchain
+        run: .github/scripts/rust-channel.sh
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
           components: rustfmt
       - run: cargo fmt --check
         working-directory: server-rs
@@ -29,8 +45,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - id: toolchain
+        run: .github/scripts/rust-channel.sh
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
@@ -42,7 +61,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - id: toolchain
+        run: .github/scripts/rust-channel.sh
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server-rs
@@ -53,7 +76,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - id: toolchain
+        run: .github/scripts/rust-channel.sh
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server-rs
