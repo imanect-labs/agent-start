@@ -42,6 +42,23 @@ pub async fn ws_terminal(
     if let Some(session) = app.pty.get(&name, window) {
         return ws.on_upgrade(move |socket| handle(socket, session, app));
     }
+
+    // The PTY may belong to another node. Open a relayed channel to it
+    // and speak the very same wire protocol to the browser, so the
+    // terminal component cannot tell the difference.
+    if let Some(control) = app.cluster.clone() {
+        if !control.is_local_session(&name) {
+            return match control.open_pty_stream(&name, window).await {
+                Some(stream) => ws.on_upgrade(move |socket| relay(socket, stream)),
+                None => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "the node running this session is unreachable",
+                )
+                    .into_response(),
+            };
+        }
+    }
+
     // No live PTY — if we rehydrated this name from disk after a host
     // restart, hold the WS open so xterm doesn't loop-reconnect. For
     // window 0 we also replay snapshotted scrollback when available.
@@ -59,6 +76,61 @@ pub async fn ws_terminal(
         Vec::new()
     };
     ws.on_upgrade(move |socket| handle_stopped(socket, history))
+}
+
+/// Bridge a browser WebSocket to a PTY on another node.
+///
+/// Deliberately the same wire shapes as `handle`: JSON control frames
+/// in, raw bytes out. Scrollback replay happens on the node (it owns
+/// the ring buffer) and arrives as the first data frame, so the
+/// terminal component cannot tell a relayed session from a local one.
+async fn relay(socket: WebSocket, mut stream: cluster_control::PtyStream) {
+    let (mut sink, mut ws_in) = socket.split();
+    let Some(mut rx) = stream.take_rx() else {
+        return;
+    };
+
+    loop {
+        tokio::select! {
+            out = rx.recv() => match out {
+                Some(cluster_control::StreamMsg::Data(chunk)) => {
+                    if sink.send(Message::Binary(chunk.into())).await.is_err() {
+                        break;
+                    }
+                }
+                Some(cluster_control::StreamMsg::Closed(reason)) => {
+                    let notice = format!("\r\n\x1b[2m-- session ended on node: {reason} --\x1b[0m\r\n");
+                    let _ = sink.send(Message::Binary(notice.into_bytes().into())).await;
+                    break;
+                }
+                // The node link dropped out from under us.
+                None => break,
+            },
+            input = ws_in.next() => {
+                let Some(Ok(msg)) = input else { break };
+                match msg {
+                    Message::Text(text) => {
+                        let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) else {
+                            continue;
+                        };
+                        match client_msg {
+                            ClientMessage::Input { data } => {
+                                stream.write(data.into_bytes()).await;
+                            }
+                            ClientMessage::Resize { cols, rows } => {
+                                stream.resize(cols.max(1), rows.max(1)).await;
+                            }
+                            // Legacy tmux scrollback request; xterm.js
+                            // scrolls client-side now.
+                            ClientMessage::Scroll { .. } => {}
+                        }
+                    }
+                    Message::Close(_) => break,
+                    _ => {}
+                }
+            }
+        }
+    }
 }
 
 async fn handle_stopped(socket: WebSocket, history: Vec<u8>) {

@@ -28,6 +28,49 @@
 `vp dev` (:5173) を別プロセスで立て、Vite+ のプロキシ経由で `:3030` の host を叩く。
 本番では host バイナリ単体で完結する。
 
+## 複数マシンで動かす
+
+`agent-start-host` は既定で **コントロールプレーン**（API・UI・スケジューラ）と
+**ノード**（実際にエージェントを走らせる側）の両方を 1 プロセスで動かす。
+これが `--role all` で、従来のリリースと挙動は同じ。
+
+マシンを足すと、空いている方に自動でセッションが載る:
+
+```bash
+# 既に agent-start が動いているマシンで:
+agent-start node token            # 使い捨ての参加トークンと実行コマンドを表示
+
+# 新しいマシンで（ノード側から接続しに行くので inbound は開けなくてよい）:
+agent-start-host --role node \
+  --join-url http://<コントロールプレーンのホスト>:3030 \
+  --join-token <token> \
+  --max-sessions 4 --label gpu=true
+```
+
+参加したノード・各マシンの負荷・どのセッションがどこで動いているかは
+`agent-start node list` か UI の **ノード** ページで確認できる。
+
+配置の仕組み:
+
+- ノードは heartbeat ごとに CPU / メモリ使用率と予約済み容量を報告する。
+  セッションは必要量を宣言でき (`--cpu-millis` / `--mem-mb`)、容量が足りない・
+  同時実行上限に達している・cordon されているノードは候補から外れる。
+- 残った中で最も空いているノードが勝つ。ただし **そのプロジェクトの clone を
+  既に持っているノードにやや寄せる** — 未取得のノードは先にミラーを取る必要があるため。
+- ノードは `~/.agent-start/cache/` にプロジェクトごとの bare ミラーを持ち、
+  セッションごとに `git worktree` を切る。**`origin` リモートを持つプロジェクトだけが
+  他マシンへ渡れる**。origin がない場合、そのセッションはファイルのあるマシンに留まる。
+- `agent-start node cordon <id>` で、実行中のセッションはそのままに
+  新規割り当てだけを止められる。
+
+ターミナルはリモートノード上のセッションも含めてコントロールプレーン経由で中継される
+（ブラウザは常に 1 つのアドレスとだけ話す）。前提は従来どおり信頼できるネットワーク上での
+運用で、[SECURITY.md](./SECURITY.md) を参照のこと。**有効な参加トークンを持つマシンは
+クラスタ上でコマンドを実行できる**点に注意。
+
+設計と残りのロードマップ（タスクキュー、コンテナ / microVM 隔離、Helm）は
+[docs/multinode-cloud-design.ja.md](./docs/multinode-cloud-design.ja.md) にある。
+
 ## インストール
 
 [Releases](https://github.com/imanect-labs/agent-start/releases) ページで Linux (x86_64 / aarch64)、macOS (Apple Silicon / Intel)、Windows (x86_64) 向けのビルド済みバイナリを配布しています。Web UI は `rust-embed` でバイナリに同梱されているため、追加ファイルは不要です。

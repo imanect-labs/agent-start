@@ -1,5 +1,8 @@
 # agent-start ロードマップ
 
+> 単機構成の機能ロードマップ。複数ノードへの分散 / クラウド環境化は
+> [multinode-cloud-design.ja.md](./multinode-cloud-design.ja.md) を参照。
+
 ## ゴール
 
 agent-start を **Web で動く、セルフホスト可能なエージェント開発ハブ** に作り直す。

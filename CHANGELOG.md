@@ -8,7 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Multi-node scheduling.** `agent-start-host` now splits into a control
+  plane (API, UI, scheduler, relay) and node agents that run the agents
+  themselves, and places each session on whichever node has room.
+  `--role all` remains the default and behaves exactly as before — the
+  in-process node registers over a loopback link through the same path a
+  remote node uses. Nodes dial out (`--role node --join-url … --join-token …`),
+  so a machine behind NAT joins without opening a port; terminals for
+  remote sessions relay through the control plane on the existing wire
+  format. Placement filters on readiness, cordon state, session caps,
+  resource requests, isolation profile and node labels, then scores on
+  reserved capacity, observed load and repository-cache affinity.
+  New surfaces: `GET/PATCH/DELETE /api/nodes`, `POST /api/join-tokens`,
+  a `/nodes` page in the UI, a node badge on session rows, and
+  `agent-start node list|cordon|uncordon|token`. See
+  [docs/multinode-cloud-design.ja.md](docs/multinode-cloud-design.ja.md).
+- Session start accepts `cpuMillis`, `memMb`, `isolation`, `nodeSelector`
+  and `nodeId` so a session can state what it needs and where it may run.
 - Screenshots / demo GIF in `docs/screenshots/` (TODO).
+
+### Fixed
+- **Session names no longer collide within the same second.** Two
+  sessions created in one second shared a worktree, a branch and a
+  primary key; names now carry a random suffix.
+- **`git worktree add` resolves its base to a commit SHA.** Passing a
+  branch name let git's DWIM ignore `-b` and create the wrong branch, and
+  failed outright on a bare mirror whose HEAD names a ref it does not
+  have.
 
 ## [0.2.3] - 2026-06-01
 

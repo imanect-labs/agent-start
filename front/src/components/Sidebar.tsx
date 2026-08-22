@@ -11,6 +11,7 @@ import {
   IconPlus,
   IconRefresh,
   IconSearch,
+  IconServer,
   IconTerminal,
   IconX,
 } from "@/components/icons";
@@ -46,6 +47,9 @@ export type TmuxSession = {
    * prompt, or the first chat message). Empty/undefined until known — the
    * row falls back to the session name. */
   title?: string;
+  /** Name of the cluster node running this session. Empty/undefined for
+   * the local node — a single-host install never shows a node badge. */
+  nodeName?: string;
   /** Optimistic placeholder: the session is still being created on the
    * host. Rendered with a spinner and no stop button until the real
    * session arrives from /api/sessions. */
@@ -218,6 +222,13 @@ export function Sidebar({
           >
             <IconRefresh className="w-4 h-4" />
           </button>
+          <Link
+            to="/nodes"
+            aria-label="ノード"
+            className="w-9 h-9 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
+          >
+            <IconServer className="w-4 h-4" />
+          </Link>
           <Link
             to="/settings"
             aria-label="設定"
@@ -594,6 +605,18 @@ function SessionRow({
             <>
               <span>·</span>
               <span>{formatRelative(session.createdAt)}</span>
+              {session.nodeName && (
+                <>
+                  <span>·</span>
+                  <span
+                    className="inline-flex items-center gap-0.5 min-w-0"
+                    title={`ノード ${session.nodeName} で実行中`}
+                  >
+                    <IconServer className="w-2.5 h-2.5 shrink-0" />
+                    <span className="truncate">{session.nodeName}</span>
+                  </span>
+                </>
+              )}
             </>
           )}
         </div>

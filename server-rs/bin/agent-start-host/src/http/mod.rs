@@ -14,6 +14,7 @@ mod git;
 mod git_write;
 mod issues;
 mod meta;
+mod nodes;
 mod novnc;
 pub mod novnc_proxy;
 mod preferences;
@@ -32,6 +33,7 @@ pub use git_write::{
 };
 pub use issues::{list_issues, view_issue};
 pub use meta::{health, update_check, version};
+pub use nodes::{create_join_token, delete_node, get_node, list_nodes, patch_node};
 pub use novnc::{close_novnc, open_novnc};
 pub use preferences::{get_preferences, put_preferences};
 pub use projects::list_projects;

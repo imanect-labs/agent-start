@@ -100,6 +100,61 @@ pub fn is_git_repo(p: &Path) -> bool {
     run(p, &["rev-parse", "--git-dir"]).is_ok()
 }
 
+/// Ensure `dest` holds an up-to-date bare mirror of `url`.
+///
+/// This is the node-local repository cache behind multi-node
+/// scheduling: the first session for a project on a given node pays for
+/// a mirror clone, every later one only pays for a fetch, and worktrees
+/// are cut straight from the mirror. A failed refresh of an existing
+/// mirror is not fatal — branching off slightly stale refs beats
+/// refusing to start a session because the node is briefly offline.
+pub fn ensure_mirror(url: &str, dest: &Path) -> Result<(), GitError> {
+    // A `HEAD` file alone is not proof: an interrupted clone leaves one
+    // behind in a directory git cannot fetch into. Require a repository
+    // that still knows where it came from before trusting the cache.
+    if dest.join("HEAD").exists() && origin_url(dest).is_some() {
+        if let Err(e) = run(dest, &["fetch", "--prune", "origin"]) {
+            tracing::warn!(error = %e, mirror = %dest.display(), "mirror refresh failed; using cached refs");
+        }
+        return Ok(());
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    // A partial directory from an interrupted clone would make `git
+    // clone` fail forever; clear it first.
+    if dest.exists() {
+        std::fs::remove_dir_all(dest)?;
+    }
+    let mut cmd = Command::new("git");
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd.arg("clone").arg("--mirror").arg(url).arg(dest);
+    let output = cmd.output()?;
+    if !output.status.success() {
+        // Leave nothing half-cloned behind for the next attempt.
+        let _ = std::fs::remove_dir_all(dest);
+        return Err(GitError::Failed {
+            cmd: format!("git clone --mirror {} {}", url, dest.display()),
+            code: output.status.code(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// URL of the repository's `origin` remote, if it has one. A project
+/// without an origin cannot be reproduced on another node, so the
+/// scheduler keeps its sessions on the host that holds the files.
+pub fn origin_url(repo: &Path) -> Option<String> {
+    let out = run(repo, &["remote", "get-url", "origin"]).ok()?;
+    let trimmed = out.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 /// Run `git clone <url> <dest>` from the current working directory.
 /// Blocks until the clone completes; callers should `tokio::task::spawn_blocking`.
 pub fn clone(url: &str, dest: &Path) -> Result<(), GitError> {

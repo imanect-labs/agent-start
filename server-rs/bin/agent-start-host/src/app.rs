@@ -23,12 +23,16 @@ use tower_http::trace::TraceLayer;
 #[folder = "$CARGO_MANIFEST_DIR/../../../front/dist"]
 struct FrontAssets;
 
+use crate::cluster::ClusterArgs;
 use crate::manifest;
 use crate::sessions::SessionDirectory;
 
 pub struct AppState {
     pub db: Db,
     pub pty: Arc<PtyManager>,
+    /// Scheduler + node registry. `None` only for `--role node`, which
+    /// serves no API of its own.
+    pub cluster: Option<Arc<cluster_control::ControlPlane>>,
     pub chat: Arc<ChatManager>,
     pub code_server: Arc<CodeServerManager>,
     pub novnc: Arc<NovncManager>,
@@ -42,7 +46,12 @@ pub struct AppState {
 
 pub type Shared = Arc<AppState>;
 
-pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Result<()> {
+pub async fn run(
+    bind: String,
+    port: u16,
+    frontend_dist: Option<PathBuf>,
+    cluster_args: ClusterArgs,
+) -> Result<()> {
     // Move legacy XDG files into ~/.agent-start/ on first boot of a new
     // build. No-op when the env overrides are set or files already exist
     // at the destination.
@@ -138,6 +147,8 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
                     live: false,
                     history,
                     title: row.title,
+                    node_id: row.node_id,
+                    node_name: String::new(),
                 },
             );
         }
@@ -147,9 +158,21 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         }
     }
 
+    // No node is connected yet, so nothing in the registry can be
+    // trusted as reachable until it says hello again.
+    if let Err(e) = state::mark_all_nodes_notready(&db).await {
+        tracing::warn!(error = %e, "failed to reset node statuses");
+    }
+    tracing::info!(role = cluster_args.role.as_str(), "starting host");
+    let cluster = cluster_args
+        .role
+        .runs_control_plane()
+        .then(|| crate::cluster::start_control_plane(db.clone(), pty.clone(), &cluster_args));
+
     let app_state: Shared = Arc::new(AppState {
         db,
         pty,
+        cluster,
         chat,
         code_server,
         novnc,
@@ -157,32 +180,78 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         update_cache: RwLock::new(None),
     });
 
-    // When a child process exits on its own (user types `exit`, the
-    // agent finishes, etc.) drop the in-memory entry and mark the row
-    // dead in SQLite so `GET /api/sessions` stops listing it. Only
-    // window 0 represents the session itself; auxiliary windows just
-    // vanish from `/windows` without ending the session.
-    {
+    // When a session's agent exits on its own (user types `exit`, the
+    // agent finishes, the node dies) drop the in-memory entry and mark
+    // the row dead so `GET /api/sessions` stops listing it.
+    //
+    // This hangs off the control plane rather than the PtyManager
+    // because the PTY may be on another machine: the node reports the
+    // exit, and local and remote sessions clean up through one path.
+    if let Some(control) = app_state.cluster.as_ref() {
         let state_for_hook = app_state.clone();
-        app_state
-            .pty
-            .set_exit_hook(Arc::new(move |name: &str, window: u32| {
-                if window != 0 {
-                    return;
+        control.set_session_exit_hook(Arc::new(move |name: String| {
+            let state = state_for_hook.clone();
+            tokio::spawn(async move {
+                state.sessions.write().remove(&name);
+                // Kill any noVNC backend tied to this session so Xvnc
+                // and websockify don't linger as zombies after the
+                // PTY they were paired with dies.
+                state.novnc.kill(&name).await;
+                if let Err(e) = state::mark_dead(&state.db, &name).await {
+                    tracing::warn!(error = %e, session = %name, "failed to mark dead");
                 }
-                let state = state_for_hook.clone();
-                let name = name.to_string();
-                tokio::spawn(async move {
-                    state.sessions.write().remove(&name);
-                    // Kill any noVNC backend tied to this session so Xvnc
-                    // and websockify don't linger as zombies after the
-                    // PTY they were paired with dies.
-                    state.novnc.kill(&name).await;
-                    if let Err(e) = state::mark_dead(&state.db, &name).await {
-                        tracing::warn!(error = %e, session = %name, "failed to mark dead");
+            });
+        }));
+    }
+
+    // A node that outlived the control plane keeps its PTYs running and
+    // re-reports them on reconnect. Put those sessions back in front of
+    // the user: without this they keep running on the node forever with
+    // no way to reach them, because boot marked every row dead and
+    // rehydration only restores directories that exist on *this* host.
+    if let Some(control) = app_state.cluster.as_ref() {
+        let state_for_adopt = app_state.clone();
+        control.set_session_adopt_hook(Arc::new(move |name: String, node_id: String| {
+            let state = state_for_adopt.clone();
+            tokio::spawn(async move {
+                let row = match state::get_session(&state.db, &name).await {
+                    Ok(Some(row)) => row,
+                    // Nothing on record: the node is running a session
+                    // this control plane never knew about. Leave it be
+                    // rather than invent metadata for it.
+                    Ok(None) => return,
+                    Err(e) => {
+                        tracing::warn!(error = %e, session = %name, "adopt: session lookup failed");
+                        return;
                     }
-                });
-            }));
+                };
+                if let Err(e) = state::mark_running(&state.db, &name, row.pid).await {
+                    tracing::warn!(error = %e, session = %name, "adopt: failed to mark running");
+                }
+                if let Err(e) = state::set_session_node(&state.db, &name, &node_id).await {
+                    tracing::warn!(error = %e, session = %name, "adopt: failed to record node");
+                }
+                state.sessions.write().insert(
+                    name.clone(),
+                    SessionDirectory {
+                        name: row.name,
+                        created_at_ms: row.created_at_ms,
+                        cli: row.cli,
+                        cwd: row.cwd,
+                        worktree_path: row.worktree_path,
+                        orig_path: row.orig_path,
+                        live: true,
+                        // Scrollback lives in the node's ring buffer and
+                        // is replayed when the terminal reattaches.
+                        history: Vec::new(),
+                        title: row.title,
+                        node_id,
+                        node_name: String::new(),
+                    },
+                );
+                tracing::info!(session = %name, "adopted a session still running on its node");
+            });
+        }));
     }
 
     // Chat conversations (#34) that crash or exit unexpectedly stay
@@ -340,6 +409,23 @@ pub async fn run(bind: String, port: u16, frontend_dist: Option<PathBuf>) -> Res
         .route(
             "/api/sessions/{name}/windows/{index}",
             delete(crate::http::delete_window),
+        )
+        .route("/api/nodes", get(crate::http::list_nodes))
+        .route(
+            "/api/nodes/{id}",
+            get(crate::http::get_node)
+                .patch(crate::http::patch_node)
+                .delete(crate::http::delete_node),
+        )
+        .route(
+            "/api/join-tokens",
+            axum::routing::post(crate::http::create_join_token),
+        )
+        // Inbound half of the cluster link. Nodes dial this; nothing
+        // else on the host speaks it.
+        .route(
+            crate::cluster::CONNECT_PATH,
+            get(crate::cluster::ws_cluster_connect),
         )
         .route("/api/fs/tree", get(crate::http::fs_tree))
         .route(

@@ -35,6 +35,56 @@ Browser ── tailnet ── agent-start-host (Rust, :3030)
 
 The front-end (`/front/`) is a Vite+ + React + TanStack Router SPA. In development it runs out-of-process via `vp dev` on `:5173` and proxies `/api/*`, `/v1/*`, `/ws/*` to the host on `:3030`.
 
+## Running across several machines
+
+By default `agent-start-host` runs both halves of the system in one
+process — a **control plane** (API, UI, scheduler) and a **node** (the
+thing that actually runs agents). That is `--role all`, and it behaves
+exactly like earlier releases.
+
+Point more machines at it and sessions start landing on whichever one
+has room:
+
+```bash
+# On the machine that already runs agent-start:
+agent-start node token            # prints a one-shot join token + the command to run
+
+# On the new machine (nothing to open inbound — the node dials out):
+agent-start-host --role node \
+  --join-url http://<control-plane-host>:3030 \
+  --join-token <token> \
+  --max-sessions 4 --label gpu=true
+```
+
+`agent-start node list` (or the **Nodes** page in the UI, labelled ノード) shows what
+joined, how loaded each machine is, and where each session is running.
+
+How placement works:
+
+- Nodes report CPU/memory utilization and their reserved capacity on
+  every heartbeat. A session declares what it needs (`--cpu-millis`,
+  `--mem-mb`); nodes that cannot fit it, are at their session cap, or
+  are cordoned are excluded outright.
+- Among the rest, the least-loaded node wins — with a nudge toward
+  machines that already hold a clone of the project, because a cold
+  node has to mirror the repository first.
+- A node keeps a bare mirror per project under `~/.agent-start/cache/`
+  and cuts each session a fresh `git worktree` from it. **A project can
+  only travel to another machine if it has an `origin` remote**;
+  without one its sessions stay on the machine holding the files.
+- `agent-start node cordon <id>` stops new work going to a machine
+  without disturbing what it is already running.
+
+Terminals, including sessions on remote nodes, are relayed through the
+control plane — the browser only ever talks to one address. Everything
+still assumes a trusted network: see [SECURITY.md](./SECURITY.md), and
+note that **any machine holding a valid join token can run commands on
+your cluster**.
+
+Design notes and the roadmap for the rest of this work (task queue,
+container/microVM isolation, Helm) live in
+[docs/multinode-cloud-design.ja.md](./docs/multinode-cloud-design.ja.md).
+
 ## Installation
 
 Pre-built binaries are published on the [Releases page](https://github.com/imanect-labs/agent-start/releases) for Linux (x86_64, aarch64), macOS (Apple Silicon, Intel), and Windows (x86_64). They are fully self-contained — the web UI is embedded into the binary.

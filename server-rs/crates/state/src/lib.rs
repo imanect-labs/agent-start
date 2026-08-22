@@ -11,6 +11,9 @@ use sqlx::{Pool, Row, Sqlite};
 use std::path::PathBuf;
 use std::str::FromStr;
 
+mod cluster;
+pub use cluster::*;
+
 pub type Db = Pool<Sqlite>;
 
 #[derive(Debug, thiserror::Error)]
@@ -43,6 +46,10 @@ pub struct SessionRow {
     /// chat message).
     #[serde(default)]
     pub title: String,
+    /// Cluster node the session runs on. Empty means the local node,
+    /// which is what every row written before v0.3 says.
+    #[serde(default)]
+    pub node_id: String,
 }
 
 impl SessionRow {
@@ -59,6 +66,7 @@ impl SessionRow {
             status: row.get("status"),
             claude_session_id: row.try_get("claude_session_id").unwrap_or_default(),
             title: row.try_get("title").unwrap_or_default(),
+            node_id: row.try_get("node_id").unwrap_or_default(),
         }
     }
 }
@@ -89,6 +97,10 @@ impl From<&SessionRow> for agent_start_api::Session {
             worktree_path: row.worktree_path.clone(),
             orig_path: row.orig_path.clone(),
             title: row.title.clone(),
+            node_id: row.node_id.clone(),
+            // Resolved by the host from the live node registry; the
+            // stored row only knows the id.
+            node_name: String::new(),
         }
     }
 }
@@ -124,13 +136,15 @@ pub struct NewSession<'a> {
     pub pid: Option<i64>,
     /// Short title derived from the initial prompt; empty when unknown.
     pub title: &'a str,
+    /// Node the session was scheduled onto; empty for the local node.
+    pub node_id: &'a str,
 }
 
 pub async fn insert_session(db: &Db, s: NewSession<'_>) -> Result<(), StateError> {
     let now = Utc::now().timestamp_millis();
     sqlx::query(
-        "INSERT INTO sessions (name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, title) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?)",
+        "INSERT INTO sessions (name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, title, node_id) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?)",
     )
     .bind(s.name)
     .bind(now)
@@ -141,6 +155,7 @@ pub async fn insert_session(db: &Db, s: NewSession<'_>) -> Result<(), StateError
     .bind(s.orig_path)
     .bind(s.pid)
     .bind(s.title)
+    .bind(s.node_id)
     .execute(db)
     .await?;
     Ok(())
@@ -160,7 +175,7 @@ pub async fn update_session_title(db: &Db, name: &str, title: &str) -> Result<()
 pub async fn list_sessions(db: &Db, prefix: &str) -> Result<Vec<SessionRow>, StateError> {
     let like = format!("{prefix}%");
     let rows = sqlx::query(
-        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id, title \
+        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id, title, node_id \
          FROM sessions \
          WHERE status = 'running' AND name LIKE ? \
          ORDER BY created_at_ms DESC",
@@ -175,7 +190,7 @@ pub async fn list_sessions(db: &Db, prefix: &str) -> Result<Vec<SessionRow>, Sta
 /// sessions whose worktree still exists on disk.
 pub async fn list_all_sessions(db: &Db) -> Result<Vec<SessionRow>, StateError> {
     let rows = sqlx::query(
-        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id, title \
+        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id, title, node_id \
          FROM sessions ORDER BY created_at_ms DESC",
     )
     .fetch_all(db)
@@ -185,7 +200,7 @@ pub async fn list_all_sessions(db: &Db) -> Result<Vec<SessionRow>, StateError> {
 
 pub async fn get_session(db: &Db, name: &str) -> Result<Option<SessionRow>, StateError> {
     let row = sqlx::query(
-        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id, title \
+        "SELECT name, created_at_ms, cli, cwd, command, worktree_path, orig_path, pid, status, claude_session_id, title, node_id \
          FROM sessions WHERE name = ?",
     )
     .bind(name)

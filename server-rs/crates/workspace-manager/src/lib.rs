@@ -23,11 +23,75 @@ pub fn slugify(name: &str) -> String {
     }
 }
 
-/// `<prefix><slug>-<unix-seconds>`
+/// Stable identifier for a project, derived from its path on the
+/// control plane. It names the node-local mirror cache directory, so it
+/// must be filesystem-safe and stable across restarts — but it never
+/// needs to agree between two different control planes.
+pub fn project_id(path: &Path) -> String {
+    // FNV-1a over the full path disambiguates same-named projects under
+    // different roots without pulling in a hash crate.
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in path.to_string_lossy().as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "project".into());
+    let slug: String = slugify(&name).chars().take(32).collect();
+    format!("{slug}-{hash:016x}")
+}
+
+/// Environment handed to a freshly spawned session process (PTY or
+/// chat), so the agent CLI can find its own workspace. Lives here
+/// because both the HTTP layer and the node runtime spawn agents and
+/// the two must agree on the variable names.
+pub fn launch_env(orig: &Path, name: &str, cwd: &Path) -> Vec<(String, String)> {
+    vec![
+        (
+            "AGENT_START_ROOT_PATH".into(),
+            orig.to_string_lossy().into_owned(),
+        ),
+        ("AGENT_START_WORKSPACE_NAME".into(), name.to_string()),
+        (
+            "AGENT_START_WORKSPACE_PATH".into(),
+            cwd.to_string_lossy().into_owned(),
+        ),
+        ("TERM".into(), "xterm-256color".into()),
+    ]
+}
+
+/// `<prefix><slug>-<unix-seconds><suffix>`
+///
+/// The seconds alone are not enough: a scheduler placing a burst of
+/// sessions across a cluster easily creates several within the same
+/// second, and a collision means two sessions fighting over one
+/// worktree, one branch and one primary key.
 pub fn session_name(prefix: &str, project_name: &str) -> String {
     let slug: String = slugify(project_name).chars().take(32).collect();
     let ts = chrono::Utc::now().timestamp();
-    format!("{prefix}{slug}-{ts}")
+    format!("{prefix}{slug}-{ts}{}", random_suffix())
+}
+
+/// Eight lowercase base-36 characters (~2.8e12 values) from the OS RNG.
+///
+/// Eight rather than four: at four the space is only 1.7M, which sounds
+/// ample until you run the birthday bound — 500 names collide about 7%
+/// of the time. Eight puts that at ~4e-8.
+fn random_suffix() -> String {
+    const ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    const LEN: usize = 8;
+    // Consume the UUID as one integer rather than one byte per
+    // character: `byte % 36` would over-represent the first four
+    // letters, and 36^8 is a vanishing fraction of a v4 UUID's 122 bits.
+    let mut n = u128::from_le_bytes(uuid::Uuid::new_v4().into_bytes());
+    let mut out = String::with_capacity(LEN);
+    for _ in 0..LEN {
+        out.push(ALPHABET[(n % ALPHABET.len() as u128) as usize] as char);
+        n /= ALPHABET.len() as u128;
+    }
+    out
 }
 
 const SESSION_NAME_ALLOWED: &str =
@@ -166,5 +230,38 @@ mod tests {
         let n = session_name("cc-", "my project");
         assert!(n.starts_with("cc-my-project-"));
         assert!(is_valid_session_name(&n));
+    }
+
+    #[test]
+    fn session_names_do_not_collide_within_one_second() {
+        // A cluster places bursts of sessions; second-resolution names
+        // alone would hand two of them the same worktree and branch.
+        // 2000 draws from 36^8 collide with probability ~7e-7, so this
+        // is a real assertion rather than a coin flip.
+        const N: usize = 2000;
+        let names: std::collections::HashSet<String> =
+            (0..N).map(|_| session_name("cc-", "demo")).collect();
+        assert_eq!(names.len(), N, "duplicate session names generated");
+    }
+
+    #[test]
+    fn the_random_suffix_uses_its_whole_alphabet() {
+        // A modulo-per-byte suffix would never emit the tail of the
+        // alphabet evenly; sample enough to see the whole range.
+        let seen: std::collections::HashSet<char> = (0..2000)
+            .flat_map(|_| random_suffix().chars().collect::<Vec<_>>())
+            .collect();
+        assert_eq!(seen.len(), 36, "suffix alphabet is skewed: {seen:?}");
+        assert!(random_suffix().len() == 8);
+    }
+
+    #[test]
+    fn project_id_separates_same_named_projects_under_different_roots() {
+        let a = project_id(Path::new("/srv/work/api"));
+        let b = project_id(Path::new("/home/me/api"));
+        assert_ne!(a, b);
+        assert!(a.starts_with("api-"), "unreadable id: {a}");
+        // Stable across calls — it names a cache directory.
+        assert_eq!(a, project_id(Path::new("/srv/work/api")));
     }
 }

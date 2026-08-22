@@ -19,6 +19,10 @@ code-server-manager = { workspace = true }
 novnc-manager = { workspace = true }
 state          = { workspace = true }
 workspace-manager = { workspace = true }
+cluster-proto  = { workspace = true }
+cluster-control = { workspace = true }
+cluster-node   = { workspace = true }
+executor       = { workspace = true }
 
 anyhow = { workspace = true }
 axum = { workspace = true }
