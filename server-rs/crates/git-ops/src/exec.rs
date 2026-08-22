@@ -109,7 +109,10 @@ pub fn is_git_repo(p: &Path) -> bool {
 /// mirror is not fatal — branching off slightly stale refs beats
 /// refusing to start a session because the node is briefly offline.
 pub fn ensure_mirror(url: &str, dest: &Path) -> Result<(), GitError> {
-    if dest.join("HEAD").exists() {
+    // A `HEAD` file alone is not proof: an interrupted clone leaves one
+    // behind in a directory git cannot fetch into. Require a repository
+    // that still knows where it came from before trusting the cache.
+    if dest.join("HEAD").exists() && origin_url(dest).is_some() {
         if let Err(e) = run(dest, &["fetch", "--prune", "origin"]) {
             tracing::warn!(error = %e, mirror = %dest.display(), "mirror refresh failed; using cached refs");
         }

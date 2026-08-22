@@ -143,9 +143,13 @@ pub async fn start_session(
         clone_url,
     };
 
+    let isolation = match isolation_from(&body) {
+        Ok(v) => v,
+        Err(resp) => return *resp,
+    };
     let demand = Demand {
         requests: requests_from(&body),
-        isolation: isolation_from(&body),
+        isolation,
         label_selector: match selector_from(&body) {
             Ok(v) => v,
             Err(resp) => return *resp,
@@ -174,9 +178,12 @@ pub async fn start_session(
         Ok(p) => p,
         Err(e) => {
             let status = match &e {
-                cluster_control::StartError::NoFit(_) => StatusCode::SERVICE_UNAVAILABLE,
+                cluster_control::StartError::NoFit(_)
+                | cluster_control::StartError::Disconnected { .. } => {
+                    StatusCode::SERVICE_UNAVAILABLE
+                }
                 cluster_control::StartError::Timeout { .. } => StatusCode::GATEWAY_TIMEOUT,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
+                cluster_control::StartError::Node(_) => StatusCode::INTERNAL_SERVER_ERROR,
             };
             return err(status, e.to_string());
         }
@@ -259,11 +266,19 @@ fn requests_from(body: &StartSessionRequest) -> Resources {
     }
 }
 
-fn isolation_from(body: &StartSessionRequest) -> IsolationProfile {
+/// Parse the requested isolation, rejecting anything unrecognized.
+///
+/// Falling back to `process` would be the worst possible default: a
+/// typo in `microvm` would silently hand the caller *no* isolation
+/// while they believe they asked for the strongest.
+fn isolation_from(body: &StartSessionRequest) -> Erred<IsolationProfile> {
     match body.isolation.as_deref().map(str::trim) {
-        Some("container") => IsolationProfile::Container,
-        Some("microvm") => IsolationProfile::MicroVm,
-        _ => IsolationProfile::Process,
+        None | Some("") | Some("process") => Ok(IsolationProfile::Process),
+        Some("container") => Ok(IsolationProfile::Container),
+        Some("microvm") => Ok(IsolationProfile::MicroVm),
+        Some(other) => Err(bad(format!(
+            "unknown isolation `{other}` (expected `process`, `container`, or `microvm`)"
+        ))),
     }
 }
 
@@ -550,9 +565,10 @@ pub async fn delete_session(
     // A session on another node is torn down by that node: it owns the
     // PTY and the worktree. Everything below this point is host-local
     // bookkeeping that applies either way.
+    let mut remote_cancel_delivered = true;
     if !local {
         if let Some(control) = app.cluster.as_ref() {
-            control.cancel_session(&name, delete_wt).await;
+            remote_cancel_delivered = control.cancel_session(&name, delete_wt).await;
         }
     }
 
@@ -572,9 +588,18 @@ pub async fn delete_session(
     let mut worktree_removed = false;
     let mut worktree_error: Option<String> = None;
     if delete_wt && !local {
-        // Reported optimistically: the node performs the removal
-        // asynchronously and there is nothing here to inspect.
-        worktree_removed = true;
+        // The node removes the worktree asynchronously and does not
+        // acknowledge completion yet (that arrives with the task
+        // queue), so all we can honestly report is whether the request
+        // reached it at all.
+        if remote_cancel_delivered {
+            worktree_removed = true;
+        } else {
+            worktree_error = Some(
+                "the node running this session is unreachable; its worktree was left in place"
+                    .to_string(),
+            );
+        }
     }
     if delete_wt && local {
         if let Some(d) = dir.as_ref() {

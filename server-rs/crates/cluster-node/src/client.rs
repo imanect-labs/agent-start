@@ -4,7 +4,7 @@
 //! same `NodeLink` the in-process node gets, so `NodeRuntime` has no
 //! idea whether it is talking over a socket or a channel.
 
-use crate::{Identity, NodeRuntime};
+use crate::{Identity, NodeRuntime, Rejected};
 use cluster_proto::{ControlFrame, NodeFrame, NodeLink, LINK_CHANNEL_CAP};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
@@ -17,6 +17,10 @@ pub const CONNECT_PATH: &str = "/cluster/v1/connect";
 
 const RECONNECT_MIN: Duration = Duration::from_secs(1);
 const RECONNECT_MAX: Duration = Duration::from_secs(30);
+/// How long a connection must survive before it counts as healthy. A
+/// control plane that accepts and immediately drops us would otherwise
+/// reset the backoff on every attempt and be hammered once a second.
+const STABLE_AFTER: Duration = Duration::from_secs(30);
 
 /// Turn an operator-facing control-plane URL into the WebSocket URL of
 /// the cluster endpoint. Accepts `http(s)://host[:port]` — the form
@@ -64,13 +68,17 @@ pub async fn run_remote(
         match tokio_tungstenite::connect_async(&url).await {
             Ok((socket, _)) => {
                 tracing::info!(url = %url, "connected to control plane");
-                backoff = RECONNECT_MIN;
-                match serve(runtime.clone(), socket, token, node_id).await {
+                let started = tokio::time::Instant::now();
+                let outcome = serve(runtime.clone(), socket, token, node_id).await;
+                if started.elapsed() >= STABLE_AFTER {
+                    backoff = RECONNECT_MIN;
+                }
+                match outcome {
                     Ok(()) => tracing::info!("control plane closed the connection; reconnecting"),
                     Err(e) => {
                         // A rejection is terminal: the credential is
                         // wrong and every retry will be too.
-                        if e.to_string().contains("registration rejected") {
+                        if e.downcast_ref::<Rejected>().is_some() {
                             return Err(e);
                         }
                         tracing::warn!(error = %e, "cluster link failed; reconnecting");

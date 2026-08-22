@@ -15,11 +15,16 @@
 use cluster_proto::{IsolationProfile, Resources};
 
 /// Weights sum to 1.0; see `docs/multinode-cloud-design.ja.md` §2.3.
+///
+/// There is deliberately no label term. Labels are a *filter*: `admit`
+/// drops every node that does not match the whole selector, so each
+/// survivor matches equally and any label score would add the same
+/// constant to all of them — a weight that reads as meaningful in the
+/// table and changes no ranking at all.
 const W_CPU_RESERVED: f32 = 0.35;
 const W_CPU_OBSERVED: f32 = 0.25;
-const W_MEM_OBSERVED: f32 = 0.15;
+const W_MEM_OBSERVED: f32 = 0.20;
 const W_CACHE_HIT: f32 = 0.20;
-const W_LABEL_AFFINITY: f32 = 0.05;
 
 /// How long a freshly placed session suppresses a node's observed-load
 /// score. Utilization takes a few seconds to reflect a new agent, and
@@ -216,7 +221,7 @@ fn best<'a>(fits: &[&'a Candidate], demand: &Demand) -> Option<&'a Candidate> {
         .map(|(_, c)| c)
 }
 
-pub fn score(c: &Candidate, demand: &Demand) -> f32 {
+pub fn score(c: &Candidate, _demand: &Demand) -> f32 {
     let cpu_reserved_ratio = if c.capacity.cpu_millis == 0 {
         1.0
     } else {
@@ -229,17 +234,10 @@ pub fn score(c: &Candidate, demand: &Demand) -> f32 {
     };
     let observed_cpu = (1.0 - c.cpu_util - warm).clamp(0.0, 1.0);
 
-    let label_affinity = if demand.label_selector.is_empty() {
-        0.0
-    } else {
-        1.0
-    };
-
     W_CPU_RESERVED * (1.0 - cpu_reserved_ratio)
         + W_CPU_OBSERVED * observed_cpu
         + W_MEM_OBSERVED * (1.0 - c.mem_util).clamp(0.0, 1.0)
         + W_CACHE_HIT * if c.has_repo_cache { 1.0 } else { 0.0 }
-        + W_LABEL_AFFINITY * label_affinity
 }
 
 #[cfg(test)]
@@ -375,6 +373,28 @@ mod tests {
         // Even though `remote` looks identical, it cannot see the files.
         assert_eq!(select(&[remote.clone(), local], &d).unwrap().name, "local");
         assert_eq!(select(&[remote], &d).unwrap_err(), NoFit::LocalOnly);
+    }
+
+    #[test]
+    fn memory_pressure_moves_work_away() {
+        let mut tight = node("tight");
+        tight.mem_util = 0.95;
+        let roomy = node("roomy");
+        assert_eq!(select(&[tight, roomy], &demand()).unwrap().name, "roomy");
+    }
+
+    #[test]
+    fn labels_filter_but_do_not_score() {
+        // Both match the selector, so the selector must not tip the
+        // scales — only load may.
+        let mut busy = node("busy");
+        busy.labels = vec![("gpu".into(), "true".into())];
+        busy.cpu_util = 0.9;
+        let mut idle = node("idle");
+        idle.labels = vec![("gpu".into(), "true".into())];
+        let mut d = demand();
+        d.label_selector = vec![("gpu".into(), "true".into())];
+        assert_eq!(select(&[busy, idle], &d).unwrap().name, "idle");
     }
 
     #[test]

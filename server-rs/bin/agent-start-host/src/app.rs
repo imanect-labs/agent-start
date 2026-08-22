@@ -204,6 +204,56 @@ pub async fn run(
         }));
     }
 
+    // A node that outlived the control plane keeps its PTYs running and
+    // re-reports them on reconnect. Put those sessions back in front of
+    // the user: without this they keep running on the node forever with
+    // no way to reach them, because boot marked every row dead and
+    // rehydration only restores directories that exist on *this* host.
+    if let Some(control) = app_state.cluster.as_ref() {
+        let state_for_adopt = app_state.clone();
+        control.set_session_adopt_hook(Arc::new(move |name: String, node_id: String| {
+            let state = state_for_adopt.clone();
+            tokio::spawn(async move {
+                let row = match state::get_session(&state.db, &name).await {
+                    Ok(Some(row)) => row,
+                    // Nothing on record: the node is running a session
+                    // this control plane never knew about. Leave it be
+                    // rather than invent metadata for it.
+                    Ok(None) => return,
+                    Err(e) => {
+                        tracing::warn!(error = %e, session = %name, "adopt: session lookup failed");
+                        return;
+                    }
+                };
+                if let Err(e) = state::mark_running(&state.db, &name, row.pid).await {
+                    tracing::warn!(error = %e, session = %name, "adopt: failed to mark running");
+                }
+                if let Err(e) = state::set_session_node(&state.db, &name, &node_id).await {
+                    tracing::warn!(error = %e, session = %name, "adopt: failed to record node");
+                }
+                state.sessions.write().insert(
+                    name.clone(),
+                    SessionDirectory {
+                        name: row.name,
+                        created_at_ms: row.created_at_ms,
+                        cli: row.cli,
+                        cwd: row.cwd,
+                        worktree_path: row.worktree_path,
+                        orig_path: row.orig_path,
+                        live: true,
+                        // Scrollback lives in the node's ring buffer and
+                        // is replayed when the terminal reattaches.
+                        history: Vec::new(),
+                        title: row.title,
+                        node_id,
+                        node_name: String::new(),
+                    },
+                );
+                tracing::info!(session = %name, "adopted a session still running on its node");
+            });
+        }));
+    }
+
     // Chat conversations (#34) that crash or exit unexpectedly stay
     // visible as `dead`: the transcript is browsable and the next
     // `user_message` revives them via `--resume` (decision 12). Unlike the

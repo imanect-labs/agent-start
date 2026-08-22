@@ -56,7 +56,7 @@ agent-start-host --role node \
   --max-sessions 4 --label gpu=true
 ```
 
-`agent-start node list` (or the **ノード** page in the UI) shows what
+`agent-start node list` (or the **Nodes** page in the UI, labelled ノード) shows what
 joined, how loaded each machine is, and where each session is running.
 
 How placement works:

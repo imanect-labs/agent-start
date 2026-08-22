@@ -31,6 +31,11 @@ pub use scheduler::{Candidate, Demand, NoFit};
 /// the rest of the host's per-session machinery.
 pub type SessionExitHook = Arc<dyn Fn(String) + Send + Sync>;
 
+/// Called for each session a reconnecting node reports as still
+/// running. The control plane knows the placement; only the host knows
+/// how to put the session back in front of the user.
+pub type SessionAdoptHook = Arc<dyn Fn(String, String) + Send + Sync>;
+
 #[derive(Debug, Clone)]
 pub struct ControlOptions {
     /// How long a node has to bring a session up before the placement is
@@ -61,6 +66,17 @@ impl Default for ControlOptions {
 
 const fn cluster_node_heartbeat_default() -> u64 {
     10
+}
+
+/// Why a node update failed. Kept apart from a plain string so the HTTP
+/// layer can tell "no such node" (404) from "the database is unhappy"
+/// (500) instead of reporting every failure as a missing node.
+#[derive(Debug, thiserror::Error)]
+pub enum PatchError {
+    #[error("unknown node")]
+    UnknownNode,
+    #[error("{0}")]
+    Store(String),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -245,6 +261,7 @@ pub struct ControlPlane {
     placements: RwLock<HashMap<String, Placement>>,
     local_node_id: RwLock<Option<String>>,
     on_session_exit: RwLock<Option<SessionExitHook>>,
+    on_session_adopt: RwLock<Option<SessionAdoptHook>>,
 }
 
 impl ControlPlane {
@@ -256,11 +273,16 @@ impl ControlPlane {
             placements: RwLock::new(HashMap::new()),
             local_node_id: RwLock::new(None),
             on_session_exit: RwLock::new(None),
+            on_session_adopt: RwLock::new(None),
         })
     }
 
     pub fn set_session_exit_hook(&self, hook: SessionExitHook) {
         *self.on_session_exit.write() = Some(hook);
+    }
+
+    pub fn set_session_adopt_hook(&self, hook: SessionAdoptHook) {
+        *self.on_session_adopt.write() = Some(hook);
     }
 
     pub fn heartbeat_secs(&self) -> u64 {
@@ -363,8 +385,24 @@ impl ControlPlane {
         // original requests died with the previous control plane, so
         // charge them the default rather than nothing — under-counting
         // would let the node be oversubscribed.
+        //
+        // Adoption is also what makes a control-plane restart survivable
+        // from the user's side: the PTYs never stopped, and the hook
+        // puts them back in the session list instead of leaving them
+        // running invisibly on the node forever.
+        if !hello.running.is_empty() {
+            tracing::info!(
+                node = %node.name,
+                count = hello.running.len(),
+                "adopting sessions the node was already running"
+            );
+        }
         for session in &hello.running {
             self.adopt_session(session, &node_id, Resources::default_request());
+            let hook = self.on_session_adopt.read().clone();
+            if let Some(hook) = hook {
+                hook(session.clone(), node_id.clone());
+            }
         }
 
         while let Some(frame) = rx.recv().await {
@@ -380,11 +418,26 @@ impl ControlPlane {
         // The in-process node shares our address space; there is no
         // channel for a third party to impersonate it on.
         if trusted {
-            let id = hello
-                .node_id
-                .clone()
-                .unwrap_or_else(|| format!("local-{}", uuid::Uuid::new_v4()));
-            return Ok((id, String::new()));
+            if let Some(id) = hello.node_id.clone() {
+                return Ok((id, String::new()));
+            }
+            // Reuse the row this machine already owns. Minting a fresh
+            // id every boot looks harmless but is not: node names are
+            // unique, so the insert fails and the operator's cordon,
+            // labels and session cap are silently reset each restart.
+            return match state::get_node_by_name(&self.db, &hello.name).await {
+                Ok(Some(row)) => {
+                    if !row.is_local {
+                        tracing::warn!(
+                            node = %hello.name,
+                            "a remote node already registered under this name; taking it over. \
+                             Set AGENT_START_NODE_NAME to give the machines distinct names"
+                        );
+                    }
+                    Ok((row.id, String::new()))
+                }
+                _ => Ok((format!("local-{}", uuid::Uuid::new_v4()), String::new())),
+            };
         }
         if hello.token.trim().is_empty() {
             return Err("a join token is required".into());
@@ -827,17 +880,28 @@ impl ControlPlane {
 
     // ---- session control ----------------------------------------------
 
-    pub async fn cancel_session(&self, session: &str, delete_worktree: bool) {
+    /// Tell whichever node owns `session` to tear it down.
+    ///
+    /// Returns whether the request reached the node. That is delivery,
+    /// not completion — the node tears down asynchronously and does not
+    /// acknowledge yet — but it does separate "the node never heard us"
+    /// from "the node is working on it", which is the difference
+    /// between a lie and a caveat in what we report to the user.
+    /// A completion acknowledgment arrives with the task queue.
+    pub async fn cancel_session(&self, session: &str, delete_worktree: bool) -> bool {
         let node = self.node_for_session(session);
         self.release(session);
-        if let Some(node) = node {
-            let _ = node
+        match node {
+            Some(node) => node
                 .tx
                 .send(ControlFrame::Cancel {
                     session: session.to_string(),
                     delete_worktree,
                 })
-                .await;
+                .await
+                .is_ok(),
+            // Nothing to cancel: no placement, so nothing is running.
+            None => true,
         }
     }
 
@@ -865,6 +929,14 @@ impl ControlPlane {
             .await
             .is_err()
         {
+            node.channels.lock().remove(&ch);
+            return None;
+        }
+        // The node can drop between the check above and this send, and a
+        // send into a buffered channel succeeds either way. Re-check so
+        // the caller gets `None` rather than a channel nothing will
+        // ever write to.
+        if !node.dynamic.read().connected {
             node.channels.lock().remove(&ch);
             return None;
         }
@@ -931,13 +1003,13 @@ impl ControlPlane {
         labels: Option<Vec<(String, String)>>,
         max_sessions: Option<u32>,
         cordoned: Option<bool>,
-    ) -> Result<NodeView, String> {
+    ) -> Result<NodeView, PatchError> {
         let node = self
             .nodes
             .read()
             .get(id)
             .cloned()
-            .ok_or_else(|| "unknown node".to_string())?;
+            .ok_or(PatchError::UnknownNode)?;
         {
             let mut d = node.dynamic.write();
             if let Some(v) = max_sessions {
@@ -958,7 +1030,7 @@ impl ControlPlane {
             cordoned,
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| PatchError::Store(e.to_string()))?;
         Ok(self.view(&node))
     }
 
@@ -1083,7 +1155,10 @@ fn new_token() -> String {
     )
 }
 
-/// Length-independent comparison for the shared static token.
+/// Compares in time proportional to the input, so a matching-length
+/// guess learns nothing from timing. Length itself leaks: a mismatch
+/// there returns immediately. That is the accepted trade for not
+/// pulling in a crypto crate to compare one operator-set secret.
 fn constant_time_eq(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     if a.len() != b.len() {

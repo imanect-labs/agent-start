@@ -12,7 +12,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use cluster_control::NodeView;
+use cluster_control::{NodeView, PatchError};
 use std::time::Duration;
 
 use crate::app::Shared;
@@ -102,7 +102,11 @@ pub async fn patch_node(
         .await
     {
         Ok(view) => Json(to_summary(&view)).into_response(),
-        Err(e) => err(StatusCode::NOT_FOUND, e),
+        // A storage failure is ours, not the caller's; reporting it as
+        // 404 would send an operator hunting for a node that is right
+        // there.
+        Err(e @ PatchError::UnknownNode) => err(StatusCode::NOT_FOUND, e.to_string()),
+        Err(e @ PatchError::Store(_)) => err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
     }
 }
 

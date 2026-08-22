@@ -26,24 +26,33 @@ pub fn save_identity(path: &Path, id: &Identity) -> std::io::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     let json = serde_json::to_string_pretty(id).map_err(std::io::Error::other)?;
-    std::fs::write(path, json)?;
-    restrict_permissions(path);
-    Ok(())
+    write_private(path, json.as_bytes())
 }
 
-/// The file holds a cluster credential, so keep it owner-only. Failure
-/// is logged rather than fatal: a filesystem without Unix modes (or a
-/// Windows node) should still be able to register.
+/// Write owner-only from the first byte. Creating the file and then
+/// tightening it leaves the token world-readable in between, which is
+/// exactly the window a local attacker needs.
 #[cfg(unix)]
-fn restrict_permissions(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    if let Err(e) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)) {
-        tracing::warn!(error = %e, path = %path.display(), "could not restrict identity file mode");
-    }
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    // `mode` only applies when the file is created, so an existing file
+    // keeps whatever mode it had; re-assert it.
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    file.write_all(bytes)
 }
 
 #[cfg(not(unix))]
-fn restrict_permissions(_path: &Path) {}
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    std::fs::write(path, bytes)
+}
 
 #[cfg(test)]
 mod tests {
@@ -65,5 +74,28 @@ mod tests {
         let back = load_identity(&path).unwrap();
         assert_eq!(back.node_id, "n-1");
         assert_eq!(back.token, "secret");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_identity_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("node-identity.json");
+        // Pre-create it world-readable: rewriting must not leave it so.
+        std::fs::write(&path, "{}").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        save_identity(
+            &path,
+            &Identity {
+                node_id: "n-1".into(),
+                token: "secret".into(),
+            },
+        )
+        .unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "identity file is readable by others: {mode:o}");
     }
 }

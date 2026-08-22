@@ -45,7 +45,7 @@ Claude Code on the web / Codex cloud / Cursor background agents に相当する
 
 ## 1. アーキテクチャ全体像
 
-```
+```text
                        ┌──────────────────────── control plane ────────────────────────┐
   Browser / PWA ──tailnet──▶  agent-start-host --role control                            │
    (PC / スマホ)        │      ├─ HTTP API + 埋め込み SPA (現行 /api /v1 と互換)          │
@@ -114,7 +114,7 @@ tailnet 前提だが、**接続方向は node → control の outbound 一本**�
 
 ### 2.1 クレート構成（追加分）
 
-```
+```text
 server-rs/crates/
   cluster-proto/      # ノード↔中央のフレーム定義 (serde). 双方が依存する唯一の共有型
   cluster-node/       # node ロール: 登録/heartbeat/metrics/assign 受領/executor 呼出
@@ -183,21 +183,25 @@ requests/limits、ネットワークポリシー、マウントするリポジ�
 
 **スコア（高い順に選ぶ）**
 
-```
+```text
 score = 0.35 * (1 - cpu_request_ratio)        # 予約ベースの空き
       + 0.25 * (1 - ewma(cpu_util))           # 実測負荷 (EWMA で瞬間値のブレを吸収)
-      + 0.15 * (1 - ewma(mem_util))
+      + 0.20 * (1 - ewma(mem_util))
       + 0.20 * repo_cache_hit                 # そのノードに bare clone が温まっているか
-      + 0.05 * label_affinity
 ```
 
 `repo_cache_hit` を入れるのが本設計の肝。ノードローカルキャッシュ方式では
 「初回だけ clone で遅い」ので、**同じプロジェクトは温まっているノードに寄せる**。
 ただし寄せすぎると偏るので重みは 0.20 に留め、負荷が高ければ他ノードへ流れる。
 
+**ラベル項は置かない。** ラベルはフィルタであり、`admit` を抜けた時点で全候補が
+セレクタに等しく一致している。そこにラベル項を足しても全候補へ同じ定数が乗るだけで
+順位は変わらない — 「重み表には載っているのに効かない」項になる。
+（当初 0.05 を割り当てていたが、実装レビューで無効と判明したため削除した。）
+
 **割り当ては lease（期限付き予約）で行う。**
 
-```
+```text
 Pending ──scheduler が選択──▶ Assigned(node_id, lease_expires_at = now + 30s)
                                    │
                     node が ack ───┘──▶ Starting ──▶ Running ──▶ Succeeded / Failed
@@ -217,7 +221,7 @@ metrics に反映されるまでのラグを埋める）。
 
 ### 2.4 ソース配布（ノードローカルキャッシュ）
 
-```
+```text
 ~/.agent-start/
   cache/<project_id>/.repo/          # bare mirror。fetch のみ、worktree の親
   worktrees/<session_id>/            # git worktree add で切る作業ツリー
@@ -236,7 +240,7 @@ metrics に反映されるまでのラグを埋める）。
 
 **中央保管 + 起動時注入。** 平文をディスクに置かない。
 
-```
+```text
 users ─┬─ secrets(id, user_id, kind, name, ciphertext, nonce, created_at)
        │     kind: github_token | anthropic_api_key | claude_credentials | openai_api_key | env
        └─ 封筒暗号化: XChaCha20-Poly1305
@@ -257,7 +261,7 @@ users ─┬─ secrets(id, user_id, kind, name, ciphertext, nonce, created_at)
 
 ブラウザは常に control plane としか話さない。
 
-```
+```text
 Browser ──WS /ws/terminal?session=S──▶ control ──stream frame (channel=C)──▶ node ──▶ PTY
         ◀──── binary frames ─────────         ◀──────────────────────────
 ```
@@ -274,7 +278,7 @@ Browser ──WS /ws/terminal?session=S──▶ control ──stream frame (cha
 
 Codex cloud 型 UX の中核。
 
-```
+```text
 POST /api/tasks
 { "projectId": "...", "prompt": "...", "agent": "claude",
   "base": "main", "requests": {"cpu": 2000, "memMb": 4096},
@@ -339,7 +343,7 @@ POST /api/tasks
 
 ### 3.1 HTTP API（追加分）
 
-```
+```text
 # ノード管理 (admin)
 GET    /api/nodes                     # 一覧 (status, labels, capacity, usage, sessions)
 GET    /api/nodes/{id}                # 詳細 + 直近メトリクス
@@ -433,7 +437,7 @@ secret_access_log(session_id, secret_id, node_id, at)
 
 ### 4.1 チャート構成
 
-```
+```text
 deploy/helm/agent-start/
   Chart.yaml            # dependencies: postgresql (bitnami, 任意)
   values.yaml
@@ -499,7 +503,7 @@ secrets:
 > **DaemonSet の node agent は「そのノード上の executor 代理」として振る舞い、
 > セッションは `nodeName` を自分に固定した別 Pod として作る。**
 
-```
+```text
 node agent (DaemonSet, Pod A)
    └─ executor=k8s-pod ──create──▶ session Pod B
                                       nodeName: <自ノードに固定>

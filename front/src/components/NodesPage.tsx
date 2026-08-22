@@ -34,7 +34,26 @@ type NodeSummary = {
 
 type NodesBody = { nodes: NodeSummary[]; clustered: boolean };
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+/// Turn a failed response into a readable message. A reverse proxy
+/// returns HTML for a 502, and calling `.json()` on that throws a
+/// `SyntaxError` whose message ("Unexpected token '<'") tells the user
+/// nothing about what actually went wrong.
+async function errorMessage(res: Response): Promise<string> {
+  try {
+    const body = await res.json();
+    return body?.error ?? `${res.status} ${res.statusText}`;
+  } catch {
+    return `${res.status} ${res.statusText}`;
+  }
+}
+
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  // Without this, SWR treats an error page as data and the UI renders
+  // an empty node list as though the cluster were simply idle.
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return res.json();
+};
 
 const STATUS: Record<
   NodeSummary["status"],
@@ -86,7 +105,7 @@ function Meter({ value, label }: { value: number; label: string }) {
 
 export function NodesPage() {
   const toast = useToast();
-  const { data, isLoading } = useSWR<NodesBody>("/api/nodes", fetcher, {
+  const { data, isLoading, error } = useSWR<NodesBody>("/api/nodes", fetcher, {
     refreshInterval: 5000,
   });
   const [busy, setBusy] = useState<string | null>(null);
@@ -100,7 +119,7 @@ export function NodesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cordoned }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      if (!res.ok) throw new Error(await errorMessage(res));
       await mutate("/api/nodes");
       toast({
         title: cordoned
@@ -127,7 +146,7 @@ export function NodesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ttlSecs: 3600, uses: 1 }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      if (!res.ok) throw new Error(await errorMessage(res));
       setToken(await res.json());
     } catch (e) {
       toast({
@@ -168,6 +187,13 @@ export function NodesPage() {
           </div>
         )}
 
+        {error && (
+          <p className="text-[12px] text-danger">
+            ノード一覧を取得できませんでした:{" "}
+            {error instanceof Error ? error.message : String(error)}
+          </p>
+        )}
+
         {data && !data.clustered && (
           <p className="text-[12px] text-fg-subtle">
             このホストはスケジューラを持ちません（<code>--role node</code> で起動しています）。
@@ -179,7 +205,10 @@ export function NodesPage() {
         )}
 
         {data?.nodes.map((n) => {
-          const status = STATUS[n.status];
+          // A control plane newer than this page could report a status
+          // it has never heard of; render the raw value rather than
+          // crashing the whole list on an undefined lookup.
+          const status = STATUS[n.status] ?? { tone: "neutral" as const, label: n.status };
           const cpuReserved =
             n.capacityCpuMillis > 0 ? n.reservedCpuMillis / n.capacityCpuMillis : 0;
           return (

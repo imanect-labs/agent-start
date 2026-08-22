@@ -135,7 +135,9 @@ pub async fn set_node_status(
 }
 
 /// Apply the operator-owned fields. Each is optional so a PATCH that
-/// only cordons a node does not have to restate its labels.
+/// only cordons a node does not have to restate its labels. All of them
+/// land in one transaction: a PATCH carrying labels *and* a cordon must
+/// not be able to apply half of itself.
 pub async fn update_node_settings(
     db: &Db,
     id: &str,
@@ -143,27 +145,29 @@ pub async fn update_node_settings(
     max_sessions: Option<i64>,
     cordoned: Option<bool>,
 ) -> Result<(), StateError> {
+    let mut tx = db.begin().await?;
     if let Some(labels) = labels {
         sqlx::query("UPDATE nodes SET labels = ? WHERE id = ?")
             .bind(labels)
             .bind(id)
-            .execute(db)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(max) = max_sessions {
         sqlx::query("UPDATE nodes SET max_sessions = ? WHERE id = ?")
             .bind(max)
             .bind(id)
-            .execute(db)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(cordoned) = cordoned {
         sqlx::query("UPDATE nodes SET cordoned = ? WHERE id = ?")
             .bind(i64::from(cordoned))
             .bind(id)
-            .execute(db)
+            .execute(&mut *tx)
             .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 

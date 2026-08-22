@@ -202,8 +202,16 @@ pub async fn run_node_only(args: ClusterArgs) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("--role node requires --join-url"))?;
     let identity_path = config_loader::host_state_dir().join("node-identity.json");
     let known = cluster_node::load_identity(&identity_path).is_some();
-    let join_token = match (&args.join_token, known) {
-        (Some(t), _) => t.clone(),
+    // An empty `AGENT_START_JOIN_TOKEN` is the shape a shell produces
+    // for "unset"; treating it as a token would stop a already-registered
+    // node from falling back to its stored credential.
+    let supplied = args
+        .join_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty());
+    let join_token = match (supplied, known) {
+        (Some(t), _) => t.to_string(),
         // A node that already registered carries its own credential; it
         // only needs a join token the first time.
         (None, true) => String::new(),

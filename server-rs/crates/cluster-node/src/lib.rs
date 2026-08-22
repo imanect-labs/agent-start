@@ -30,6 +30,13 @@ mod identity;
 pub use client::{connect_url, run_remote, CONNECT_PATH};
 pub use identity::{load_identity, save_identity, Identity};
 
+/// Registration was refused by the control plane. A distinct type
+/// because the client has to tell "retry forever" from "stop": the
+/// credential is wrong and no amount of reconnecting will fix it.
+#[derive(Debug, thiserror::Error)]
+#[error("registration rejected: {0}")]
+pub struct Rejected(pub String);
+
 /// How often the node reports in when the control plane has not said
 /// otherwise. Three missed beats is what marks a node NotReady, so this
 /// also sets the detection latency for a dead machine.
@@ -78,6 +85,10 @@ pub fn hostname() -> String {
 struct Channel {
     session: Arc<PtySession>,
     pump: tokio::task::JoinHandle<()>,
+    /// Distinguishes this channel from a later one that reused the same
+    /// `ch`, so a pump cleaning up after itself cannot delete its
+    /// successor's entry.
+    token: u64,
 }
 
 pub struct NodeRuntime {
@@ -97,6 +108,7 @@ pub struct NodeRuntime {
     /// session death without holding a reference to the link itself.
     tx: Mutex<Option<mpsc::Sender<NodeFrame>>>,
     hb_seq: AtomicU64,
+    channel_token: AtomicU64,
 }
 
 impl NodeRuntime {
@@ -121,6 +133,7 @@ impl NodeRuntime {
             channels: Mutex::new(HashMap::new()),
             tx: Mutex::new(None),
             hb_seq: AtomicU64::new(0),
+            channel_token: AtomicU64::new(0),
         });
         me.install_exit_hook();
         me
@@ -220,17 +233,23 @@ impl NodeRuntime {
                         }
                     }
                     if let ControlFrame::Rejected { reason } = &frame {
-                        return Err(anyhow!("registration rejected: {reason}"));
+                        return Err(Rejected(reason.clone()).into());
                     }
                     self.clone().on_control(frame).await;
                 }
                 _ = hb.tick() => {
                     let metrics = probe.sample();
+                    // Scanning the cache directory is synchronous, and
+                    // on a network filesystem it is not fast. Off the
+                    // frame loop it goes, or control frames wait on it.
+                    let repo_cache = tokio::task::spawn_blocking(cached_project_ids)
+                        .await
+                        .unwrap_or_default();
                     self.send(NodeFrame::Heartbeat {
                         seq: self.hb_seq.fetch_add(1, Ordering::Relaxed),
                         metrics,
                         running: self.running_sessions(),
-                        repo_cache: cached_project_ids(),
+                        repo_cache,
                     })
                     .await;
                 }
@@ -383,6 +402,12 @@ impl NodeRuntime {
         };
         let plan = self.executor.launch_plan(&handle, &exec_spec);
 
+        // Register before spawning. The PTY exit hook fires as soon as
+        // the child dies — which can be immediately, for a command that
+        // fails to start — and it looks the sandbox up here to tear it
+        // down. Inserting afterwards leaks the sandbox in that race.
+        self.handles.lock().insert(session.clone(), handle.clone());
+
         let pty = match self.pty.spawn(PtySpawnSpec {
             name: session.clone(),
             window: 0,
@@ -395,13 +420,12 @@ impl NodeRuntime {
         }) {
             Ok(p) => p,
             Err(e) => {
+                self.handles.lock().remove(&session);
                 let _ = self.executor.destroy(&handle).await;
                 rollback(&worktree_path, &repo_root);
                 return Err(anyhow!("{e}"));
             }
         };
-
-        self.handles.lock().insert(session.clone(), handle);
 
         Ok(AssignOk {
             session,
@@ -470,7 +494,14 @@ impl NodeRuntime {
         let tx = self.tx.lock().clone();
         let Some(tx) = tx else { return };
 
+        let token = self.channel_token.fetch_add(1, Ordering::Relaxed);
+        let weak: Weak<Self> = Arc::downgrade(self);
         let pump = tokio::spawn(async move {
+            // Whatever ends this pump — the PTY closing, the consumer
+            // going away — the channel entry has to go with it, or a
+            // long-lived node accumulates dead channels holding PTY
+            // handles alive.
+            let _guard = ChannelGuard { weak, ch, token };
             let mut seq = 0u64;
             // Replay the scrollback first so a reattaching browser sees
             // the same screen it would on a local session.
@@ -521,11 +552,14 @@ impl NodeRuntime {
             }
         });
 
-        if let Some(old) = self
-            .channels
-            .lock()
-            .insert(ch, Channel { session: pty, pump })
-        {
+        if let Some(old) = self.channels.lock().insert(
+            ch,
+            Channel {
+                session: pty,
+                pump,
+                token,
+            },
+        ) {
             old.pump.abort();
         }
     }
@@ -533,6 +567,27 @@ impl NodeRuntime {
     fn close_channel(&self, ch: u32) {
         if let Some(c) = self.channels.lock().remove(&ch) {
             c.pump.abort();
+        }
+    }
+}
+
+/// Removes a relayed channel when its pump task ends, however it ends.
+struct ChannelGuard {
+    weak: Weak<NodeRuntime>,
+    ch: u32,
+    token: u64,
+}
+
+impl Drop for ChannelGuard {
+    fn drop(&mut self) {
+        let Some(rt) = self.weak.upgrade() else {
+            return;
+        };
+        let mut channels = rt.channels.lock();
+        // Only if this entry is still ours: `ch` may already have been
+        // handed to a newer stream.
+        if channels.get(&self.ch).map(|c| c.token) == Some(self.token) {
+            channels.remove(&self.ch);
         }
     }
 }

@@ -186,12 +186,24 @@ mod tests {
         git(dir, &["commit", "-qm", "init"]);
     }
 
+    /// The repository's own object id for `HEAD`, whatever hash
+    /// algorithm it uses — asserting 40 characters would fail on a
+    /// SHA-256 repository.
+    fn head_oid(dir: &Path) -> String {
+        let out = Command::new("git")
+            .current_dir(dir)
+            .args(["rev-parse", "--verify", "HEAD^{commit}"])
+            .output()
+            .expect("run git");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
     #[test]
     fn base_resolves_to_a_commit_sha_not_a_name() {
         let dir = tempfile::tempdir().unwrap();
         seed(dir.path());
         let base = resolve_base(dir.path()).unwrap();
-        assert_eq!(base.len(), 40, "expected a full sha, got {base}");
+        assert_eq!(base, head_oid(dir.path()));
         assert!(base.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
