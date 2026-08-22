@@ -781,10 +781,21 @@ impl ChatSession {
 
     /// Switch the permission mode (e.g. toggle plan mode) by respawning with
     /// `--resume <id> --permission-mode <mode>` (#95). Mirrors `switch_model`.
+    ///
+    /// Claude only. Accepting it for another driver would store a mode
+    /// its command line never carries, and then report it on every
+    /// `chat_status` — the toggle would look enabled while the agent had
+    /// never heard of it.
     pub async fn set_permission_mode(
         self: &Arc<Self>,
         mode: Option<&str>,
     ) -> Result<(), ChatError> {
+        if self.driver() != Driver::ClaudeStreamJson {
+            return Err(ChatError::Invalid(format!(
+                "`{}` は権限モードをサポートしていません",
+                self.current_provider()
+            )));
+        }
         if let Some(m) = mode {
             validate_token(m)?;
         }

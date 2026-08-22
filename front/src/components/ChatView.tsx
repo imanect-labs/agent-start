@@ -39,7 +39,12 @@ export function ChatView({
   chatConfig: ChatConfig;
 }) {
   const chat = useChatSocket(sessionName);
-  const currentProvider = chat.provider ?? chatConfig.defaultProvider;
+  // Mirrors the backend's own fallback (`ChatConfig::default_provider`):
+  // the configured default, else the first listed. The API already
+  // resolves it, but a client that outlives a server change should not
+  // start labelling the agent "Chat".
+  const currentProvider =
+    chat.provider ?? chatConfig.defaultProvider ?? chatConfig.providers[0]?.id ?? null;
   // Before the agent reports a model, fall back to *its* default — not
   // the globally configured one, which belongs to whichever provider a
   // conversation happened to start on.

@@ -291,7 +291,7 @@ POST /api/tasks
 1. `tasks` に `pending` で INSERT（即座に 202 を返す）
 2. スケジューラが lease してノードへ assign
 3. ノードが worktree を用意 → シークレット注入 → agent CLI を起動
-4. 完了検知（chat モードなら `result` イベント、PTY モードなら終了コード）
+4. 完了検知（PTY モードの終了コード。chat モードでのタスク実行は未実装 — §5 Phase 2 参照）
 5. `git-ops` で commit → push → PR 作成（既存 `git-ops/github.rs` を再利用）
 6. `tasks.result_pr_url` を埋めて `succeeded`
 
@@ -596,8 +596,8 @@ AI エージェント主体・数週間スケール。**各フェーズ単体で
 
 | 範囲 | 状態 |
 | --- | --- |
-| キューの排他 / lease / 再試行 / 再起動復旧 | 自動テスト済み（`crates/state/tests/task_queue.rs`） |
-| 投入 → ノード配置 → 実行 → commit → push | **実機で確認済み**（`crates/cluster-control/tests/task_finalize.rs` + 実ホストでの手動確認） |
+| キューの排他 / lease / 再試行 / 再起動復旧 | 自動テスト済み（`server-rs/crates/state/tests/task_queue.rs`） |
+| 投入 → ノード配置 → 実行 → commit → push | **実機で確認済み**（`server-rs/crates/cluster-control/tests/task_finalize.rs` + 実ホストでの手動確認） |
 | `gh pr create` による PR 作成 | **未検証**。開発環境に `gh` が無く、E2E は push までで止めている |
 | chat の `codex-proto` ドライバ | **未検証**。`codex` バイナリが無く一度も喋らせていない（`experimental` 表示） |
 
@@ -605,7 +605,7 @@ AI エージェント主体・数週間スケール。**各フェーズ単体で
 
 | 論点 | 当初案 | 実装 | 理由 |
 | --- | --- | --- | --- |
-| キューの排他 | `SELECT … FOR UPDATE SKIP LOCKED` | 「pending のままなら UPDATE」の条件付き更新（`rows_affected == 1` が獲得） | SQLite に `SKIP LOCKED` が無い。**所有権の判定だけが等価**で、候補選択・トランザクション境界・ロック待ち・順序保証は同じではない（競合した側は次の候補へ進まず `None` を返し、次の tick に回る）。Phase 4 の Postgres 実装は呼び出し側を変えずに差し替えられる |
+| キューの排他 | `SELECT … FOR UPDATE SKIP LOCKED` | 「pending のままなら UPDATE」の条件付き更新（`rows_affected == 1` が獲得） | SQLite に `SKIP LOCKED` が無い。**所有権の判定だけが等価**で、候補選択・トランザクション境界・ロック待ち・順序保証は同じではない（競合した側は次の候補へ進まず `None` を返し、次の tick に回る）。Phase 4 では backend 非依存の抽象を挟んだうえで Postgres 実装に差し替える予定（現状の `Db` は SQLite 固定で、その抽象はまだ無い） |
 | タスクの実行形態 | chat / PTY の両方 | **PTY のヘッドレス実行のみ**（`claude -p '<prompt>'`） | chat セッションはトランスクリプト永続化と `--resume` がホストローカルで、ノードに配れない。ヘッドレス PTY なら既存の relay とスケジューラにそのまま乗る |
 | 完了処理の実行場所 | 中央 | **ノード側**（`Finalize` / `FinalizeResult` フレームを追加） | worktree はノードにしか無い。中央で git を叩くとローカルノード以外で必ず失敗する |
 | プロンプトの渡し方 | — | `CliConfig.promptArg`（claude: `-p` / codex: `exec`） | 対話起動と同じ組み立てだと REPL が入力を待ち続け、lease 切れまで固まる |
