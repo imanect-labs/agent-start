@@ -238,12 +238,13 @@ async fn node_cmd(url: &str, cmd: NodeCmd, json: bool, quiet: bool) -> Result<()
                 return Ok(());
             }
             for n in res.nodes {
-                // A node that has not reported its capacity yet divides
-                // by zero; `checked_div` reports 0% rather than panicking.
-                let used = n
-                    .reserved_cpu_millis
+                // In u64 so the ×100 cannot saturate and quietly report a
+                // wrong percentage, and `checked_div` so a node that has
+                // not published its capacity yet reads 0% instead of
+                // dividing by zero.
+                let used = u64::from(n.reserved_cpu_millis)
                     .saturating_mul(100)
-                    .checked_div(n.capacity_cpu_millis)
+                    .checked_div(u64::from(n.capacity_cpu_millis))
                     .unwrap_or(0);
                 println!(
                     "{}\t{}\t{}\t{} sessions\tcpu {:.0}% (reserved {}%)\t{}",
