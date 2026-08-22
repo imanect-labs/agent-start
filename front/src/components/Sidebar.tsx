@@ -12,6 +12,7 @@ import {
   IconRefresh,
   IconSearch,
   IconServer,
+  IconTasks,
   IconTerminal,
   IconX,
 } from "@/components/icons";
@@ -222,6 +223,13 @@ export function Sidebar({
           >
             <IconRefresh className="w-4 h-4" />
           </button>
+          <Link
+            to="/tasks"
+            aria-label="タスク"
+            className="w-9 h-9 inline-flex items-center justify-center rounded-md text-fg-subtle hover:text-fg hover:bg-surface-muted transition-colors"
+          >
+            <IconTasks className="w-4 h-4" />
+          </Link>
           <Link
             to="/nodes"
             aria-label="ノード"

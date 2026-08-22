@@ -11,8 +11,9 @@
 
 use chrono::Utc;
 use cluster_proto::{
-    AssignOk, AssignSpec, ControlFrame, ControlLink, Hello, IsolationProfile, NodeCapacity,
-    NodeFrame, NodeMetrics, Resources, SessionEventKind, StreamTarget, LINK_CHANNEL_CAP,
+    AssignOk, AssignSpec, ControlFrame, ControlLink, FinalizeOk, FinalizeSpec, Hello,
+    IsolationProfile, NodeCapacity, NodeFrame, NodeMetrics, Resources, SessionEventKind,
+    StreamTarget, LINK_CHANNEL_CAP,
 };
 use parking_lot::{Mutex, RwLock};
 use sha2::{Digest, Sha256};
@@ -26,10 +27,36 @@ use tokio::sync::{mpsc, oneshot};
 mod scheduler;
 pub use scheduler::{Candidate, Demand, NoFit};
 
+/// How a session stopped. The task queue turns this into "the agent
+/// finished its work" or "run it again somewhere else", so the three
+/// cases must not be flattened into one: an agent that exits non-zero
+/// has failed, while a node that vanished has told us nothing about the
+/// work at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionOutcome {
+    /// The agent process ended. `code` is `None` when the node could not
+    /// reap a status.
+    Exited { code: Option<i32> },
+    /// The node could not run the session.
+    Failed { error: String },
+    /// The node stopped answering, or was removed. Whatever the session
+    /// was doing, we will never learn how it ended.
+    Lost,
+}
+
+impl SessionOutcome {
+    /// True only for a clean, known-zero exit. An unknown status is not
+    /// success — claiming otherwise would open pull requests for agents
+    /// that crashed.
+    pub fn succeeded(&self) -> bool {
+        matches!(self, Self::Exited { code: Some(0) })
+    }
+}
+
 /// Callback the host installs to clean up after a session that ended on
 /// its own. Keeps the control plane ignorant of noVNC, code-server and
 /// the rest of the host's per-session machinery.
-pub type SessionExitHook = Arc<dyn Fn(String) + Send + Sync>;
+pub type SessionExitHook = Arc<dyn Fn(String, SessionOutcome) + Send + Sync>;
 
 /// Called for each session a reconnecting node reports as still
 /// running. The control plane knows the placement; only the host knows
@@ -42,6 +69,10 @@ pub struct ControlOptions {
     /// abandoned. Generous: a cold mirror clone of a large repository is
     /// minutes of honest work, not a hang.
     pub assign_timeout: Duration,
+    /// How long a node has to commit, push and open a PR. Generous for
+    /// the same reason as `assign_timeout`: pushing a large branch over
+    /// a slow link is work, not a hang.
+    pub finalize_timeout: Duration,
     pub heartbeat_secs: u64,
     /// Missed-heartbeat threshold before a node stops receiving work.
     pub notready_after: Duration,
@@ -56,6 +87,7 @@ impl Default for ControlOptions {
     fn default() -> Self {
         Self {
             assign_timeout: Duration::from_secs(300),
+            finalize_timeout: Duration::from_secs(300),
             heartbeat_secs: cluster_node_heartbeat_default(),
             notready_after: Duration::from_secs(35),
             lost_after: Duration::from_secs(120),
@@ -129,6 +161,8 @@ pub struct NodeHandle {
     info: RwLock<NodeInfo>,
     dynamic: RwLock<NodeDynamic>,
     pending: Mutex<HashMap<String, oneshot::Sender<Result<AssignOk, String>>>>,
+    /// In-flight `Finalize` requests awaiting the node's answer.
+    finalizing: Mutex<HashMap<String, oneshot::Sender<Result<FinalizeOk, String>>>>,
     channels: Mutex<HashMap<u32, mpsc::Sender<StreamMsg>>>,
     next_ch: AtomicU32,
 }
@@ -563,6 +597,7 @@ impl ControlPlane {
                 ..Default::default()
             }),
             pending: Mutex::new(HashMap::new()),
+            finalizing: Mutex::new(HashMap::new()),
             channels: Mutex::new(HashMap::new()),
             next_ch: AtomicU32::new(1),
         });
@@ -689,13 +724,24 @@ impl ControlPlane {
                 }
             }
             NodeFrame::SessionEvent { session, event } => {
-                if let SessionEventKind::Failed { error } = &event {
-                    tracing::warn!(session = %session, error = %error, "session failed on node");
-                }
+                let outcome = match &event {
+                    SessionEventKind::Exited { code } => SessionOutcome::Exited { code: *code },
+                    SessionEventKind::Failed { error } => {
+                        tracing::warn!(session = %session, error = %error, "session failed on node");
+                        SessionOutcome::Failed {
+                            error: error.clone(),
+                        }
+                    }
+                };
                 self.release(&session);
                 let hook = self.on_session_exit.read().clone();
                 if let Some(hook) = hook {
-                    hook(session);
+                    hook(session, outcome);
+                }
+            }
+            NodeFrame::FinalizeResult { request_id, result } => {
+                if let Some(tx) = node.finalizing.lock().remove(&request_id) {
+                    let _ = tx.send(result);
                 }
             }
             NodeFrame::Stream { ch, data, .. } => {
@@ -905,6 +951,60 @@ impl ControlPlane {
         }
     }
 
+    /// Ask the node that ran `session` to commit, push and open a PR
+    /// from its worktree.
+    ///
+    /// The node is named explicitly rather than looked up by session:
+    /// finalizing happens *after* the agent exited, and the placement is
+    /// released the moment that happens. The caller has the node id on
+    /// the session row, which is the record that survives.
+    pub async fn finalize_session(
+        &self,
+        node_id: &str,
+        session: &str,
+        spec: FinalizeSpec,
+    ) -> Result<FinalizeOk, String> {
+        let node = self
+            .nodes
+            .read()
+            .get(node_id)
+            .cloned()
+            .ok_or_else(|| format!("node `{node_id}` is no longer registered"))?;
+        if !node.dynamic.read().connected {
+            return Err(format!("node `{}` is not connected", node.name));
+        }
+
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let (tx, rx) = oneshot::channel();
+        node.finalizing.lock().insert(request_id.clone(), tx);
+        if node
+            .tx
+            .send(ControlFrame::Finalize {
+                request_id: request_id.clone(),
+                session: session.to_string(),
+                spec: Box::new(spec),
+            })
+            .await
+            .is_err()
+        {
+            node.finalizing.lock().remove(&request_id);
+            return Err(format!("node `{}` disconnected", node.name));
+        }
+
+        match tokio::time::timeout(self.opts.finalize_timeout, rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err(format!("node `{}` disconnected", node.name)),
+            Err(_) => {
+                node.finalizing.lock().remove(&request_id);
+                Err(format!(
+                    "node `{}` did not finish committing/pushing within {}s",
+                    node.name,
+                    self.opts.finalize_timeout.as_secs()
+                ))
+            }
+        }
+    }
+
     /// Open a relayed terminal onto a session running on another node.
     ///
     /// Returns `None` when the node is not currently connected. The
@@ -1052,7 +1152,7 @@ impl ControlPlane {
         self.release(session);
         let hook = self.on_session_exit.read().clone();
         if let Some(hook) = hook {
-            hook(session.to_string());
+            hook(session.to_string(), SessionOutcome::Lost);
         }
     }
 
@@ -1137,6 +1237,10 @@ impl ControlPlane {
 fn fail_pending(node: &Arc<NodeHandle>, reason: &str) {
     let waiters: Vec<_> = node.pending.lock().drain().map(|(_, tx)| tx).collect();
     for tx in waiters {
+        let _ = tx.send(Err(reason.to_string()));
+    }
+    let finalizers: Vec<_> = node.finalizing.lock().drain().map(|(_, tx)| tx).collect();
+    for tx in finalizers {
         let _ = tx.send(Err(reason.to_string()));
     }
 }

@@ -163,6 +163,12 @@ pub async fn run(
     if let Err(e) = state::mark_all_nodes_notready(&db).await {
         tracing::warn!(error = %e, "failed to reset node statuses");
     }
+    // Tasks the previous process had in flight are in flight nowhere.
+    // Sorting that out now means the queue never hands out a task it
+    // believes is already running on a session that died with the host.
+    if let Err(e) = state::reset_inflight_tasks(&db).await {
+        tracing::warn!(error = %e, "failed to reset in-flight tasks");
+    }
     tracing::info!(role = cluster_args.role.as_str(), "starting host");
     let cluster = cluster_args
         .role
@@ -189,19 +195,24 @@ pub async fn run(
     // exit, and local and remote sessions clean up through one path.
     if let Some(control) = app_state.cluster.as_ref() {
         let state_for_hook = app_state.clone();
-        control.set_session_exit_hook(Arc::new(move |name: String| {
-            let state = state_for_hook.clone();
-            tokio::spawn(async move {
-                state.sessions.write().remove(&name);
-                // Kill any noVNC backend tied to this session so Xvnc
-                // and websockify don't linger as zombies after the
-                // PTY they were paired with dies.
-                state.novnc.kill(&name).await;
-                if let Err(e) = state::mark_dead(&state.db, &name).await {
-                    tracing::warn!(error = %e, session = %name, "failed to mark dead");
-                }
-            });
-        }));
+        control.set_session_exit_hook(Arc::new(
+            move |name: String, outcome: cluster_control::SessionOutcome| {
+                let state = state_for_hook.clone();
+                tokio::spawn(async move {
+                    state.sessions.write().remove(&name);
+                    // Kill any noVNC backend tied to this session so Xvnc
+                    // and websockify don't linger as zombies after the
+                    // PTY they were paired with dies.
+                    state.novnc.kill(&name).await;
+                    if let Err(e) = state::mark_dead(&state.db, &name).await {
+                        tracing::warn!(error = %e, session = %name, "failed to mark dead");
+                    }
+                    // A queued task's whole life is this session; how it
+                    // ended is what decides whether a PR gets opened.
+                    crate::tasks::on_session_ended(&state, &name, outcome).await;
+                });
+            },
+        ));
     }
 
     // A node that outlived the control plane keeps its PTYs running and
@@ -309,12 +320,20 @@ pub async fn run(
                         continue;
                     }
                 };
+                // Which agent a rehydrated chat resumes on: the default
+                // provider. The conversation's own choice is not stored
+                // per session yet, and Claude's `--resume` id only means
+                // anything to Claude, so starting anywhere else would
+                // resume nothing.
+                let provider = cfg.chat.default_provider();
                 let spec = chat_manager::ChatSpawnSpec {
                     name: row.name.clone(),
                     cwd: std::path::PathBuf::from(&cwd),
                     shell: cfg.shell.clone(),
-                    command: cli_conf
-                        .map(|c| c.command.clone())
+                    provider: provider.map(|p| p.id.clone()).unwrap_or_default(),
+                    driver: provider.map(|p| p.driver.clone()).unwrap_or_default(),
+                    command: provider
+                        .map(|p| p.command.clone())
                         .unwrap_or_else(|| "claude".into()),
                     skip_permissions_flag: cli_conf.and_then(|c| c.skip_permissions_flag.clone()),
                     extra_args: String::new(),
@@ -323,7 +342,7 @@ pub async fn run(
                         &row.name,
                         std::path::Path::new(&cwd),
                     ),
-                    model: cfg.chat.default_model.clone(),
+                    model: provider.and_then(|p| p.default_model.clone()),
                     permission_mode: None,
                     resume: if row.claude_session_id.is_empty() {
                         None
@@ -336,6 +355,12 @@ pub async fn run(
                 crate::chat::attach_persistence(app_state.clone(), session);
             }
         }
+    }
+
+    // Drain the task queue. Only where there is a scheduler to place the
+    // work: a `--role node` host has no queue of its own.
+    if app_state.cluster.is_some() {
+        crate::tasks::spawn_runner(app_state.clone());
     }
 
     // Periodic flusher: every 5s snapshot every live PTY's ring buffer
@@ -410,6 +435,13 @@ pub async fn run(
             "/api/sessions/{name}/windows/{index}",
             delete(crate::http::delete_window),
         )
+        .route(
+            "/api/tasks",
+            get(crate::http::list_tasks).post(crate::http::create_task),
+        )
+        .route("/api/tasks/{id}", get(crate::http::get_task))
+        .route("/api/tasks/{id}/cancel", post(crate::http::cancel_task))
+        .route("/api/tasks/{id}/retry", post(crate::http::retry_task))
         .route("/api/nodes", get(crate::http::list_nodes))
         .route(
             "/api/nodes/{id}",

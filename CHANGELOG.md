@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Task queue: submit a request, get a pull request.** `POST /api/tasks`
+  takes a project and a sentence ("fix the login validation and add a
+  test"), queues it, and the scheduler runs it as a headless agent on
+  whichever node has room. When the agent exits cleanly the node that
+  holds the worktree commits, pushes the branch and opens a PR with
+  `gh`; the PR link lands on the task. A task that loses its node is
+  requeued, one that has already pushed never is — a second run would
+  open a second pull request for one request. New surfaces:
+  `GET /api/tasks`, `GET /api/tasks/{id}`, `POST /api/tasks/{id}/cancel`,
+  `POST /api/tasks/{id}/retry`, and a `/tasks` page with a "タスクを投げる"
+  sheet sized for a phone.
+- **One chat, many agents.** The launcher no longer has an entry per
+  provider. A chat starts on the default agent and the picker at the
+  bottom-left of the composer switches provider *and* model —
+  `Claude Code / Opus`, the way paseo addresses `claude/opus-4.6`.
+  Switching model continues the conversation via `--resume`; switching
+  provider starts a fresh one and says so, because the new agent has
+  never seen the old conversation. Agents are declared in
+  `chat.providers[]`; a config predating this keeps its model list.
+  Ships a `codex-proto` driver marked experimental — it is written
+  against the published protocol but has not been run against a real
+  `codex` binary. See [docs/chat-ui-plan.md](docs/chat-ui-plan.md) §4.
 - **Multi-node scheduling.** `agent-start-host` now splits into a control
   plane (API, UI, scheduler, relay) and node agents that run the agents
   themselves, and places each session on whichever node has room.
@@ -28,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Screenshots / demo GIF in `docs/screenshots/` (TODO).
 
 ### Fixed
+- **The "VSCode を開けませんでした" toast now shows why.** It passed the
+  error under a key the toast does not read, so the reason was dropped.
 - **Session names no longer collide within the same second.** Two
   sessions created in one second shared a worktree, a branch and a
   primary key; names now carry a random suffix.

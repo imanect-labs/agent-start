@@ -67,10 +67,36 @@ pub struct ChatModelInfo {
     pub label: String,
 }
 
-/// Chat-mode config surfaced to the UI: the model menu + default.
+/// One agent a chat can be pointed at. The composer's picker groups its
+/// models under the provider, so `provider/model` is what identifies a
+/// conversation's backend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatProviderInfo {
+    pub id: String,
+    pub label: String,
+    pub models: Vec<ChatModelInfo>,
+    #[serde(rename = "defaultModel", skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    /// Driver written against a published protocol but not yet verified
+    /// against a real binary. Badged in the picker.
+    #[serde(default)]
+    pub experimental: bool,
+}
+
+/// Chat-mode config surfaced to the UI: the provider menu + defaults.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChatConfigBody {
+    #[serde(default)]
+    pub providers: Vec<ChatProviderInfo>,
+    /// Flat model list for the default provider. Kept so a client from
+    /// before providers existed still finds a menu where it looks.
     pub models: Vec<ChatModelInfo>,
+    #[serde(
+        rename = "defaultProvider",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub default_provider: Option<String>,
     #[serde(rename = "defaultModel", skip_serializing_if = "Option::is_none")]
     pub default_model: Option<String>,
 }
@@ -317,6 +343,89 @@ pub struct StartSessionResponse {
     pub node_id: String,
     #[serde(rename = "nodeName", default)]
     pub node_name: String,
+}
+
+// ---- tasks -----------------------------------------------------------
+
+/// Submit one "do this to that repository" request. Everything except
+/// the project and the prompt has a sensible default, because the point
+/// of the queue is that it can be driven from a phone.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateTaskRequest {
+    #[serde(rename = "projectPath")]
+    pub project_path: String,
+    pub prompt: String,
+    /// CLI key to run. Defaults to the configured default agent.
+    #[serde(default)]
+    pub agent: Option<String>,
+    /// Branch the work starts from and the PR targets. Empty = the
+    /// repository default.
+    #[serde(rename = "baseBranch", default)]
+    pub base_branch: Option<String>,
+    #[serde(default)]
+    pub priority: Option<i64>,
+    #[serde(rename = "maxAttempts", default)]
+    pub max_attempts: Option<i64>,
+    #[serde(rename = "cpuMillis", default)]
+    pub cpu_millis: Option<u32>,
+    #[serde(rename = "memMb", default)]
+    pub mem_mb: Option<u32>,
+    #[serde(default)]
+    pub isolation: Option<String>,
+    #[serde(rename = "nodeSelector", default)]
+    pub node_selector: Option<Vec<String>>,
+    /// Open a pull request when the agent is done. Defaults to true.
+    #[serde(rename = "createPr", default)]
+    pub create_pr: Option<bool>,
+    /// Open it as a draft. Defaults to true.
+    #[serde(rename = "draftPr", default)]
+    pub draft_pr: Option<bool>,
+}
+
+/// One task as the API reports it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskSummary {
+    pub id: String,
+    pub title: String,
+    pub prompt: String,
+    #[serde(rename = "projectPath")]
+    pub project_path: String,
+    pub agent: String,
+    /// `pending` | `assigned` | `running` | `succeeded` | `failed` | `cancelled`.
+    pub status: String,
+    pub attempts: i64,
+    #[serde(rename = "maxAttempts")]
+    pub max_attempts: i64,
+    #[serde(rename = "baseBranch")]
+    pub base_branch: String,
+    #[serde(rename = "nodeId")]
+    pub node_id: String,
+    #[serde(rename = "nodeName")]
+    pub node_name: String,
+    #[serde(rename = "sessionName")]
+    pub session_name: String,
+    #[serde(rename = "prUrl")]
+    pub pr_url: String,
+    pub branch: String,
+    /// Non-fatal explanations from the finalize step.
+    pub notes: Vec<String>,
+    pub error: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+    #[serde(rename = "startedAt", skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<i64>,
+    #[serde(rename = "finishedAt", skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TasksBody {
+    pub tasks: Vec<TaskSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskBody {
+    pub task: TaskSummary,
 }
 
 // ---- cluster ---------------------------------------------------------
@@ -668,6 +777,14 @@ pub enum ChatClientMessage {
     Interrupt,
     /// Switch the active model (respawns the conversation with `--resume`).
     SetModel { model: String },
+    /// Point the conversation at another agent, optionally with a model.
+    /// Unlike `SetModel` this cannot carry the conversation over: the new
+    /// provider has never seen it.
+    SetProvider {
+        provider: String,
+        #[serde(default)]
+        model: Option<String>,
+    },
     /// Answer a pending AskUserQuestion / ExitPlanMode permission request
     /// (#95). `answers` carries the selected labels for AskUserQuestion
     /// (`{ "<question>": "<label>" | ["<label>", ...] }`); `message` is an

@@ -21,6 +21,7 @@ mod preferences;
 mod projects;
 mod projects_write;
 mod sessions;
+pub mod tasks;
 mod windows;
 
 pub use code_server::{close_code_server, open_code_server};
@@ -39,6 +40,7 @@ pub use preferences::{get_preferences, put_preferences};
 pub use projects::list_projects;
 pub use projects_write::{clone_project, delete_project, import_project};
 pub use sessions::{delete_session, list_sessions, restart_session, start_session};
+pub use tasks::{cancel_task, create_task, get_task, list_tasks, retry_task};
 pub use windows::{create_window, delete_window, list_windows};
 
 /// Render an `{ "error": "<msg>" }` JSON body with the given status code.

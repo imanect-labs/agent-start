@@ -194,6 +194,37 @@ async fn handle_client_message(
                 mark_running(app, name).await;
             }
         }
+        ChatClientMessage::SetProvider { provider, model } => {
+            let cfg = match config_loader::load_config() {
+                Ok(c) => c,
+                Err(e) => {
+                    chat_error(session, format!("設定を読み込めませんでした: {e}"));
+                    return;
+                }
+            };
+            let Some(p) = cfg.chat.provider(&provider) else {
+                chat_error(session, format!("未知のプロバイダです: {provider}"));
+                return;
+            };
+            // A model the picker offered for *this* provider, or the
+            // provider's own default. Carrying the previous provider's
+            // model over would put e.g. `opus` on a codex command line.
+            let model = model
+                .filter(|m| p.models.iter().any(|candidate| &candidate.id == m))
+                .or_else(|| p.default_model.clone());
+            let was_dead = !session.is_alive();
+            if let Err(e) = session
+                .switch_provider(&p.id, &p.command, &p.driver, model.as_deref())
+                .await
+            {
+                tracing::warn!(error = %e, session = %name, "provider switch failed");
+                chat_error(session, format!("エージェントの切替に失敗しました: {e}"));
+                return;
+            }
+            if was_dead {
+                mark_running(app, name).await;
+            }
+        }
         ChatClientMessage::PermissionResponse {
             request_id,
             allow,
@@ -225,6 +256,15 @@ async fn handle_client_message(
             }
         }
     }
+}
+
+/// Surface a failure in the transcript. A control message that fails
+/// silently looks to the user like the UI ignored their click.
+fn chat_error(session: &Arc<ChatSession>, message: String) {
+    session.inject(
+        serde_json::json!({"type": "chat_error", "message": message}),
+        false,
+    );
 }
 
 /// Flip the persisted + in-memory session state back to running after a

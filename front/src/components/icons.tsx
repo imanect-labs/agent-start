@@ -127,3 +127,11 @@ export const IconServer = (p: P) => (
     <path d="M7 7.5h.01M7 16.5h.01" />
   </svg>
 );
+
+/** Queue of work waiting to run — the tasks view. */
+export const IconTasks = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}>
+    <path d="M4 7h10M4 12h10M4 17h6" strokeLinecap="round" />
+    <path d="M17.5 15.5l1.8 1.8 3.2-3.6" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);

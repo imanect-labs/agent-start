@@ -15,6 +15,7 @@ import {
   type TmuxSession,
 } from "@/components/Sidebar";
 import { MainPane, type RecentProject } from "@/components/MainPane";
+import type { ChatConfig, ChatProviderInfo } from "@/components/ChatView";
 import { RightPane } from "@/components/RightPane";
 import { LaunchConfirmSheet, type LaunchOverrides } from "@/components/LaunchConfirmSheet";
 import { IssuesSheet } from "@/components/IssuesSheet";
@@ -157,10 +158,16 @@ export function IndexPage() {
     sessions: TmuxSession[];
   }>("/api/sessions", fetcher, { refreshInterval: 5000 });
 
-  // Config tells us which CLIs run in chat mode (#34) and the model menu.
+  // Config tells us which CLIs run in chat mode (#34) and which agents
+  // and models the composer's picker offers.
   const { data: configData } = useSWR<{
     clis: { key: string; mode?: string }[];
-    chat?: { models?: { id: string; label: string }[]; defaultModel?: string | null };
+    chat?: {
+      providers?: ChatProviderInfo[];
+      models?: { id: string; label: string }[];
+      defaultProvider?: string | null;
+      defaultModel?: string | null;
+    };
   }>("/api/config", fetcher);
 
   const projects = projData?.projects ?? [];
@@ -223,8 +230,14 @@ export function IndexPage() {
     () => new Set((configData?.clis ?? []).filter((c) => c.mode === "chat").map((c) => c.key)),
     [configData],
   );
-  const chatModels = configData?.chat?.models ?? [];
-  const chatDefaultModel = configData?.chat?.defaultModel ?? null;
+  const chatConfig: ChatConfig = useMemo(
+    () => ({
+      providers: configData?.chat?.providers ?? [],
+      defaultProvider: configData?.chat?.defaultProvider ?? null,
+      defaultModel: configData?.chat?.defaultModel ?? null,
+    }),
+    [configData],
+  );
 
   // "Recent projects" for the welcome screen (#86): bubble up the projects
   // whose most-recent session was launched most recently. Pending placeholders
@@ -905,8 +918,7 @@ export function IndexPage() {
       onUpdateTab={updateTab}
       onToggleSidebar={() => setSidebarOpen((v) => !v)}
       onOpenDiff={(file, mode) => openDiffTab(activeCwd, file, mode)}
-      chatModels={chatModels}
-      chatDefaultModel={chatDefaultModel}
+      chatConfig={chatConfig}
       recentProjects={recentProjects}
       onLaunchProject={(p) => setLaunchTarget(p)}
       onOpenSession={(n) => openSession(n)}

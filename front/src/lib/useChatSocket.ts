@@ -20,8 +20,9 @@ import type {
  *    transcript idempotently (committed messages are upserted by `_seq`);
  *  - reconstruct token streaming from `stream_event` deltas into a live
  *    `draft`, replaced by the committed `assistant` message when it lands;
- *  - track connection + lifecycle (running/dead) and the current model;
- *  - expose `send` / `interrupt` / `setModel` actions.
+ *  - track connection + lifecycle (running/dead) and the current
+ *    provider/model pair;
+ *  - expose `send` / `interrupt` / `setModel` / `setProvider` actions.
  */
 
 type State = {
@@ -30,9 +31,15 @@ type State = {
   toolResults: Map<string, ToolResult>;
   draft: Draft | null;
   generating: boolean;
+  /** Agent this conversation is talking to (`chat.providers[].id`). */
+  provider: string | null;
   model: string | null;
   lifecycle: Lifecycle;
   error: string | null;
+  /** Informational message from the backend (e.g. an agent switch that
+   *  cannot carry the conversation over). Not a failure, so it is kept
+   *  apart from `error` and rendered as a note, not an alarm. */
+  notice: string | null;
   /** Pending interactive permission requests (AskUserQuestion / plan), in
    *  arrival order, keyed by `requestId` (#95). */
   perms: PermissionRequest[];
@@ -48,8 +55,10 @@ type Action =
   | { t: "draftClear" }
   | { t: "generating"; on: boolean }
   | { t: "model"; model: string | null }
+  | { t: "provider"; provider: string | null }
   | { t: "lifecycle"; lifecycle: Lifecycle }
   | { t: "error"; message: string | null }
+  | { t: "notice"; message: string | null }
   | { t: "permAdd"; req: PermissionRequest }
   | { t: "permResolve"; requestId: string }
   | { t: "permClear" }
@@ -83,10 +92,18 @@ function reducer(state: State, action: Action): State {
       return { ...state, generating: action.on, draft: action.on ? state.draft : null };
     case "model":
       return { ...state, model: action.model };
+    case "provider":
+      // A provider switch invalidates the model the previous agent
+      // reported; the new one announces its own on init.
+      return action.provider === state.provider
+        ? state
+        : { ...state, provider: action.provider, model: null };
     case "lifecycle":
       return { ...state, lifecycle: action.lifecycle };
     case "error":
       return { ...state, error: action.message };
+    case "notice":
+      return { ...state, notice: action.message };
     case "permAdd": {
       // Dedupe by requestId so a reconnect replay doesn't double-add.
       if (state.perms.some((p) => p.requestId === action.req.requestId)) return state;
@@ -113,9 +130,11 @@ const initialState: State = {
   toolResults: new Map(),
   draft: null,
   generating: false,
+  provider: null,
   model: null,
   lifecycle: "unknown",
   error: null,
+  notice: null,
   perms: [],
   permissionMode: null,
 };
@@ -261,6 +280,7 @@ export function useChatSocket(sessionName: string) {
     // first stream_event round-trip.
     dispatch({ t: "generating", on: true });
     dispatch({ t: "error", message: null });
+    dispatch({ t: "notice", message: null });
     return true;
   }, []);
 
@@ -275,6 +295,17 @@ export function useChatSocket(sessionName: string) {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "set_model", model }));
+    }
+  }, []);
+
+  const setProvider = useCallback((provider: string, model?: string | null) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "set_provider", provider, model: model ?? null }));
+      // Show the switch immediately; `chat_status` confirms it once the
+      // new agent is up.
+      dispatch({ t: "provider", provider });
+      dispatch({ t: "lifecycle", lifecycle: "switching" });
     }
   }, []);
 
@@ -321,6 +352,7 @@ export function useChatSocket(sessionName: string) {
     send,
     interrupt,
     setModel,
+    setProvider,
     respondPermission,
     setPermissionMode,
     reconnect,
@@ -427,6 +459,9 @@ function handleEnvelope(env: Record<string, unknown>, h: Handlers) {
         // the UI doesn't show un-answerable cards.
         dispatch({ t: "permClear" });
       } else if (st === "switching") dispatch({ t: "lifecycle", lifecycle: "switching" });
+      if (typeof env.provider === "string") {
+        dispatch({ t: "provider", provider: env.provider });
+      }
       if (typeof env.model === "string") dispatch({ t: "model", model: env.model });
       // A mode switch reports the new permission mode here (the value may be
       // null when leaving plan mode), so reconcile the composer toggle (#95).
@@ -436,6 +471,10 @@ function handleEnvelope(env: Record<string, unknown>, h: Handlers) {
           mode: typeof env.permissionMode === "string" ? env.permissionMode : null,
         });
       }
+      break;
+    }
+    case "chat_notice": {
+      dispatch({ t: "notice", message: String(env.message ?? "") });
       break;
     }
     case "chat_error": {

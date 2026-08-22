@@ -12,7 +12,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 mod cluster;
+mod tasks;
 pub use cluster::*;
+pub use tasks::*;
 
 pub type Db = Pool<Sqlite>;
 
@@ -110,7 +112,18 @@ pub fn db_path() -> PathBuf {
 }
 
 pub async fn open() -> Result<Db, StateError> {
-    let path = db_path();
+    open_at(&db_path()).await
+}
+
+/// Open (creating and migrating if needed) a database at an explicit
+/// path.
+///
+/// Exists because the queue is *global*: `claim_next_task` takes the
+/// head of the whole table, so two tests sharing one file steal each
+/// other's work and fail for reasons that have nothing to do with the
+/// code under test. It is also the seam Phase 4's `--database-url`
+/// grows out of.
+pub async fn open_at(path: &std::path::Path) -> Result<Db, StateError> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }

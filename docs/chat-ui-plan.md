@@ -134,3 +134,66 @@ UI キットは既存 `front/src/components/ui`（Badge/Button/Input/Spinner）+
 - **~~`merge_with_defaults`~~** — フェーズ0 で確定: per-key clis 再マージ済みで新 CLI は既存ユーザーにも出る。
 - **モデル切替のレイテンシ** — `/model` 不可のため切替は chat プロセスの `--resume` 張り替えで実現。切替直後の最初の送信に再起動コストが乗る（UI は切替中インジケータで吸収）。
 - **スラッシュコマンド非対応** — ヘッドレスでは `/...` が使えないため `/`補完は v1 スコープ外。
+
+---
+
+## 4. マルチプロバイダ化（2026-08 / Phase 2 と同時）
+
+初版の「プロバイダごとに CLI エントリを分ける」形をやめ、**チャットは 1 本**、
+どのエージェントと話すかは会話中に選ぶ形に変更した。参考: [references.ja.md](./references.ja.md)
+（paseo の `provider/model` 表記）。
+
+### 変更点
+
+| # | 変更前 | 変更後 |
+| --- | --- | --- |
+| P1 | `clis.claude-chat` が「Claude Code (Chat)」。別プロバイダを足すなら CLI エントリを増やす | `clis` のチャットエントリは **1 つ**（label = `Chat`）。エージェントは `chat.providers[]` |
+| P2 | コンポーザ左下はモデルピッカー | **プロバイダ + モデル**のピッカー。プロバイダごとにグループ化し、現在値は `Claude Code / Opus` のように出す |
+| P3 | 切替は `set_model` のみ | `set_provider { provider, model }` を追加 |
+| P4 | ドライバは Claude の stream-json 決め打ち | `chat.providers[].driver` で選択（`claude-stream-json` / `codex-proto`） |
+
+### 決定
+
+- **プロバイダを跨ぐと会話は続かない。** 別のエージェントはその会話を見ていないし、
+  `--resume` の session id は発行元にしか意味がない。切替時に会話ログは画面に残すが、
+  **引き継がれない旨をその場で通知**する（`chat_notice` エンベロープ）。
+  モデルだけの切替は従来どおり `--resume` で継続。
+- **正規化先は Claude の語彙。** フロントは stream-json の形をそのまま描画しているので、
+  2 つ目以降のドライバは自分のイベントを **その形へ翻訳**する（`driver/codex.rs`）。
+  ドライバごとにレンダラを増やさないための線引き。
+- **未知の driver 名は起動時エラー。** 既定へフォールバックすると、喋れないプロトコルで
+  プロセスが立ち上がり「無言でハングした」ようにしか見えない。
+
+### `codex-proto` ドライバの状態
+
+**実機未検証。** `codex proto` の submission/event 語彙に対して書いてあるが、
+開発環境に `codex` バイナリが無いため一度も実際に喋らせていない。
+そのため config 上は `experimental: true` で、ピッカーにも「実験的」バッジが出る。
+プロトコルがずれていた場合に直す場所は `crates/chat-manager/src/driver/codex.rs` だけで、
+その上流はすべて Claude の語彙で動いている。特に怪しいのは:
+
+- `codex proto` に対するモデル指定のフラグ位置（現状は `codex proto --model <m>`）
+- 画像添付。proto 側の item 語彙が確定していないので**送らず**、
+  プロンプト末尾に「送信されません」と明記する
+
+### 設定例
+
+```json
+{
+  "chat": {
+    "defaultProvider": "claude",
+    "providers": [
+      {
+        "id": "claude",
+        "label": "Claude Code",
+        "command": "claude",
+        "driver": "claude-stream-json",
+        "models": [{ "id": "opus", "label": "Opus" }]
+      }
+    ]
+  }
+}
+```
+
+`chat.models`（プロバイダ以前の形）が残っている設定は、起動時に
+**claude プロバイダのモデル一覧として取り込まれる**（`backfill_providers`）。

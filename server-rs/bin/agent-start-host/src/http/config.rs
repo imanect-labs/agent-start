@@ -1,6 +1,6 @@
 use super::err;
 use agent_start_api::{
-    ChatConfigBody, ChatModelInfo, CliInfo, ConfigBody, ConfigPatch, ConfigPaths,
+    ChatConfigBody, ChatModelInfo, ChatProviderInfo, CliInfo, ConfigBody, ConfigPatch, ConfigPaths,
 };
 use axum::http::StatusCode;
 use axum::response::Response;
@@ -25,17 +25,40 @@ pub async fn get_config() -> Response {
             mode: conf.mode.clone().unwrap_or_default(),
         })
         .collect();
+    let providers: Vec<ChatProviderInfo> = cfg
+        .chat
+        .providers
+        .iter()
+        .map(|p| ChatProviderInfo {
+            id: p.id.clone(),
+            label: p.label.clone(),
+            models: p
+                .models
+                .iter()
+                .map(|m| ChatModelInfo {
+                    id: m.id.clone(),
+                    label: m.label.clone(),
+                })
+                .collect(),
+            default_model: p.default_model.clone(),
+            experimental: p.experimental,
+        })
+        .collect();
+    let default_provider = cfg.chat.default_provider().map(|p| p.id.clone());
     let chat = ChatConfigBody {
-        models: cfg
-            .chat
-            .models
+        // `models` still carries the default provider's list so a client
+        // that predates providers finds a menu where it looks.
+        models: providers
             .iter()
-            .map(|m| ChatModelInfo {
-                id: m.id.clone(),
-                label: m.label.clone(),
-            })
-            .collect(),
-        default_model: cfg.chat.default_model.clone(),
+            .find(|p| Some(&p.id) == default_provider.as_ref())
+            .map(|p| p.models.clone())
+            .unwrap_or_default(),
+        default_model: cfg
+            .chat
+            .default_provider()
+            .and_then(|p| p.default_model.clone()),
+        default_provider,
+        providers,
     };
     let paths = ConfigPaths {
         config: config_loader::config_path().to_string_lossy().into_owned(),
@@ -88,12 +111,20 @@ pub async fn put_config(Json(patch): Json<ConfigPatch>) -> Response {
         let mut next: BTreeMap<String, CliConfig> = BTreeMap::new();
         for (key, c) in clis_patch {
             next.insert(
-                key,
+                key.clone(),
                 CliConfig {
                     command: c.command,
                     skip_permissions_flag: c.skip_permissions_flag,
                     label: c.label,
                     mode: c.mode,
+                    // Not exposed in the settings patch: which flag makes
+                    // an agent run headlessly is a property of the CLI,
+                    // not a user preference, and blanking it here would
+                    // quietly break the task queue.
+                    prompt_arg: cfg
+                        .clis
+                        .get(&key)
+                        .and_then(|existing| existing.prompt_arg.clone()),
                 },
             );
         }
