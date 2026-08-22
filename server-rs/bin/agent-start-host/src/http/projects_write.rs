@@ -49,8 +49,8 @@ fn unique_name(root: &Path, base: &str) -> String {
     let mut candidate = base.to_string();
     let mut n = 2u32;
     while root.join(&candidate).exists()
-        || root.join(format!("{}.partial", &candidate)).exists()
-        || root.join(format!("{}.error", &candidate)).exists()
+        || root.join(format!("{}.partial", candidate)).exists()
+        || root.join(format!("{}.error", candidate)).exists()
     {
         candidate = format!("{}-{}", base, n);
         n += 1;
@@ -83,7 +83,7 @@ pub async fn clone_project(Json(req): Json<CloneRequest>) -> Response {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| derive_name_from_url(&req.url));
     let name = unique_name(&root, &base);
-    let partial = root.join(format!("{}.partial", &name));
+    let partial = root.join(format!("{}.partial", name));
 
     // Reserve the partial path before spawning so concurrent calls don't
     // race on the same name.
@@ -102,7 +102,7 @@ pub async fn clone_project(Json(req): Json<CloneRequest>) -> Response {
         // git clone writes into an empty target; the partial dir holds a
         // marker file plus an empty `repo/` we clone into.
         let target = root_clone
-            .join(format!("{}.partial", &name_for_task))
+            .join(format!("{}.partial", name_for_task))
             .join("repo");
         let res = tokio::task::spawn_blocking(move || git_ops::clone(&url, &target)).await;
         let outcome = match res {
@@ -113,7 +113,7 @@ pub async fn clone_project(Json(req): Json<CloneRequest>) -> Response {
         match outcome {
             Ok(()) => {
                 let from = root_clone
-                    .join(format!("{}.partial", &name_for_task))
+                    .join(format!("{}.partial", name_for_task))
                     .join("repo");
                 let to = root_clone.join(&name_for_task);
                 if let Err(e) = std::fs::rename(&from, &to) {
@@ -121,7 +121,7 @@ pub async fn clone_project(Json(req): Json<CloneRequest>) -> Response {
                     return;
                 }
                 let _ =
-                    std::fs::remove_dir_all(root_clone.join(format!("{}.partial", &name_for_task)));
+                    std::fs::remove_dir_all(root_clone.join(format!("{}.partial", name_for_task)));
             }
             Err(msg) => write_error_marker(&root_clone, &name_for_task, &msg),
         }
@@ -164,7 +164,7 @@ pub async fn import_project(Json(req): Json<ImportRequest>) -> Response {
             )
         });
     let name = unique_name(&root, &base);
-    let partial = root.join(format!("{}.partial", &name));
+    let partial = root.join(format!("{}.partial", name));
     if let Err(e) = std::fs::create_dir_all(&partial) {
         return err(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -180,11 +180,11 @@ pub async fn import_project(Json(req): Json<ImportRequest>) -> Response {
     tokio::spawn(async move {
         let res = tokio::task::spawn_blocking(move || {
             let target = root_clone
-                .join(format!("{}.partial", &name_for_task))
+                .join(format!("{}.partial", name_for_task))
                 .join("data");
             copy_dir_recursive(&src_for_task, &target)?;
             std::fs::rename(&target, root_clone.join(&name_for_task))?;
-            let _ = std::fs::remove_dir_all(root_clone.join(format!("{}.partial", &name_for_task)));
+            let _ = std::fs::remove_dir_all(root_clone.join(format!("{}.partial", name_for_task)));
             Ok::<_, std::io::Error>(())
         })
         .await;
@@ -230,8 +230,8 @@ pub async fn delete_project(AxPath(name): AxPath<String>) -> Response {
     };
     if !resolved.exists() {
         // Also accept deletion of stale `.partial` / `.error` markers.
-        let partial = root.join(format!("{}.partial", &name));
-        let err_marker = root.join(format!("{}.error", &name));
+        let partial = root.join(format!("{}.partial", name));
+        let err_marker = root.join(format!("{}.error", name));
         let mut removed = false;
         if partial.exists() {
             let _ = std::fs::remove_dir_all(&partial);
@@ -250,8 +250,8 @@ pub async fn delete_project(AxPath(name): AxPath<String>) -> Response {
         return err(StatusCode::INTERNAL_SERVER_ERROR, format!("remove: {e}"));
     }
     // Best-effort cleanup of sibling markers.
-    let _ = std::fs::remove_file(root.join(format!("{}.error", &name)));
-    let _ = std::fs::remove_dir_all(root.join(format!("{}.partial", &name)));
+    let _ = std::fs::remove_file(root.join(format!("{}.error", name)));
+    let _ = std::fs::remove_dir_all(root.join(format!("{}.partial", name)));
 
     Json(serde_json::json!({"ok": true})).into_response()
 }
