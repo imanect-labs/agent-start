@@ -29,17 +29,12 @@
 
 use serde_json::{json, Value};
 
-/// What the translator has to remember between lines: codex reports a
-/// command's output under the same call id it announced it with, and the
-/// UI pairs `tool_use` with `tool_result` by that id.
-#[derive(Debug, Default)]
-pub struct CodexState {
-    /// Command lines by call id, so a finished command can be labelled.
-    running: std::collections::HashMap<String, String>,
-}
-
 /// Turn one codex event into zero or more Claude-shaped envelopes.
-pub fn translate(event: &Value, state: &mut CodexState) -> Vec<Value> {
+///
+/// Stateless: codex tags a command's output with the same `call_id` it
+/// announced, and the UI already pairs `tool_use` with `tool_result` by
+/// that id, so there is nothing to remember between lines.
+pub fn translate(event: &Value) -> Vec<Value> {
     let msg = event.get("msg").unwrap_or(event);
     let ty = msg.get("type").and_then(Value::as_str).unwrap_or("");
     match ty {
@@ -75,7 +70,6 @@ pub fn translate(event: &Value, state: &mut CodexState) -> Vec<Value> {
         "exec_command_begin" => {
             let call_id = call_id(msg);
             let command = command_line(msg);
-            state.running.insert(call_id.clone(), command.clone());
             vec![assistant(vec![json!({
                 "type": "tool_use",
                 "id": call_id,
@@ -85,7 +79,6 @@ pub fn translate(event: &Value, state: &mut CodexState) -> Vec<Value> {
         }
         "exec_command_end" => {
             let call_id = call_id(msg);
-            state.running.remove(&call_id);
             let exit = msg.get("exit_code").and_then(Value::as_i64);
             let output = msg
                 .get("aggregated_output")
@@ -159,21 +152,24 @@ fn command_line(msg: &Value) -> String {
 
 /// One submission line for a user turn.
 ///
-/// Images are dropped with a note rather than silently: codex's proto
-/// item vocabulary for inline images is not settled here, and pretending
-/// an attachment was sent is worse than saying it was not.
-pub fn user_submission(id: &str, text: &str, image_count: usize) -> String {
-    let mut body = text.to_string();
-    if image_count > 0 {
-        body.push_str(&format!(
-            "\n\n(注: 画像 {image_count} 件は Codex プロバイダでは送信されません)"
-        ));
-    }
+/// Images are not sent: codex's proto item vocabulary for inline images
+/// is not settled here. The user is told so through a `chat_notice` (see
+/// `dropped_images_notice`) rather than by appending a note to the
+/// prompt — text added here would reach the model and change its answer.
+pub fn user_submission(id: &str, text: &str) -> String {
     json!({
         "id": id,
-        "op": {"type": "user_input", "items": [{"type": "text", "text": body}]},
+        "op": {"type": "user_input", "items": [{"type": "text", "text": text}]},
     })
     .to_string()
+}
+
+/// Message for the attachments this driver cannot carry, or `None` when
+/// the turn had none.
+pub fn dropped_images_notice(image_count: usize) -> Option<String> {
+    (image_count > 0).then(|| {
+        format!("画像 {image_count} 件は Codex プロバイダでは送信されません（テキストのみ送信しました）。")
+    })
 }
 
 pub fn interrupt_submission(id: &str) -> String {
@@ -186,11 +182,8 @@ mod tests {
 
     #[test]
     fn a_streamed_message_becomes_a_text_delta() {
-        let mut state = CodexState::default();
-        let out = translate(
-            &json!({"id": "1", "msg": {"type": "agent_message_delta", "delta": "hel"}}),
-            &mut state,
-        );
+        let out =
+            translate(&json!({"id": "1", "msg": {"type": "agent_message_delta", "delta": "hel"}}));
         assert_eq!(out.len(), 1);
         assert_eq!(out[0]["type"], "stream_event");
         assert_eq!(out[0]["event"]["delta"]["type"], "text_delta");
@@ -199,15 +192,11 @@ mod tests {
 
     #[test]
     fn a_command_and_its_output_are_paired_by_call_id() {
-        let mut state = CodexState::default();
-        let begin = translate(
-            &json!({"msg": {
-                "type": "exec_command_begin",
-                "call_id": "c1",
-                "command": ["cargo", "test"],
-            }}),
-            &mut state,
-        );
+        let begin = translate(&json!({"msg": {
+            "type": "exec_command_begin",
+            "call_id": "c1",
+            "command": ["cargo", "test"],
+        }}));
         assert_eq!(begin[0]["message"]["content"][0]["type"], "tool_use");
         assert_eq!(begin[0]["message"]["content"][0]["id"], "c1");
         assert_eq!(
@@ -215,41 +204,37 @@ mod tests {
             "cargo test"
         );
 
-        let end = translate(
-            &json!({"msg": {
-                "type": "exec_command_end",
-                "call_id": "c1",
-                "exit_code": 1,
-                "aggregated_output": "boom",
-            }}),
-            &mut state,
-        );
+        let end = translate(&json!({"msg": {
+            "type": "exec_command_end",
+            "call_id": "c1",
+            "exit_code": 1,
+            "aggregated_output": "boom",
+        }}));
         let block = &end[0]["message"]["content"][0];
         assert_eq!(block["tool_use_id"], "c1");
         assert_eq!(block["content"], "boom");
         assert_eq!(block["is_error"], true, "a non-zero exit is an error");
-        assert!(state.running.is_empty(), "the call was not retired");
     }
 
     #[test]
     fn the_end_of_a_turn_is_reported_as_a_result() {
-        let mut state = CodexState::default();
-        let out = translate(&json!({"msg": {"type": "task_complete"}}), &mut state);
+        let out = translate(&json!({"msg": {"type": "task_complete"}}));
         assert_eq!(out[0]["type"], "result");
     }
 
     #[test]
     fn housekeeping_events_are_dropped_rather_than_rendered() {
-        let mut state = CodexState::default();
-        assert!(translate(&json!({"msg": {"type": "token_count"}}), &mut state).is_empty());
+        assert!(translate(&json!({"msg": {"type": "token_count"}})).is_empty());
     }
 
     #[test]
-    fn a_dropped_image_is_admitted_in_the_prompt() {
-        let line = user_submission("3", "look at this", 2);
+    fn a_dropped_image_is_reported_without_touching_the_prompt() {
+        let line = user_submission("3", "look at this");
         let v: Value = serde_json::from_str(&line).unwrap();
-        let text = v["op"]["items"][0]["text"].as_str().unwrap();
-        assert!(text.starts_with("look at this"));
-        assert!(text.contains("画像 2 件"), "the user is not told: {text}");
+        // The model sees exactly what the user typed.
+        assert_eq!(v["op"]["items"][0]["text"], "look at this");
+        let notice = dropped_images_notice(2).expect("the user is told");
+        assert!(notice.contains("画像 2 件"), "unhelpful notice: {notice}");
+        assert!(dropped_images_notice(0).is_none());
     }
 }

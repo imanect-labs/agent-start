@@ -12,7 +12,7 @@
 //! `--resume <session_id>` which continues the same conversation without
 //! re-emitting history.
 
-use crate::driver::codex::{self, CodexState};
+use crate::driver::codex;
 use crate::driver::Driver;
 use crate::error::ChatError;
 use parking_lot::Mutex;
@@ -79,8 +79,6 @@ pub struct ChatSession {
     /// so a bad `driver` in config fails loudly there instead of being
     /// papered over with Claude's vocabulary.
     driver: Mutex<Driver>,
-    /// Per-process translation state for drivers that need it.
-    codex: Mutex<CodexState>,
     /// Submission counter for request/response protocols.
     submission: AtomicU64,
     proc: Mutex<Option<Proc>>,
@@ -152,7 +150,6 @@ impl ChatSession {
             resume_suspect: std::sync::atomic::AtomicBool::new(false),
             lifecycle: tokio::sync::Mutex::new(()),
             driver: Mutex::new(Driver::parse(&spec.driver).unwrap_or(Driver::ClaudeStreamJson)),
-            codex: Mutex::new(CodexState::default()),
             submission: AtomicU64::new(0),
             spec: Mutex::new(spec),
             proc: Mutex::new(None),
@@ -335,7 +332,16 @@ impl ChatSession {
                 .to_string()
             }
             Driver::CodexProto => {
-                codex::user_submission(&self.next_submission_id(), text, images.len())
+                // Say what could not be sent, in the transcript rather
+                // than in the prompt: text appended to the prompt would
+                // reach the model and change its answer.
+                if let Some(notice) = codex::dropped_images_notice(images.len()) {
+                    self.inject(
+                        serde_json::json!({"type": "chat_notice", "message": notice}),
+                        false,
+                    );
+                }
+                codex::user_submission(&self.next_submission_id(), text)
             }
         };
 
@@ -389,7 +395,7 @@ impl ChatSession {
         *self.model.lock() = Some(model.to_string());
         self.kill();
         self.inject_status("switching");
-        self.start().await?;
+        self.restart_after_switch().await?;
         self.inject_status("running");
         Ok(())
     }
@@ -432,10 +438,14 @@ impl ChatSession {
         }
         *self.model.lock() = model.map(str::to_string);
         *self.claude_session_id.lock() = String::new();
-        *self.codex.lock() = CodexState::default();
+        // The in-flight buffer holds the deltas of a turn the *previous*
+        // agent was part-way through. Replaying those to a client that
+        // reconnects after the switch would show partial text from a
+        // conversation that no longer exists.
+        self.inflight.lock().clear();
         self.kill();
         self.inject_status("switching");
-        self.start().await?;
+        self.restart_after_switch().await?;
         if !same_provider {
             self.inject(
                 serde_json::json!({
@@ -488,6 +498,21 @@ impl ChatSession {
         }
         self.start().await?;
         self.inject_status("running");
+        Ok(())
+    }
+
+    /// Bring the process back up after a deliberate respawn, reporting
+    /// `dead` if it will not start.
+    ///
+    /// Every switch announces `switching` before killing the old
+    /// process. If the new one then fails to spawn there is no reader to
+    /// notice its end, so nothing would ever correct that status and the
+    /// UI would sit on "切り替え中…" forever.
+    async fn restart_after_switch(self: &Arc<Self>) -> Result<(), ChatError> {
+        if let Err(e) = self.start().await {
+            self.inject_status("dead");
+            return Err(e);
+        }
         Ok(())
     }
 
@@ -603,7 +628,7 @@ impl ChatSession {
         match self.driver() {
             Driver::ClaudeStreamJson => self.handle_event(value).await,
             Driver::CodexProto => {
-                let events = codex::translate(&value, &mut self.codex.lock());
+                let events = codex::translate(&value);
                 if events.is_empty() {
                     tracing::trace!(target: "chat", session = %self.name, "codex event dropped: {line}");
                 }
@@ -775,7 +800,7 @@ impl ChatSession {
         }
         self.kill();
         self.inject_status("switching");
-        self.start().await?;
+        self.restart_after_switch().await?;
         self.inject_status("running");
         Ok(())
     }

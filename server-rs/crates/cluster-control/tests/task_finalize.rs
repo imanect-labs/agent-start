@@ -19,9 +19,24 @@ use pty_manager::PtyManager;
 use std::sync::Arc;
 use std::time::Duration;
 
-async fn control_plane(home: &std::path::Path) -> Arc<ControlPlane> {
-    std::env::set_var("AGENT_START_HOME", home);
-    let db = state::open_at(&home.join("host.db"))
+/// `AGENT_START_HOME` is process-global, and these tests run in parallel
+/// in one binary. Setting it per test would let one test's worktree be
+/// created under another's temp dir — which is then deleted out from
+/// under it. One home for the whole file, set once; the databases stay
+/// separate because `open_at` takes an explicit path.
+static HOME: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+
+fn home() -> &'static std::path::Path {
+    HOME.get_or_init(|| {
+        let dir = tempfile::tempdir().expect("home");
+        std::env::set_var("AGENT_START_HOME", dir.path());
+        dir
+    })
+    .path()
+}
+
+async fn control_plane(db_name: &str) -> Arc<ControlPlane> {
+    let db = state::open_at(&home().join(db_name))
         .await
         .expect("open db");
     ControlPlane::new(
@@ -114,8 +129,7 @@ async fn await_exit(pty: &Arc<PtyManager>, session: &str) {
 
 #[tokio::test]
 async fn a_finished_agents_work_comes_back_as_a_pushed_branch() {
-    let home = tempfile::tempdir().expect("home");
-    let control = control_plane(home.path()).await;
+    let control = control_plane("finalize.db").await;
     let pty = attach_node(&control, "finalize-node");
     await_node(&control).await;
 
@@ -215,8 +229,7 @@ async fn a_finished_agents_work_comes_back_as_a_pushed_branch() {
 
 #[tokio::test]
 async fn finalizing_a_session_no_node_knows_about_is_an_error() {
-    let home = tempfile::tempdir().expect("home");
-    let control = control_plane(home.path()).await;
+    let control = control_plane("unknown-session.db").await;
     attach_node(&control, "empty-node");
     await_node(&control).await;
     let node_id = control.nodes()[0].info.id.clone();

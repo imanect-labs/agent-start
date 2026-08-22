@@ -40,7 +40,14 @@ export function ChatView({
 }) {
   const chat = useChatSocket(sessionName);
   const currentProvider = chat.provider ?? chatConfig.defaultProvider;
-  const currentModel = chat.model ?? chatConfig.defaultModel;
+  // Before the agent reports a model, fall back to *its* default — not
+  // the globally configured one, which belongs to whichever provider a
+  // conversation happened to start on.
+  const providerConfig = chatConfig.providers.find((p) => p.id === currentProvider);
+  const currentModel =
+    chat.model ??
+    providerConfig?.defaultModel ??
+    (currentProvider === chatConfig.defaultProvider ? chatConfig.defaultModel : null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
 
@@ -64,9 +71,7 @@ export function ChatView({
   return (
     <div className="flex flex-col h-full min-h-0 bg-app">
       <Header
-        provider={
-          chatConfig.providers.find((p) => p.id === currentProvider)?.label ?? currentProvider
-        }
+        provider={providerConfig?.label ?? currentProvider}
         model={currentModel}
         connection={chat.connection}
         lifecycle={chat.lifecycle}

@@ -165,6 +165,10 @@ fn open_pr(repo: &Path, branch: &str, req: &FinalizeRequest) -> Result<String, S
     let output = Command::new("gh")
         .current_dir(repo)
         .args(&args)
+        // Closed, not inherited: an unauthenticated `gh` prompts, and a
+        // prompt with nowhere to read from would block this thread for
+        // as long as the node lives.
+        .stdin(std::process::Stdio::null())
         .output()
         .map_err(|e| {
             format!("gh が実行できないため PR は作成していません（ブランチは push 済み）: {e}")

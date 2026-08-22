@@ -182,6 +182,99 @@ async fn a_running_session_can_be_traced_back_to_its_task() {
 }
 
 #[tokio::test]
+async fn a_manual_retry_starts_the_attempt_count_over() {
+    let (db, _home) = db().await;
+    let mut t = task("manual-retry");
+    t.max_attempts = 1;
+    state::insert_task(&db, &t).await.unwrap();
+    state::claim_next_task(&db, 30_000).await.unwrap().unwrap();
+    state::requeue_task(&db, "manual-retry", "node lost")
+        .await
+        .unwrap();
+    assert_eq!(
+        state::get_task(&db, "manual-retry")
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        TaskStatus::Failed.as_str()
+    );
+
+    assert!(state::retry_task(&db, "manual-retry").await.unwrap());
+    let row = state::get_task(&db, "manual-retry").await.unwrap().unwrap();
+    assert_eq!(row.status, TaskStatus::Pending.as_str());
+    assert_eq!(row.attempts, 0, "the exhausted count was not reset");
+    // It is claimable again, which is the whole point of retrying.
+    let again = state::claim_next_task(&db, 30_000).await.unwrap().unwrap();
+    assert_eq!(again.id, "manual-retry");
+}
+
+#[tokio::test]
+async fn a_retry_still_refuses_to_repeat_a_task_that_pushed() {
+    let (db, _home) = db().await;
+    state::insert_task(&db, &task("retry-pushed"))
+        .await
+        .unwrap();
+    state::claim_next_task(&db, 30_000).await.unwrap().unwrap();
+    state::mark_task_running(&db, "retry-pushed", "node-1", "cc-p")
+        .await
+        .unwrap();
+    state::mark_side_effects(&db, "retry-pushed").await.unwrap();
+    state::requeue_task(&db, "retry-pushed", "node lost")
+        .await
+        .unwrap();
+
+    // The user may ask for another run by hand…
+    assert!(state::retry_task(&db, "retry-pushed").await.unwrap());
+    state::claim_next_task(&db, 30_000).await.unwrap().unwrap();
+    // …but the automatic path must still refuse, or a second failure
+    // would silently open a second PR.
+    assert!(
+        !state::requeue_task(&db, "retry-pushed", "node lost again")
+            .await
+            .unwrap(),
+        "a task that had already pushed was requeued automatically"
+    );
+}
+
+#[tokio::test]
+async fn a_restart_requeues_placements_but_fails_what_was_running() {
+    let (db, _home) = db().await;
+    // One claimed but never started, one already running.
+    state::insert_task(&db, &task("boot-assigned"))
+        .await
+        .unwrap();
+    state::claim_next_task(&db, 30_000).await.unwrap().unwrap();
+    state::insert_task(&db, &task("boot-running"))
+        .await
+        .unwrap();
+    state::claim_next_task(&db, 30_000).await.unwrap().unwrap();
+    state::mark_task_running(&db, "boot-running", "node-1", "cc-boot")
+        .await
+        .unwrap();
+
+    state::reset_inflight_tasks(&db).await.unwrap();
+
+    // Nothing was ever started for the assigned one, so it is safe to
+    // hand out again.
+    let assigned = state::get_task(&db, "boot-assigned")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(assigned.status, TaskStatus::Pending.as_str());
+    assert!(assigned.session_name.is_empty());
+    // The running one died with the host, and we cannot tell whether its
+    // agent had already pushed — so it fails rather than running twice.
+    let running = state::get_task(&db, "boot-running").await.unwrap().unwrap();
+    assert_eq!(running.status, TaskStatus::Failed.as_str());
+    assert!(
+        running.error.contains("restarted"),
+        "unhelpful: {}",
+        running.error
+    );
+}
+
+#[tokio::test]
 async fn a_cancelled_task_cannot_be_marked_running_by_work_already_in_flight() {
     let (db, _home) = db().await;
     state::insert_task(&db, &task("raced")).await.unwrap();

@@ -740,8 +740,29 @@ impl ControlPlane {
                 }
             }
             NodeFrame::FinalizeResult { request_id, result } => {
-                if let Some(tx) = node.finalizing.lock().remove(&request_id) {
-                    let _ = tx.send(result);
+                match node.finalizing.lock().remove(&request_id) {
+                    Some(tx) => {
+                        let _ = tx.send(result);
+                    }
+                    // The requester timed out and has already recorded a
+                    // failure — but a finalize that pushed and opened a
+                    // PR cannot be undone. Log what was created so the
+                    // user is not left hunting for a PR the UI denies
+                    // exists.
+                    None => match result {
+                        Ok(ok) => tracing::warn!(
+                            node = %node.name,
+                            branch = %ok.branch,
+                            pr = %ok.pr_url,
+                            pushed = ok.pushed,
+                            "finalize finished after the request had timed out"
+                        ),
+                        Err(e) => tracing::warn!(
+                            node = %node.name,
+                            error = %e,
+                            "a timed-out finalize reported a failure"
+                        ),
+                    },
                 }
             }
             NodeFrame::Stream { ch, data, .. } => {

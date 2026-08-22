@@ -9,19 +9,6 @@ use axum::Json;
 use serde::Deserialize;
 
 use crate::app::Shared;
-use crate::launch::LaunchError;
-
-/// Map a launch/validation failure onto a status code. Shared with the
-/// session endpoint so "outside configured roots" means the same thing
-/// however the work was submitted.
-pub fn status_for(e: &LaunchError) -> StatusCode {
-    match e {
-        LaunchError::BadRequest(_) => StatusCode::BAD_REQUEST,
-        LaunchError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
-        LaunchError::Timeout(_) => StatusCode::GATEWAY_TIMEOUT,
-        LaunchError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-    }
-}
 
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
@@ -44,7 +31,7 @@ pub async fn create_task(
             }),
         )
             .into_response(),
-        Err(e) => err(status_for(&e), e.to_string()),
+        Err(e) => err(e.status(), e.to_string()),
     }
 }
 

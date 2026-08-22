@@ -213,11 +213,16 @@ pub struct FinalizeSpec {
 /// rather than collapsing into one boolean.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FinalizeOk {
+    // Every field defaults: a node one version behind that omits one
+    // must not make the whole frame undecodable, which the caller would
+    // experience as a finalize that never answers.
+    #[serde(default)]
     pub committed: bool,
     #[serde(default)]
     pub sha: String,
     #[serde(default)]
     pub branch: String,
+    #[serde(default)]
     pub pushed: bool,
     #[serde(rename = "prUrl", default)]
     pub pr_url: String,

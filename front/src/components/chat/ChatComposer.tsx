@@ -334,12 +334,17 @@ function AgentPicker({
   if (providers.length === 0) return null;
   const active = providers.find((p) => p.id === currentProvider) ?? providers[0];
   // `currentModel` is usually the resolved id the agent reported (e.g.
-  // "claude-opus-4-7"); match menu items by family so the short alias the
-  // picker sends still lights up.
+  // "claude-opus-4-7"), so the short alias the picker sends has to match
+  // by family. Only at a `-` boundary, though: a plain substring test
+  // makes `gpt-4o` light up `gpt-4`, and the entry then refuses to switch
+  // because it believes it is already selected.
   const isActiveModel = (providerId: string, id: string) =>
     providerId === active.id &&
     currentModel != null &&
-    (currentModel === id || currentModel.includes(id));
+    (currentModel === id ||
+      currentModel.startsWith(`${id}-`) ||
+      currentModel.endsWith(`-${id}`) ||
+      currentModel.includes(`-${id}-`));
 
   const select = (providerId: string, modelId: string) => {
     setOpen(false);

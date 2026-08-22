@@ -180,24 +180,38 @@ async fn start_claimed(app: &Shared, task: TaskRow) {
 
     match crate::launch::launch(app, request).await {
         Ok(launched) => {
-            let promoted =
-                state::mark_task_running(&app.db, &task.id, &launched.node_id, &launched.name)
-                    .await
-                    .unwrap_or(false);
-            if !promoted {
+            match state::mark_task_running(&app.db, &task.id, &launched.node_id, &launched.name)
+                .await
+            {
+                Ok(true) => tracing::info!(
+                    task = %task.id,
+                    session = %launched.name,
+                    node = %launched.node_name,
+                    "task running"
+                ),
                 // The user cancelled between the claim and the launch.
                 // Tear the session down rather than leave an orphan
                 // agent working on something nobody wants.
-                tracing::info!(task = %task.id, session = %launched.name, "task was cancelled while starting; stopping its session");
-                stop_session(app, &launched.name).await;
-                return;
+                Ok(false) => {
+                    tracing::info!(task = %task.id, session = %launched.name, "task was cancelled while starting; stopping its session");
+                    stop_session(app, &launched.name).await;
+                }
+                // A database hiccup is not a cancellation, and the two
+                // must not share a code path. But the write that failed
+                // is the only thing that would have tied this session to
+                // its task, so nothing can ever collect its work: left
+                // running it is an agent nobody will read. Stop it and
+                // let the lease expire into a clean retry.
+                Err(e) => {
+                    tracing::warn!(
+                        task = %task.id,
+                        session = %launched.name,
+                        error = %e,
+                        "could not record the task as running; stopping its session and waiting for the lease to expire"
+                    );
+                    stop_session(app, &launched.name).await;
+                }
             }
-            tracing::info!(
-                task = %task.id,
-                session = %launched.name,
-                node = %launched.node_name,
-                "task running"
-            );
         }
         Err(e) => {
             // A bad request will fail identically on every retry, so it
@@ -345,14 +359,28 @@ fn pr_body(task: &TaskRow) -> String {
 }
 
 /// Cancel a task and stop whatever it has running.
+///
+/// The session to stop is read *after* the cancellation lands, not
+/// before. A task claimed moments ago has no session name yet, and the
+/// launch that fills it in races this call: reading first would find the
+/// blank, cancel a task that had meanwhile started, and leave its agent
+/// running with nothing left to stop it.
 pub async fn cancel(app: &Shared, id: &str) -> Result<bool, state::StateError> {
-    let task = state::get_task(&app.db, id).await?;
-    let Some(task) = task else { return Ok(false) };
-    let cancelled = state::cancel_task(&app.db, id).await?;
-    if cancelled && !task.session_name.is_empty() {
-        stop_session(app, &task.session_name).await;
+    if state::get_task(&app.db, id).await?.is_none() {
+        return Ok(false);
     }
-    Ok(cancelled)
+    let cancelled = state::cancel_task(&app.db, id).await?;
+    if !cancelled {
+        return Ok(false);
+    }
+    let session = state::get_task(&app.db, id)
+        .await?
+        .map(|row| row.session_name)
+        .unwrap_or_default();
+    if !session.is_empty() {
+        stop_session(app, &session).await;
+    }
+    Ok(true)
 }
 
 /// Tear down a task's session wherever it is running.

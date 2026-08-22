@@ -174,13 +174,18 @@ impl ChatConfig {
         if self.providers.is_empty() {
             self.providers = ChatConfig::default().providers;
         }
-        if self.models.is_empty() {
-            return;
-        }
+        // Taken before the early return: a config that set only
+        // `defaultModel` and never listed models would otherwise keep it
+        // on `ChatConfig`, where nothing reads it any more.
         let legacy_models = std::mem::take(&mut self.models);
         let legacy_default = self.default_model.take();
+        if legacy_models.is_empty() && legacy_default.is_none() {
+            return;
+        }
         if let Some(claude) = self.providers.iter_mut().find(|p| p.id == "claude") {
-            claude.models = legacy_models;
+            if !legacy_models.is_empty() {
+                claude.models = legacy_models;
+            }
             if legacy_default.is_some() {
                 claude.default_model = legacy_default;
             }
@@ -335,11 +340,32 @@ fn merge_with_defaults(raw: &str, path: &Path) -> Result<Config, ConfigError> {
         }
     }
     let mut cfg: Config = serde_json::from_value(defaults_value)?;
+    // `chat.providers` gets the same treatment as `clis`, for the same
+    // reason: a user who listed providers once should still receive
+    // agents shipped later, instead of being frozen at whatever existed
+    // the day they edited the file.
+    merge_default_providers(&mut cfg.chat);
     cfg.chat.backfill_providers();
     if migrated {
         write_json(path, &cfg)?;
     }
     Ok(cfg)
+}
+
+/// Add built-in providers the user's config does not mention, keeping
+/// their own definitions (and their order) untouched.
+///
+/// Matching is by `id`, so overriding one built-in does not cost you the
+/// others — and a provider the user invented is never disturbed.
+fn merge_default_providers(chat: &mut ChatConfig) {
+    if chat.providers.is_empty() {
+        return; // `backfill_providers` installs the whole default set.
+    }
+    for built_in in ChatConfig::default().providers {
+        if !chat.providers.iter().any(|p| p.id == built_in.id) {
+            chat.providers.push(built_in);
+        }
+    }
 }
 
 /// Old config files used a top-level `claudeCommand` string. Lift it
@@ -428,6 +454,35 @@ mod merge_tests {
         assert_eq!(claude.default_model.as_deref(), Some("opus"));
         // …and the picker still offers the other agents.
         assert!(cfg.chat.providers.len() > 1);
+    }
+
+    #[test]
+    fn a_config_with_only_a_default_model_keeps_it() {
+        // No `models` list, just the default: the early return used to
+        // drop this on the floor.
+        let raw = r#"{ "roots": ["/x"], "chat": { "defaultModel": "sonnet" } }"#;
+        let cfg = merge_with_defaults(raw, Path::new("/tmp/x.json")).unwrap();
+        let claude = cfg.chat.provider("claude").expect("claude provider");
+        assert_eq!(claude.default_model.as_deref(), Some("sonnet"));
+        assert!(!claude.models.is_empty(), "the built-in menu was lost");
+    }
+
+    #[test]
+    fn a_user_provider_list_still_receives_new_built_ins() {
+        let raw = r#"{
+            "roots": ["/x"],
+            "chat": { "providers": [
+              { "id": "claude", "label": "Mine", "command": "my-claude",
+                "driver": "claude-stream-json", "models": [] }
+            ] }
+        }"#;
+        let cfg = merge_with_defaults(raw, Path::new("/tmp/x.json")).unwrap();
+        // Their override wins…
+        assert_eq!(cfg.chat.provider("claude").unwrap().command, "my-claude");
+        // …and the agents they never mentioned are still offered.
+        assert!(cfg.chat.provider("codex").is_some(), "codex was dropped");
+        // Their entry stays first, so the default provider is unchanged.
+        assert_eq!(cfg.chat.providers[0].id, "claude");
     }
 
     #[test]

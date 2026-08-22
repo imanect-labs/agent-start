@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 mod client;
@@ -99,7 +100,17 @@ struct SessionPaths {
     /// The repository the worktree was cut from, when it was cut at all.
     repo_root: PathBuf,
     worktree: Option<PathBuf>,
+    /// When the agent exited, if it has. `Finalize` arrives *after* the
+    /// exit, so the entry cannot be dropped the moment the process ends;
+    /// it is swept once no finalize can still be coming.
+    exited_at: Option<Instant>,
 }
+
+/// How long a finished session's paths are kept for a `Finalize` that
+/// may still arrive. Comfortably past the control plane's finalize
+/// timeout, so the sweep never removes an entry someone is about to ask
+/// for.
+const PATHS_RETENTION: Duration = Duration::from_secs(900);
 
 pub struct NodeRuntime {
     cfg: NodeConfig,
@@ -254,6 +265,7 @@ impl NodeRuntime {
                     self.clone().on_control(frame).await;
                 }
                 _ = hb.tick() => {
+                    self.sweep_finished_paths();
                     let metrics = probe.sample();
                     // Scanning the cache directory is synchronous, and
                     // on a network filesystem it is not fast. Off the
@@ -271,6 +283,16 @@ impl NodeRuntime {
                 }
             }
         }
+    }
+
+    /// Drop the paths of sessions that ended long enough ago that no
+    /// finalize can still arrive. Without this a node that runs for
+    /// weeks accumulates one entry per session it ever ran.
+    fn sweep_finished_paths(&self) {
+        self.paths.lock().retain(|_, p| match p.exited_at {
+            Some(at) => at.elapsed() < PATHS_RETENTION,
+            None => true,
+        });
     }
 
     fn mirror_lock(&self, project_id: &str) -> Arc<tokio::sync::Mutex<()>> {
@@ -449,6 +471,7 @@ impl NodeRuntime {
                 cwd: cwd.clone(),
                 repo_root: repo_root.clone(),
                 worktree: worktree_path.clone(),
+                exited_at: None,
             },
         );
 
@@ -493,6 +516,12 @@ impl NodeRuntime {
     /// Forget a session's sandbox without touching its worktree. Called
     /// from the PTY exit hook, where the user has not asked for cleanup.
     async fn release_session(&self, session: &str) {
+        // The paths stay: a `Finalize` for this session may still be on
+        // its way. Stamping the exit is what lets the sweep below drop
+        // them once that can no longer be true.
+        if let Some(paths) = self.paths.lock().get_mut(session) {
+            paths.exited_at.get_or_insert_with(Instant::now);
+        }
         let handle = self.handles.lock().remove(session);
         if let Some(handle) = handle {
             if let Err(e) = self.executor.destroy(&handle).await {

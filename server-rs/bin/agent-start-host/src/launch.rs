@@ -57,6 +57,22 @@ pub enum LaunchError {
     Internal(String),
 }
 
+impl LaunchError {
+    /// HTTP status this failure deserves. Lives with the error rather
+    /// than with one of its callers: sessions and tasks both answer with
+    /// it, and "outside configured roots" must mean the same thing
+    /// however the work was submitted.
+    pub fn status(&self) -> axum::http::StatusCode {
+        use axum::http::StatusCode;
+        match self {
+            Self::BadRequest(_) => StatusCode::BAD_REQUEST,
+            Self::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::Timeout(_) => StatusCode::GATEWAY_TIMEOUT,
+            Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
 /// A session that is now running.
 pub struct Launched {
     pub name: String,

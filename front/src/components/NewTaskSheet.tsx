@@ -8,8 +8,6 @@ import { useToast } from "./Toast";
 type Project = { name: string; path: string; isGit: boolean };
 type CliInfo = { key: string; label: string; command: string; mode?: string };
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
-
 async function errorMessage(res: Response): Promise<string> {
   try {
     const body = await res.json();
@@ -18,6 +16,14 @@ async function errorMessage(res: Response): Promise<string> {
     return `${res.status} ${res.statusText}`;
   }
 }
+
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  // Without this a 500 is treated as data, and the sheet renders empty
+  // menus as though the user simply had no projects.
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return res.json();
+};
 
 /**
  * "このリポジトリにこれをやって" — the phone-sized entry point to the
@@ -41,14 +47,17 @@ export function NewTaskSheet({
   projectPath?: string;
 }) {
   const toast = useToast();
-  const { data: projData } = useSWR<{ projects: Project[] }>(
-    open ? "/api/projects" : null,
-    fetcher,
-  );
-  const { data: cfgData } = useSWR<{ clis: CliInfo[]; defaultCli: string }>(
-    open ? "/api/config" : null,
-    fetcher,
-  );
+  const {
+    data: projData,
+    error: projError,
+    mutate: reloadProjects,
+  } = useSWR<{ projects: Project[] }>(open ? "/api/projects" : null, fetcher);
+  const {
+    data: cfgData,
+    error: cfgError,
+    mutate: reloadConfig,
+  } = useSWR<{ clis: CliInfo[]; defaultCli: string }>(open ? "/api/config" : null, fetcher);
+  const loadError = projError ?? cfgError;
 
   const [project, setProject] = useState(projectPath ?? "");
   const [prompt, setPrompt] = useState("");
@@ -58,8 +67,10 @@ export function NewTaskSheet({
   const [submitting, setSubmitting] = useState(false);
 
   // Only agents that can run unattended: a chat conversation waits for a
-  // person, and the bare shell has nothing to hand a prompt to.
-  const agents = (cfgData?.clis ?? []).filter((c) => c.mode !== "chat" && c.command !== "");
+  // person, and the bare shell has nothing to hand a prompt to. The
+  // `trim` matches the server's own check, so the menu cannot offer
+  // something the API will reject.
+  const agents = (cfgData?.clis ?? []).filter((c) => c.mode !== "chat" && c.command.trim() !== "");
   // Tasks branch and push, so a project without git cannot host one.
   const projects = (projData?.projects ?? []).filter((p) => p.isGit);
 
@@ -67,10 +78,18 @@ export function NewTaskSheet({
     if (!open) return;
     setProject(projectPath ?? "");
     setPrompt("");
-    setAgent(cfgData?.defaultCli ?? "");
-  }, [open, projectPath, cfgData?.defaultCli]);
+    // The configured default may well be a chat agent or the bare
+    // shell — neither of which can run a task. Preselecting it would
+    // send the user straight into a 400 from a menu that never offered
+    // it, so fall back to something that can actually run.
+    const preferred = cfgData?.defaultCli ?? "";
+    const usable = agents.some((c) => c.key === preferred);
+    setAgent(usable ? preferred : (agents[0]?.key ?? ""));
+    // `agents` is derived from cfgData, which is already a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, projectPath, cfgData]);
 
-  const canSubmit = project !== "" && prompt.trim() !== "" && !submitting;
+  const canSubmit = project !== "" && prompt.trim() !== "" && agent !== "" && !submitting;
 
   async function submit() {
     if (!canSubmit) return;
@@ -110,7 +129,21 @@ export function NewTaskSheet({
         onClose={onClose}
       />
       <SheetBody>
-        {!projData || !cfgData ? (
+        {loadError ? (
+          <div className="rounded-lg border border-danger/40 bg-danger-soft px-3 py-2 text-[13px] text-danger">
+            <div>読み込みに失敗しました: {String(loadError.message ?? loadError)}</div>
+            <button
+              type="button"
+              onClick={() => {
+                void reloadProjects();
+                void reloadConfig();
+              }}
+              className="mt-1.5 text-[12px] underline underline-offset-2"
+            >
+              再試行
+            </button>
+          </div>
+        ) : !projData || !cfgData ? (
           <div className="flex justify-center py-8">
             <Spinner size="md" />
           </div>
@@ -183,6 +216,11 @@ export function NewTaskSheet({
                   );
                 })}
               </div>
+              {agents.length === 0 && (
+                <div className="mt-1 text-[11.5px] text-fg-subtle">
+                  タスクを実行できるエージェントが設定にありません。
+                </div>
+              )}
             </div>
 
             <Row title="完了したら PR を作る" hint="ブランチは常に push されます">

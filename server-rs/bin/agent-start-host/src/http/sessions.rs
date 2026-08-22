@@ -70,7 +70,7 @@ pub async fn start_session(
             node_name: l.node_name,
         })
         .into_response(),
-        Err(e) => err(crate::http::tasks::status_for(&e), e.to_string()),
+        Err(e) => err(e.status(), e.to_string()),
     }
 }
 

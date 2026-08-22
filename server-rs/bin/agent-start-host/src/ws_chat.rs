@@ -80,6 +80,10 @@ async fn handle(socket: WebSocket, session: Arc<ChatSession>, app: Shared, name:
     let status = serde_json::json!({
         "type": "chat_status",
         "state": state_str,
+        // The provider belongs here for the same reason the model does:
+        // a reconnecting client that is not told would fall back to the
+        // configured default and mislabel the agent it is talking to.
+        "provider": session.current_provider(),
         "model": session.current_model(),
         "permissionMode": session.permission_mode(),
         "replayDone": true,
@@ -152,26 +156,14 @@ async fn handle_client_message(
             if !session.is_alive() {
                 if let Err(e) = session.revive().await {
                     tracing::warn!(error = %e, session = %name, "chat revive failed");
-                    session.inject(
-                        serde_json::json!({
-                            "type": "chat_error",
-                            "message": format!("会話の再開に失敗しました: {e}"),
-                        }),
-                        false,
-                    );
+                    chat_error(session, format!("会話の再開に失敗しました: {e}"));
                     return;
                 }
                 mark_running(app, name).await;
             }
             if let Err(e) = session.send_user_message(&text, &imgs).await {
                 tracing::warn!(error = %e, session = %name, "chat send failed");
-                session.inject(
-                    serde_json::json!({
-                        "type": "chat_error",
-                        "message": format!("送信に失敗しました: {e}"),
-                    }),
-                    false,
-                );
+                chat_error(session, format!("送信に失敗しました: {e}"));
             }
         }
         ChatClientMessage::Interrupt => {
@@ -181,13 +173,7 @@ async fn handle_client_message(
             let was_dead = !session.is_alive();
             if let Err(e) = session.switch_model(&model).await {
                 tracing::warn!(error = %e, session = %name, "model switch failed");
-                session.inject(
-                    serde_json::json!({
-                        "type": "chat_error",
-                        "message": format!("モデル切替に失敗しました: {e}"),
-                    }),
-                    false,
-                );
+                chat_error(session, format!("モデル切替に失敗しました: {e}"));
                 return;
             }
             if was_dead {
@@ -242,13 +228,7 @@ async fn handle_client_message(
             let was_dead = !session.is_alive();
             if let Err(e) = session.set_permission_mode(mode.as_deref()).await {
                 tracing::warn!(error = %e, session = %name, "permission mode switch failed");
-                session.inject(
-                    serde_json::json!({
-                        "type": "chat_error",
-                        "message": format!("権限モードの切替に失敗しました: {e}"),
-                    }),
-                    false,
-                );
+                chat_error(session, format!("権限モードの切替に失敗しました: {e}"));
                 return;
             }
             if was_dead {
