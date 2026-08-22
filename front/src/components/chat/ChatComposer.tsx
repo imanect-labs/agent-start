@@ -362,26 +362,39 @@ function AgentPicker({
         <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
         <span className="truncate">
           {active.label}
-          <span className="text-fg-faint"> / </span>
-          {prettyModel(currentModel)}
+          {/* Before the agent reports a model there is nothing to name,
+              and "Claude Code / Claude" reads like a stutter. */}
+          {currentModel && (
+            <>
+              <span className="text-fg-faint"> / </span>
+              {prettyModel(currentModel)}
+            </>
+          )}
         </span>
       </button>
       {open && (
-        <div className="absolute bottom-full left-0 mb-1.5 z-30 min-w-[220px] max-h-[60vh] overflow-y-auto scroll-thin bg-surface-elev border border-line rounded-lg shadow-lg py-1">
+        <div className="absolute bottom-full left-0 mb-1.5 z-30 w-[260px] max-h-[60vh] overflow-y-auto scroll-thin bg-surface-elev border border-line rounded-lg shadow-lg py-1">
           {providers.map((p) => (
             <div key={p.id} className="py-0.5">
-              <div className="px-3 py-1 flex items-center gap-1.5">
-                <span className="text-[11px] font-medium text-fg-muted">{p.label}</span>
-                {p.experimental && (
-                  <span
-                    className="text-[10px] px-1 py-px rounded border border-warn/40 text-warn"
-                    title="このドライバは実機で未検証です"
-                  >
-                    実験的
+              <div className="px-3 pt-1.5 pb-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-medium text-fg-muted whitespace-nowrap">
+                    {p.label}
                   </span>
-                )}
+                  {p.experimental && (
+                    <span
+                      className="text-[10px] leading-none px-1 py-0.5 rounded border border-warn/40 text-warn whitespace-nowrap"
+                      title="このドライバは実機で未検証です"
+                    >
+                      実験的
+                    </span>
+                  )}
+                </div>
+                {/* Its own line: crammed beside the label it wrapped mid-word. */}
                 {p.id !== active.id && (
-                  <span className="text-[10px] text-fg-faint ml-auto">会話は引き継がれません</span>
+                  <div className="mt-0.5 text-[10px] text-fg-faint">
+                    切り替えると新しい会話になります
+                  </div>
                 )}
               </div>
               {p.models.length === 0 ? (

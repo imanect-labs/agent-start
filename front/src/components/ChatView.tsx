@@ -177,8 +177,10 @@ function Header({
     <div className="flex items-center gap-2 px-3 sm:px-4 h-9 border-b border-line bg-surface/80 backdrop-blur-sm shrink-0">
       <span className={["inline-block w-1.5 h-1.5 rounded-full", dotClass].join(" ")} />
       <span className="text-[12px] text-fg-muted font-mono truncate">
-        {provider ? `${provider} / ` : ""}
-        {prettyModel(model)}
+        {/* Only name the model once the agent has reported one —
+            "Claude Code / Claude" is a stutter, not information. */}
+        {provider ?? "Chat"}
+        {model ? ` / ${prettyModel(model)}` : ""}
       </span>
       <span className="text-[11px] text-fg-faint ml-1">{statusText}</span>
       {connection === "closed" && (
