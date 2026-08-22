@@ -1,3 +1,15 @@
+# The one place the Rust version is written down. CI reads `channel` out of
+# this file, so a bump here is a bump everywhere — and it arrives as a PR
+# whose CI run proves the new compiler is happy before it reaches main.
+#
+# Pinned rather than `stable` on purpose. Tracking `stable` meant every
+# six-week release could turn main red on its own: a new clippy lint fires
+# against untouched code, and suddenly no PR can go green until someone
+# notices and fixes a file they never opened (see #119).
+#
+# Bumping: edit `channel` here, run `cargo clippy --all-targets -- -D warnings`
+# and `cargo test` locally, fix whatever the new compiler found, and open that
+# as its own PR.
 [toolchain]
-channel = "stable"
+channel = "1.98.0"
 components = ["rustfmt", "clippy"]

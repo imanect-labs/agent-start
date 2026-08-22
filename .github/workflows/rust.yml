@@ -14,13 +14,22 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Every job installs the toolchain named in `server-rs/rust-toolchain.toml`
+# rather than whatever `stable` happens to be today. `dtolnay/rust-toolchain`
+# does not read that file itself, so each job reads `channel` out of it and
+# passes it in — which keeps one source of truth and makes a version bump a
+# reviewable one-line diff.
+
 jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - id: toolchain
+        run: .github/scripts/rust-channel.sh
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
           components: rustfmt
       - run: cargo fmt --check
         working-directory: server-rs
@@ -29,8 +38,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - id: toolchain
+        run: .github/scripts/rust-channel.sh
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
@@ -42,7 +54,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - id: toolchain
+        run: .github/scripts/rust-channel.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server-rs
@@ -53,7 +69,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - id: toolchain
+        run: .github/scripts/rust-channel.sh
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server-rs
