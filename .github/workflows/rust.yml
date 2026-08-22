@@ -19,6 +19,13 @@ env:
 # does not read that file itself, so each job reads `channel` out of it and
 # passes it in — which keeps one source of truth and makes a version bump a
 # reviewable one-line diff.
+#
+# The action is pinned to a commit SHA rather than `@master`. A branch ref is
+# mutable: whoever can move it decides what runs in a job that holds this
+# repository's token. The SHA is `master`'s head, so the behaviour is the same
+# one CI already runs — only now it cannot change underneath us. Dependabot
+# bumps this like any other dependency (see `.github/dependabot.yml`), so the
+# pin stays current without anyone watching upstream by hand.
 
 jobs:
   fmt:
@@ -27,7 +34,7 @@ jobs:
       - uses: actions/checkout@v6
       - id: toolchain
         run: .github/scripts/rust-channel.sh
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
           components: rustfmt
@@ -40,7 +47,7 @@ jobs:
       - uses: actions/checkout@v6
       - id: toolchain
         run: .github/scripts/rust-channel.sh
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
           components: clippy
@@ -56,7 +63,7 @@ jobs:
       - uses: actions/checkout@v6
       - id: toolchain
         run: .github/scripts/rust-channel.sh
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
@@ -71,7 +78,7 @@ jobs:
       - uses: actions/checkout@v6
       - id: toolchain
         run: .github/scripts/rust-channel.sh
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: ${{ steps.toolchain.outputs.channel }}
       - uses: Swatinem/rust-cache@v2
