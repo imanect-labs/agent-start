@@ -238,11 +238,13 @@ async fn node_cmd(url: &str, cmd: NodeCmd, json: bool, quiet: bool) -> Result<()
                 return Ok(());
             }
             for n in res.nodes {
-                let used = if n.capacity_cpu_millis == 0 {
-                    0
-                } else {
-                    n.reserved_cpu_millis * 100 / n.capacity_cpu_millis
-                };
+                // A node that has not reported its capacity yet divides
+                // by zero; `checked_div` reports 0% rather than panicking.
+                let used = n
+                    .reserved_cpu_millis
+                    .saturating_mul(100)
+                    .checked_div(n.capacity_cpu_millis)
+                    .unwrap_or(0);
                 println!(
                     "{}\t{}\t{}\t{} sessions\tcpu {:.0}% (reserved {}%)\t{}",
                     n.id,

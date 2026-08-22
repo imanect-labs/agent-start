@@ -67,22 +67,31 @@ pub fn launch_env(orig: &Path, name: &str, cwd: &Path) -> Vec<(String, String)> 
 /// The seconds alone are not enough: a scheduler placing a burst of
 /// sessions across a cluster easily creates several within the same
 /// second, and a collision means two sessions fighting over one
-/// worktree, one branch and one primary key. The four-character suffix
-/// keeps the name readable while making that practically impossible.
+/// worktree, one branch and one primary key.
 pub fn session_name(prefix: &str, project_name: &str) -> String {
     let slug: String = slugify(project_name).chars().take(32).collect();
     let ts = chrono::Utc::now().timestamp();
-    format!("{prefix}{slug}-{ts}{}", short_suffix())
+    format!("{prefix}{slug}-{ts}{}", random_suffix())
 }
 
-/// Four lowercase base-36 characters (~1.7M values) from the OS RNG.
-fn short_suffix() -> String {
+/// Eight lowercase base-36 characters (~2.8e12 values) from the OS RNG.
+///
+/// Eight rather than four: at four the space is only 1.7M, which sounds
+/// ample until you run the birthday bound — 500 names collide about 7%
+/// of the time. Eight puts that at ~4e-8.
+fn random_suffix() -> String {
     const ALPHABET: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
-    let bytes = uuid::Uuid::new_v4().into_bytes();
-    bytes[..4]
-        .iter()
-        .map(|b| ALPHABET[(*b as usize) % ALPHABET.len()] as char)
-        .collect()
+    const LEN: usize = 8;
+    // Consume the UUID as one integer rather than one byte per
+    // character: `byte % 36` would over-represent the first four
+    // letters, and 36^8 is a vanishing fraction of a v4 UUID's 122 bits.
+    let mut n = u128::from_le_bytes(uuid::Uuid::new_v4().into_bytes());
+    let mut out = String::with_capacity(LEN);
+    for _ in 0..LEN {
+        out.push(ALPHABET[(n % ALPHABET.len() as u128) as usize] as char);
+        n /= ALPHABET.len() as u128;
+    }
+    out
 }
 
 const SESSION_NAME_ALLOWED: &str =
@@ -227,9 +236,23 @@ mod tests {
     fn session_names_do_not_collide_within_one_second() {
         // A cluster places bursts of sessions; second-resolution names
         // alone would hand two of them the same worktree and branch.
+        // 2000 draws from 36^8 collide with probability ~7e-7, so this
+        // is a real assertion rather than a coin flip.
+        const N: usize = 2000;
         let names: std::collections::HashSet<String> =
-            (0..500).map(|_| session_name("cc-", "demo")).collect();
-        assert_eq!(names.len(), 500, "duplicate session names generated");
+            (0..N).map(|_| session_name("cc-", "demo")).collect();
+        assert_eq!(names.len(), N, "duplicate session names generated");
+    }
+
+    #[test]
+    fn the_random_suffix_uses_its_whole_alphabet() {
+        // A modulo-per-byte suffix would never emit the tail of the
+        // alphabet evenly; sample enough to see the whole range.
+        let seen: std::collections::HashSet<char> = (0..2000)
+            .flat_map(|_| random_suffix().chars().collect::<Vec<_>>())
+            .collect();
+        assert_eq!(seen.len(), 36, "suffix alphabet is skewed: {seen:?}");
+        assert!(random_suffix().len() == 8);
     }
 
     #[test]
