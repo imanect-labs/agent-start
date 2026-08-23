@@ -2,6 +2,7 @@ import { createRouter, createRootRoute, createRoute } from "@tanstack/react-rout
 import { RootLayout } from "./routes/__root";
 import { IndexPage } from "./routes/index";
 import { NodesRoute } from "./routes/nodes";
+import { TasksRoute } from "./routes/tasks";
 import { SettingsRoute } from "./routes/settings";
 
 const rootRoute = createRootRoute({ component: RootLayout });
@@ -18,6 +19,12 @@ const nodesRoute = createRoute({
   component: NodesRoute,
 });
 
+const tasksRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tasks",
+  component: TasksRoute,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -25,7 +32,7 @@ const settingsRoute = createRoute({
 });
 
 export const router = createRouter({
-  routeTree: rootRoute.addChildren([indexRoute, nodesRoute, settingsRoute]),
+  routeTree: rootRoute.addChildren([indexRoute, nodesRoute, tasksRoute, settingsRoute]),
   defaultPreload: "intent",
 });
 

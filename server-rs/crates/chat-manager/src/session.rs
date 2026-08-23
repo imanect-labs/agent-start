@@ -12,6 +12,8 @@
 //! `--resume <session_id>` which continues the same conversation without
 //! re-emitting history.
 
+use crate::driver::codex;
+use crate::driver::Driver;
 use crate::error::ChatError;
 use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
@@ -37,7 +39,12 @@ pub struct ChatSpawnSpec {
     pub name: String,
     pub cwd: std::path::PathBuf,
     pub shell: String,
-    /// The `claude` program/command (from `CliConfig.command`).
+    /// Which configured chat provider this conversation is talking to.
+    /// Changing it is what the composer's picker does.
+    pub provider: String,
+    /// The provider's stdio protocol (`chat.providers[].driver`).
+    pub driver: String,
+    /// The agent program to run (from the provider, not the CLI entry).
     pub command: String,
     /// Legacy skip-permissions flag. Chat no longer skips permissions
     /// (#95): it spawns with `--permission-prompt-tool stdio` so AskUserQuestion
@@ -68,6 +75,12 @@ struct Proc {
 pub struct ChatSession {
     name: String,
     spec: Mutex<ChatSpawnSpec>,
+    /// Protocol of the process currently running. Resolved on `start`
+    /// so a bad `driver` in config fails loudly there instead of being
+    /// papered over with Claude's vocabulary.
+    driver: Mutex<Driver>,
+    /// Submission counter for request/response protocols.
+    submission: AtomicU64,
     proc: Mutex<Option<Proc>>,
     /// The child's stdin, kept in an async mutex so writes can `.await`
     /// without blocking the synchronous `proc` lock. `None` when no process
@@ -136,6 +149,8 @@ impl ChatSession {
             saw_init: std::sync::atomic::AtomicBool::new(false),
             resume_suspect: std::sync::atomic::AtomicBool::new(false),
             lifecycle: tokio::sync::Mutex::new(()),
+            driver: Mutex::new(Driver::parse(&spec.driver).unwrap_or(Driver::ClaudeStreamJson)),
+            submission: AtomicU64::new(0),
             spec: Mutex::new(spec),
             proc: Mutex::new(None),
             stdin: tokio::sync::Mutex::new(None),
@@ -161,6 +176,19 @@ impl ChatSession {
         self.model.lock().clone()
     }
 
+    /// The provider this conversation is currently talking to.
+    pub fn current_provider(&self) -> String {
+        self.spec.lock().provider.clone()
+    }
+
+    fn driver(&self) -> Driver {
+        *self.driver.lock()
+    }
+
+    fn next_submission_id(&self) -> String {
+        self.submission.fetch_add(1, Ordering::SeqCst).to_string()
+    }
+
     /// The permission mode the process was (re)spawned with (`"plan"` etc.),
     /// or `None` for the default. Surfaced on every `chat_status` so the UI
     /// toggle survives reconnects / model switches (#95).
@@ -180,6 +208,7 @@ impl ChatSession {
             serde_json::json!({
                 "type": "chat_status",
                 "state": state,
+                "provider": self.current_provider(),
                 "model": self.current_model(),
                 "permissionMode": self.permission_mode(),
             }),
@@ -261,6 +290,10 @@ impl ChatSession {
         text: &str,
         images: &[ChatImage],
     ) -> Result<(), ChatError> {
+        // Held until the line is written. The wire format is the current
+        // driver's, and a switch part-way through would hand a
+        // Claude-shaped line to the codex process that replaced it.
+        let _guard = self.lifecycle.lock().await;
         // Envelope the UI/persistence render (carries our own content shape).
         let mut content = Vec::new();
         if !text.is_empty() {
@@ -278,38 +311,61 @@ impl ChatSession {
             true,
         );
 
-        // The actual stream-json line claude consumes (full base64 inline).
-        let mut claude_content = Vec::new();
-        for img in images {
-            claude_content.push(serde_json::json!({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": img.media_type,
-                    "data": img.data,
+        let line = match self.driver() {
+            Driver::ClaudeStreamJson => {
+                // The actual stream-json line claude consumes (full
+                // base64 inline).
+                let mut content = Vec::new();
+                for img in images {
+                    content.push(serde_json::json!({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": img.media_type,
+                            "data": img.data,
+                        }
+                    }));
                 }
-            }));
-        }
-        if !text.is_empty() {
-            claude_content.push(serde_json::json!({"type": "text", "text": text}));
-        }
-        let line = serde_json::json!({
-            "type": "user",
-            "message": {"role": "user", "content": claude_content}
-        })
-        .to_string();
+                if !text.is_empty() {
+                    content.push(serde_json::json!({"type": "text", "text": text}));
+                }
+                serde_json::json!({
+                    "type": "user",
+                    "message": {"role": "user", "content": content}
+                })
+                .to_string()
+            }
+            Driver::CodexProto => {
+                // Say what could not be sent, in the transcript rather
+                // than in the prompt: text appended to the prompt would
+                // reach the model and change its answer.
+                if let Some(notice) = codex::dropped_images_notice(images.len()) {
+                    self.inject(
+                        serde_json::json!({"type": "chat_notice", "message": notice}),
+                        false,
+                    );
+                }
+                codex::user_submission(&self.next_submission_id(), text)
+            }
+        };
 
         self.write_line(&line).await
     }
 
     /// Best-effort interrupt of the in-flight turn (decision 12).
     pub async fn interrupt(&self) -> Result<(), ChatError> {
-        let line = serde_json::json!({
-            "type": "control_request",
-            "request_id": uuid::Uuid::new_v4().to_string(),
-            "request": {"subtype": "interrupt"}
-        })
-        .to_string();
+        // As in `send_user_message`: pick the format and write it without
+        // letting a switch replace the process in between.
+        let _guard = self.lifecycle.lock().await;
+        let line = match self.driver() {
+            Driver::ClaudeStreamJson => serde_json::json!({
+                "type": "control_request",
+                "request_id": uuid::Uuid::new_v4().to_string(),
+                "request": {"subtype": "interrupt"}
+            })
+            .to_string(),
+            Driver::CodexProto => codex::interrupt_submission(&self.next_submission_id()),
+        };
         self.write_line(&line).await
     }
 
@@ -336,17 +392,103 @@ impl ChatSession {
         validate_token(model)?;
         let _guard = self.lifecycle.lock().await;
         let sid = self.claude_session_id();
+        // Same reasoning as `revive`: only a driver that has a resume
+        // gets one. Without this the doc comment above would be a lie on
+        // codex — the respawn starts a conversation that has never heard
+        // of anything said so far.
+        let resumable = self.driver().supports_resume();
         {
             let mut spec = self.spec.lock();
             spec.model = Some(model.to_string());
-            if !sid.is_empty() {
+            if resumable && !sid.is_empty() {
                 spec.resume = Some(sid);
             }
         }
         *self.model.lock() = Some(model.to_string());
         self.kill();
         self.inject_status("switching");
-        self.start().await?;
+        self.restart_after_switch().await?;
+        if !resumable {
+            self.inject(
+                serde_json::json!({
+                    "type": "chat_notice",
+                    "message": format!(
+                        "{} はモデルを変えると新しい会話になります。ここまでの内容は引き継がれません。",
+                        self.current_provider()
+                    ),
+                }),
+                false,
+            );
+        }
+        self.inject_status("running");
+        Ok(())
+    }
+
+    /// Point the conversation at a different agent.
+    ///
+    /// Unlike a model switch this cannot continue the conversation:
+    /// another provider has never seen it and holds no session to resume.
+    /// The transcript above stays on screen — it is the user's record of
+    /// what happened — but the new agent starts without that context, and
+    /// the user is told so rather than left to discover it by asking a
+    /// follow-up question that lands on a blank slate.
+    pub async fn switch_provider(
+        self: &Arc<Self>,
+        provider: &str,
+        command: &str,
+        driver: &str,
+        model: Option<&str>,
+    ) -> Result<(), ChatError> {
+        let driver = Driver::parse(driver)?;
+        if command.trim().is_empty() {
+            return Err(ChatError::Invalid(format!(
+                "provider `{provider}` has no command configured"
+            )));
+        }
+        if let Some(m) = model {
+            validate_token(m)?;
+        }
+        let _guard = self.lifecycle.lock().await;
+        let same_provider = self.current_provider() == provider;
+        {
+            let mut spec = self.spec.lock();
+            spec.provider = provider.to_string();
+            spec.driver = driver.as_str().to_string();
+            spec.command = command.to_string();
+            spec.model = model.map(str::to_string);
+            // Permission modes are Claude's. Carried across a switch they
+            // would keep showing on `chat_status` while the new command
+            // line never mentions them — and `set_permission_mode` refuses
+            // to touch a non-Claude session, so the toggle would be stuck
+            // on with no way back.
+            if driver != Driver::ClaudeStreamJson {
+                spec.permission_mode = None;
+            }
+            // A session id belongs to the agent that issued it.
+            spec.resume = None;
+            spec.start_seq = self.seq.load(Ordering::SeqCst);
+        }
+        *self.model.lock() = model.map(str::to_string);
+        *self.claude_session_id.lock() = String::new();
+        // The in-flight buffer holds the deltas of a turn the *previous*
+        // agent was part-way through. Replaying those to a client that
+        // reconnects after the switch would show partial text from a
+        // conversation that no longer exists.
+        self.inflight.lock().clear();
+        self.kill();
+        self.inject_status("switching");
+        self.restart_after_switch().await?;
+        if !same_provider {
+            self.inject(
+                serde_json::json!({
+                    "type": "chat_notice",
+                    "message": format!(
+                        "エージェントを {provider} に切り替えました。ここまでの会話は引き継がれません。"
+                    ),
+                }),
+                false,
+            );
+        }
         self.inject_status("running");
         Ok(())
     }
@@ -363,9 +505,14 @@ impl ChatSession {
         }
         let fallback = self.resume_suspect.swap(false, Ordering::SeqCst);
         let sid = self.claude_session_id();
+        // Only where the protocol actually has a resume. Setting it on a
+        // driver that ignores it would leave a stale id on the spec, and
+        // the next reader of that field would believe the conversation
+        // could be continued when it cannot.
+        let resumable = self.driver().supports_resume();
         {
             let mut spec = self.spec.lock();
-            if fallback {
+            if fallback || !resumable {
                 spec.resume = None;
             } else if !sid.is_empty() {
                 spec.resume = Some(sid);
@@ -386,10 +533,27 @@ impl ChatSession {
         Ok(())
     }
 
+    /// Bring the process back up after a deliberate respawn, reporting
+    /// `dead` if it will not start.
+    ///
+    /// Every switch announces `switching` before killing the old
+    /// process. If the new one then fails to spawn there is no reader to
+    /// notice its end, so nothing would ever correct that status and the
+    /// UI would sit on "切り替え中…" forever.
+    async fn restart_after_switch(self: &Arc<Self>) -> Result<(), ChatError> {
+        if let Err(e) = self.start().await {
+            self.inject_status("dead");
+            return Err(e);
+        }
+        Ok(())
+    }
+
     /// Spawn (or respawn) the child process and its stdout reader.
     pub async fn start(self: &Arc<Self>) -> Result<(), ChatError> {
         let spec = self.spec.lock().clone();
-        let cmdline = build_cmdline(&spec)?;
+        let driver = Driver::parse(&spec.driver)?;
+        *self.driver.lock() = driver;
+        let cmdline = build_cmdline(driver, &spec)?;
         tracing::info!(session = %self.name, cmd = %cmdline, "spawning chat process");
 
         let mut command = tokio::process::Command::new(&spec.shell);
@@ -467,25 +631,48 @@ impl ChatSession {
         // Interactive permissions handshake (#95): the CLI only starts routing
         // `can_use_tool` over stdio after it receives an `initialize` control
         // request. stdin is read in order, so sending it before the first user
-        // turn is enough — no need to await the reply.
-        let init = serde_json::json!({
-            "type": "control_request",
-            "request_id": format!("init-{}", my_gen),
-            "request": {"subtype": "initialize", "hooks": {}}
-        })
-        .to_string();
-        if let Err(e) = self.write_line(&init).await {
-            tracing::warn!(session = %self.name, error = %e, "failed to send chat initialize handshake");
+        // turn is enough — no need to await the reply. Claude-only: the codex
+        // protocol has no equivalent and would reject the line.
+        if driver == Driver::ClaudeStreamJson {
+            let init = serde_json::json!({
+                "type": "control_request",
+                "request_id": format!("init-{}", my_gen),
+                "request": {"subtype": "initialize", "hooks": {}}
+            })
+            .to_string();
+            if let Err(e) = self.write_line(&init).await {
+                tracing::warn!(session = %self.name, error = %e, "failed to send chat initialize handshake");
+            }
         }
         Ok(())
     }
 
     /// Parse one stdout JSON line, classify it, and broadcast an envelope.
+    ///
+    /// Providers other than Claude are translated into Claude's
+    /// vocabulary first: that is the shape the browser renders, so the
+    /// alternative would be a second renderer per agent.
     async fn handle_stdout_line(&self, line: &str) {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
             tracing::debug!(target: "chat", session = %self.name, "non-JSON stdout: {line}");
             return;
         };
+        match self.driver() {
+            Driver::ClaudeStreamJson => self.handle_event(value).await,
+            Driver::CodexProto => {
+                let events = codex::translate(&value);
+                if events.is_empty() {
+                    tracing::trace!(target: "chat", session = %self.name, "codex event dropped: {line}");
+                }
+                for event in events {
+                    self.handle_event(event).await;
+                }
+            }
+        }
+    }
+
+    /// Handle one event already in Claude's stream-json vocabulary.
+    async fn handle_event(&self, value: serde_json::Value) {
         let ty = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
         match ty {
             // Housekeeping — dropped (decision 3).
@@ -626,6 +813,11 @@ impl ChatSession {
 
     /// Switch the permission mode (e.g. toggle plan mode) by respawning with
     /// `--resume <id> --permission-mode <mode>` (#95). Mirrors `switch_model`.
+    ///
+    /// Claude only. Accepting it for another driver would store a mode
+    /// its command line never carries, and then report it on every
+    /// `chat_status` — the toggle would look enabled while the agent had
+    /// never heard of it.
     pub async fn set_permission_mode(
         self: &Arc<Self>,
         mode: Option<&str>,
@@ -634,6 +826,15 @@ impl ChatSession {
             validate_token(m)?;
         }
         let _guard = self.lifecycle.lock().await;
+        // Under the lock, not before it: `switch_provider` holds this
+        // same lock, so a check made outside could pass on Claude and
+        // then act on the codex process that replaced it.
+        if self.driver() != Driver::ClaudeStreamJson {
+            return Err(ChatError::Invalid(format!(
+                "`{}` は権限モードをサポートしていません",
+                self.current_provider()
+            )));
+        }
         let sid = self.claude_session_id();
         {
             let mut spec = self.spec.lock();
@@ -645,7 +846,7 @@ impl ChatSession {
         }
         self.kill();
         self.inject_status("switching");
-        self.start().await?;
+        self.restart_after_switch().await?;
         self.inject_status("running");
         Ok(())
     }
@@ -717,10 +918,38 @@ fn control_response_line(request_id: &str, inner: serde_json::Value) -> String {
     .to_string()
 }
 
-fn build_cmdline(spec: &ChatSpawnSpec) -> Result<String, ChatError> {
+fn build_cmdline(driver: Driver, spec: &ChatSpawnSpec) -> Result<String, ChatError> {
     if spec.command.trim().is_empty() {
-        return Err(ChatError::Invalid("empty claude command".into()));
+        return Err(ChatError::Invalid(format!(
+            "provider `{}` has no command to run",
+            spec.provider
+        )));
     }
+    match driver {
+        Driver::ClaudeStreamJson => claude_cmdline(spec),
+        Driver::CodexProto => codex_cmdline(spec),
+    }
+}
+
+/// `codex proto`: newline-delimited submissions in, events out.
+///
+/// Flag placement here is the part most likely to need adjusting if the
+/// codex CLI moves — see the note at the top of `driver/codex.rs`.
+fn codex_cmdline(spec: &ChatSpawnSpec) -> Result<String, ChatError> {
+    let mut parts: Vec<String> = vec![spec.command.clone(), "proto".into()];
+    if let Some(model) = &spec.model {
+        validate_token(model)?;
+        parts.push("--model".into());
+        parts.push(model.clone());
+    }
+    let extra = spec.extra_args.trim();
+    if !extra.is_empty() {
+        parts.push(extra.to_string());
+    }
+    Ok(parts.join(" "))
+}
+
+fn claude_cmdline(spec: &ChatSpawnSpec) -> Result<String, ChatError> {
     let mut parts: Vec<String> = vec![
         spec.command.clone(),
         "-p".into(),
@@ -785,6 +1014,8 @@ mod tests {
             name: "cc-x".into(),
             cwd: "/tmp".into(),
             shell: "/bin/bash".into(),
+            provider: "claude".into(),
+            driver: "claude-stream-json".into(),
             command: "claude".into(),
             skip_permissions_flag: Some("--dangerously-skip-permissions".into()),
             extra_args: String::new(),
@@ -798,7 +1029,7 @@ mod tests {
 
     #[test]
     fn cmdline_minimal() {
-        let c = build_cmdline(&base_spec()).unwrap();
+        let c = build_cmdline(Driver::ClaudeStreamJson, &base_spec()).unwrap();
         assert!(c.starts_with("claude -p --input-format stream-json"));
         assert!(c.contains("--include-partial-messages"));
         // #95: chat is interactive, not skip-permissions.
@@ -811,7 +1042,7 @@ mod tests {
         let mut s = base_spec();
         s.model = Some("opus".into());
         s.resume = Some("abc-123".into());
-        let c = build_cmdline(&s).unwrap();
+        let c = build_cmdline(Driver::ClaudeStreamJson, &s).unwrap();
         assert!(c.contains("--model opus"));
         assert!(c.contains("--resume abc-123"));
     }
@@ -820,7 +1051,7 @@ mod tests {
     fn cmdline_plan_mode() {
         let mut s = base_spec();
         s.permission_mode = Some("plan".into());
-        let c = build_cmdline(&s).unwrap();
+        let c = build_cmdline(Driver::ClaudeStreamJson, &s).unwrap();
         assert!(c.contains("--permission-mode plan"));
     }
 
@@ -838,7 +1069,7 @@ mod tests {
     fn rejects_injection_in_model() {
         let mut s = base_spec();
         s.model = Some("opus; rm -rf /".into());
-        assert!(build_cmdline(&s).is_err());
+        assert!(build_cmdline(Driver::ClaudeStreamJson, &s).is_err());
     }
 
     #[test]

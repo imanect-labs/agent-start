@@ -118,9 +118,118 @@ pub fn build_launch_command(
     Ok(parts.join(" "))
 }
 
+/// Build the command line for a *headless* run: the CLI is handed the
+/// prompt, does the work, and exits.
+///
+/// This is what a queued task needs. `build_launch_command` produces an
+/// interactive session, and appending a prompt to that leaves most
+/// agents sitting at a REPL waiting for a human who is not there —
+/// which a task queue experiences as every task timing out.
+///
+/// The prompt is single-quoted, so it reaches the CLI as exactly one
+/// argument no matter what the user typed.
+pub fn build_headless_command(
+    cli: &CliConfig,
+    skip_permissions: bool,
+    extra_args: &str,
+    prompt: &str,
+) -> Result<String, ConfigError> {
+    if cli.command.is_empty() {
+        return Err(ConfigError::Invalid(
+            "this CLI has no command to run headlessly".into(),
+        ));
+    }
+    let mut parts: Vec<String> = vec![cli.command.clone()];
+    // A subcommand (`codex exec`) has to come before its flags, so the
+    // prompt argument is placed first and the prompt itself last.
+    if let Some(arg) = &cli.prompt_arg {
+        parts.push(arg.clone());
+    }
+    if skip_permissions {
+        if let Some(flag) = &cli.skip_permissions_flag {
+            parts.push(flag.clone());
+        }
+    }
+    let extra = sanitize_extra_args(extra_args)?;
+    if !extra.is_empty() {
+        parts.push(extra);
+    }
+    parts.push(shell_quote(prompt));
+    Ok(parts.join(" "))
+}
+
+/// Wrap `s` in single quotes for safe inclusion in a `sh -lc <cmd>`
+/// string, escaping embedded single quotes as `'\''`. Everything inside
+/// stays literal, so a prompt containing `$(…)` or `;` is text rather
+/// than a command.
+pub fn shell_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn claude() -> CliConfig {
+        CliConfig {
+            command: "claude".into(),
+            skip_permissions_flag: Some("--dangerously-skip-permissions".into()),
+            label: None,
+            mode: None,
+            prompt_arg: Some("-p".into()),
+        }
+    }
+
+    #[test]
+    fn headless_command_puts_the_prompt_behind_its_flag() {
+        let c = build_headless_command(&claude(), true, "", "fix the login bug").unwrap();
+        assert_eq!(
+            c,
+            "claude -p --dangerously-skip-permissions 'fix the login bug'"
+        );
+    }
+
+    #[test]
+    fn a_cli_without_a_prompt_flag_gets_a_positional_prompt() {
+        let mut c = claude();
+        c.prompt_arg = None;
+        assert_eq!(
+            build_headless_command(&c, false, "", "do it").unwrap(),
+            "claude 'do it'"
+        );
+    }
+
+    #[test]
+    fn a_prompt_cannot_break_out_of_its_quotes() {
+        let c = build_headless_command(&claude(), false, "", "$(rm -rf /); `id` 'x'").unwrap();
+        let prompt = c.strip_prefix("claude -p ").unwrap();
+        assert!(prompt.starts_with('\'') && prompt.ends_with('\''));
+        assert!(prompt.contains("$(rm -rf /)"), "prompt text was mangled");
+        // The embedded quote is escaped, never left to terminate the span.
+        assert!(prompt.contains("'\\''x'\\''"));
+    }
+
+    #[test]
+    fn the_bare_shell_cannot_run_headlessly() {
+        let c = CliConfig {
+            command: String::new(),
+            skip_permissions_flag: None,
+            label: None,
+            mode: None,
+            prompt_arg: None,
+        };
+        assert!(build_headless_command(&c, false, "", "hi").is_err());
+    }
 
     #[test]
     fn sanitize_ok() {
@@ -143,6 +252,7 @@ mod tests {
             skip_permissions_flag: None,
             label: None,
             mode: None,
+            prompt_arg: None,
         };
         assert_eq!(build_launch_command(&c, true, "anything").unwrap(), "");
     }
@@ -154,6 +264,7 @@ mod tests {
             skip_permissions_flag: Some("--dangerously-skip-permissions".into()),
             label: None,
             mode: None,
+            prompt_arg: None,
         };
         assert_eq!(
             build_launch_command(&c, true, "--model opus").unwrap(),

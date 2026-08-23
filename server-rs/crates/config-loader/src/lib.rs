@@ -18,7 +18,7 @@ pub mod safety;
 
 pub use config::{
     invalidate_cache, is_path_under_roots, load_config, save_config, ChatConfig, ChatModel,
-    CliConfig, Config,
+    ChatProvider, CliConfig, Config,
 };
 pub use error::ConfigError;
 pub use migrate::migrate_legacy_layout;
@@ -27,7 +27,8 @@ pub use paths::{
     worktree_root,
 };
 pub use preferences::{
-    build_launch_command, load_preferences, sanitize_extra_args, save_preferences, Preferences,
+    build_headless_command, build_launch_command, load_preferences, sanitize_extra_args,
+    save_preferences, shell_quote, Preferences,
 };
 
 #[cfg(test)]

@@ -10,6 +10,7 @@ mod branch;
 mod commit;
 mod diff;
 mod exec;
+mod finalize;
 mod github;
 mod log;
 mod remote;
@@ -23,6 +24,7 @@ pub use branch::{
 pub use commit::{commit, discard, stage, unstage, CommitResult};
 pub use diff::{git_diff, DiffMode, GitDiff};
 pub use exec::{clone, ensure_mirror, is_git_repo, origin_url, GitError};
+pub use finalize::{current_branch, finalize, has_changes, FinalizeReport, FinalizeRequest};
 pub use github::{list_issues, view_issue, IssueDetail, IssueSummary};
 pub use log::{log_graph, CommitNode};
 pub use remote::{fetch, pull, push, SyncResult};

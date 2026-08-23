@@ -177,6 +177,61 @@ pub enum SessionEventKind {
     Failed { error: String },
 }
 
+/// What the control plane asks a node to do with a finished session's
+/// worktree: turn whatever the agent produced into a commit, a pushed
+/// branch, and (optionally) a pull request.
+///
+/// This runs *on the node* because that is where the worktree is. Doing
+/// it centrally would work only for the in-process node and silently do
+/// the wrong thing — or nothing — for every other machine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FinalizeSpec {
+    /// Message for the commit made from the agent's uncommitted work.
+    /// When the worktree is clean, nothing is committed and the branch
+    /// is pushed as-is.
+    #[serde(rename = "commitMessage")]
+    pub commit_message: String,
+    /// Push the session branch to `origin` (always with `-u`, never
+    /// forced).
+    pub push: bool,
+    /// Open a pull request with `gh` after a successful push.
+    #[serde(rename = "openPr")]
+    pub open_pr: bool,
+    #[serde(rename = "prTitle", default)]
+    pub pr_title: String,
+    #[serde(rename = "prBody", default)]
+    pub pr_body: String,
+    #[serde(default)]
+    pub draft: bool,
+    /// Base branch for the PR. Empty means the repository default.
+    #[serde(rename = "baseBranch", default)]
+    pub base_branch: String,
+}
+
+/// What the node managed to do. Partial success is normal and expected:
+/// a commit can land while `gh` is missing, so each step reports itself
+/// rather than collapsing into one boolean.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FinalizeOk {
+    // Every field defaults: a node one version behind that omits one
+    // must not make the whole frame undecodable, which the caller would
+    // experience as a finalize that never answers.
+    #[serde(default)]
+    pub committed: bool,
+    #[serde(default)]
+    pub sha: String,
+    #[serde(default)]
+    pub branch: String,
+    #[serde(default)]
+    pub pushed: bool,
+    #[serde(rename = "prUrl", default)]
+    pub pr_url: String,
+    /// Non-fatal notes for the user ("nothing to commit", "gh is not
+    /// installed, so no PR was opened").
+    #[serde(default)]
+    pub notes: Vec<String>,
+}
+
 /// Target of a relayed stream. Today only PTY windows; HTTP port
 /// forwarding for code-server lands with the container executors.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -206,6 +261,12 @@ pub enum NodeFrame {
     SessionEvent {
         session: String,
         event: SessionEventKind,
+    },
+    /// Outcome of a `Finalize`, correlated by `requestId`.
+    FinalizeResult {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        result: Result<FinalizeOk, String>,
     },
     /// Payload for a relayed stream. `seq` is per-channel and lets the
     /// control plane spot gaps without inspecting the bytes.
@@ -274,6 +335,13 @@ pub enum ControlFrame {
         session: String,
         #[serde(rename = "deleteWorktree")]
         delete_worktree: bool,
+    },
+    /// Commit / push / open a PR from a finished session's worktree.
+    Finalize {
+        #[serde(rename = "requestId")]
+        request_id: String,
+        session: String,
+        spec: Box<FinalizeSpec>,
     },
     StreamOpen {
         ch: u32,

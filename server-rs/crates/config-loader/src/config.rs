@@ -24,6 +24,13 @@ pub struct CliConfig {
     /// (headless stream-json, rendered as a ChatTab). Absent = pty.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
+    /// Flag (or subcommand) that makes this CLI take a prompt, do the
+    /// work, and exit — `-p` for `claude`, `exec` for `codex`. Queued
+    /// tasks need it: an interactive REPL waiting for input would sit
+    /// there until its lease expired. Absent means the CLI is given the
+    /// prompt as a bare positional argument.
+    #[serde(rename = "promptArg", default, skip_serializing_if = "Option::is_none")]
+    pub prompt_arg: Option<String>,
 }
 
 impl CliConfig {
@@ -42,10 +49,50 @@ pub struct ChatModel {
     pub label: String,
 }
 
-/// Chat-mode configuration (#34): the model menu and the default model.
+/// One agent a chat can talk to.
+///
+/// A chat is not bound to a provider at launch: the composer picks
+/// `provider/model` the way paseo's `claude/opus-4.6` does, and
+/// switching either one respawns the conversation underneath. That is
+/// why the command lives here rather than on a per-provider `clis`
+/// entry — there is exactly one "Chat" launcher, not one per agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatProvider {
+    pub id: String,
+    pub label: String,
+    /// Program to run (resolved through the login shell's PATH).
+    pub command: String,
+    /// Which stdio protocol the command speaks. See
+    /// `chat_manager::Driver` for the implemented set; an unknown value
+    /// is refused at spawn time with the name in the message rather than
+    /// silently falling back to a protocol the CLI does not speak.
+    pub driver: String,
+    pub models: Vec<ChatModel>,
+    #[serde(rename = "defaultModel", skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    /// Shown in the picker with a warning badge. For drivers written
+    /// against a published protocol but not yet exercised against a real
+    /// binary here.
+    #[serde(default)]
+    pub experimental: bool,
+}
+
+/// Chat-mode configuration (#34): which agents are selectable, and which
+/// one a new conversation starts on.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatConfig {
+    #[serde(default)]
+    pub providers: Vec<ChatProvider>,
+    /// Pre-provider model list (#34). Kept so an existing config keeps
+    /// working; `backfill_providers` folds it into the Claude provider.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub models: Vec<ChatModel>,
+    #[serde(
+        rename = "defaultProvider",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub default_provider: Option<String>,
     #[serde(rename = "defaultModel", skip_serializing_if = "Option::is_none")]
     pub default_model: Option<String>,
 }
@@ -53,21 +100,95 @@ pub struct ChatConfig {
 impl Default for ChatConfig {
     fn default() -> Self {
         ChatConfig {
-            models: vec![
-                ChatModel {
-                    id: "opus".into(),
-                    label: "Opus".into(),
+            providers: vec![
+                ChatProvider {
+                    id: "claude".into(),
+                    label: "Claude Code".into(),
+                    command: "claude".into(),
+                    driver: "claude-stream-json".into(),
+                    models: vec![
+                        ChatModel {
+                            id: "opus".into(),
+                            label: "Opus".into(),
+                        },
+                        ChatModel {
+                            id: "sonnet".into(),
+                            label: "Sonnet".into(),
+                        },
+                        ChatModel {
+                            id: "haiku".into(),
+                            label: "Haiku".into(),
+                        },
+                    ],
+                    default_model: None,
+                    experimental: false,
                 },
-                ChatModel {
-                    id: "sonnet".into(),
-                    label: "Sonnet".into(),
-                },
-                ChatModel {
-                    id: "haiku".into(),
-                    label: "Haiku".into(),
+                ChatProvider {
+                    id: "codex".into(),
+                    label: "Codex CLI".into(),
+                    command: "codex".into(),
+                    driver: "codex-proto".into(),
+                    models: vec![
+                        ChatModel {
+                            id: "gpt-5".into(),
+                            label: "GPT-5".into(),
+                        },
+                        ChatModel {
+                            id: "o3".into(),
+                            label: "o3".into(),
+                        },
+                    ],
+                    default_model: None,
+                    experimental: true,
                 },
             ],
+            models: Vec::new(),
+            default_provider: None,
             default_model: None,
+        }
+    }
+}
+
+impl ChatConfig {
+    /// The provider a new conversation starts on: the configured
+    /// default, or the first one listed.
+    pub fn default_provider(&self) -> Option<&ChatProvider> {
+        self.default_provider
+            .as_deref()
+            .and_then(|id| self.provider(id))
+            .or_else(|| self.providers.first())
+    }
+
+    pub fn provider(&self, id: &str) -> Option<&ChatProvider> {
+        self.providers.iter().find(|p| p.id == id)
+    }
+
+    /// Fold a pre-provider config into the new shape.
+    ///
+    /// A `chat` block written before providers existed carries only
+    /// `models` — those are Claude models, because Claude was the only
+    /// agent chat could talk to. Dropping them would silently empty the
+    /// model picker for every existing user, so they become the Claude
+    /// provider's list instead.
+    pub fn backfill_providers(&mut self) {
+        if self.providers.is_empty() {
+            self.providers = ChatConfig::default().providers;
+        }
+        // Taken before the early return: a config that set only
+        // `defaultModel` and never listed models would otherwise keep it
+        // on `ChatConfig`, where nothing reads it any more.
+        let legacy_models = std::mem::take(&mut self.models);
+        let legacy_default = self.default_model.take();
+        if legacy_models.is_empty() && legacy_default.is_none() {
+            return;
+        }
+        if let Some(claude) = self.providers.iter_mut().find(|p| p.id == "claude") {
+            if !legacy_models.is_empty() {
+                claude.models = legacy_models;
+            }
+            if legacy_default.is_some() {
+                claude.default_model = legacy_default;
+            }
         }
     }
 }
@@ -99,6 +220,7 @@ impl Default for Config {
                 skip_permissions_flag: Some("--dangerously-skip-permissions".to_string()),
                 label: Some("Claude Code".to_string()),
                 mode: None,
+                prompt_arg: Some("-p".to_string()),
             },
         );
         clis.insert(
@@ -106,8 +228,9 @@ impl Default for Config {
             CliConfig {
                 command: "claude".to_string(),
                 skip_permissions_flag: Some("--dangerously-skip-permissions".to_string()),
-                label: Some("Claude Code (Chat)".to_string()),
+                label: Some("Chat".to_string()),
                 mode: Some("chat".to_string()),
+                prompt_arg: Some("-p".to_string()),
             },
         );
         clis.insert(
@@ -117,6 +240,7 @@ impl Default for Config {
                 skip_permissions_flag: Some("--full-auto".to_string()),
                 label: Some("Codex CLI".to_string()),
                 mode: None,
+                prompt_arg: Some("exec".to_string()),
             },
         );
         clis.insert(
@@ -126,6 +250,7 @@ impl Default for Config {
                 skip_permissions_flag: None,
                 label: Some("Terminal".to_string()),
                 mode: None,
+                prompt_arg: None,
             },
         );
         Config {
@@ -214,11 +339,33 @@ fn merge_with_defaults(raw: &str, path: &Path) -> Result<Config, ConfigError> {
             obj.insert("clis".to_string(), serde_json::Value::Object(merged));
         }
     }
-    let cfg: Config = serde_json::from_value(defaults_value)?;
+    let mut cfg: Config = serde_json::from_value(defaults_value)?;
+    // `chat.providers` gets the same treatment as `clis`, for the same
+    // reason: a user who listed providers once should still receive
+    // agents shipped later, instead of being frozen at whatever existed
+    // the day they edited the file.
+    merge_default_providers(&mut cfg.chat);
+    cfg.chat.backfill_providers();
     if migrated {
         write_json(path, &cfg)?;
     }
     Ok(cfg)
+}
+
+/// Add built-in providers the user's config does not mention, keeping
+/// their own definitions (and their order) untouched.
+///
+/// Matching is by `id`, so overriding one built-in does not cost you the
+/// others — and a provider the user invented is never disturbed.
+fn merge_default_providers(chat: &mut ChatConfig) {
+    if chat.providers.is_empty() {
+        return; // `backfill_providers` installs the whole default set.
+    }
+    for built_in in ChatConfig::default().providers {
+        if !chat.providers.iter().any(|p| p.id == built_in.id) {
+            chat.providers.push(built_in);
+        }
+    }
 }
 
 /// Old config files used a top-level `claudeCommand` string. Lift it
@@ -291,7 +438,60 @@ mod merge_tests {
         assert!(cfg.clis.contains_key("claude"));
         assert!(cfg.clis.contains_key("codex"));
         // chat defaults fill in when absent.
-        assert!(!cfg.chat.models.is_empty());
+        assert!(!cfg.chat.providers.is_empty());
+    }
+
+    #[test]
+    fn a_pre_provider_chat_block_keeps_its_models() {
+        // What a config written before providers existed looks like.
+        let raw = r#"{
+            "roots": ["/x"],
+            "chat": { "models": [{"id": "opus", "label": "Opus"}], "defaultModel": "opus" }
+        }"#;
+        let cfg = merge_with_defaults(raw, Path::new("/tmp/x.json")).unwrap();
+        let claude = cfg.chat.provider("claude").expect("claude provider");
+        assert_eq!(claude.models.len(), 1, "the user's model list was dropped");
+        assert_eq!(claude.default_model.as_deref(), Some("opus"));
+        // …and the picker still offers the other agents.
+        assert!(cfg.chat.providers.len() > 1);
+    }
+
+    #[test]
+    fn a_config_with_only_a_default_model_keeps_it() {
+        // No `models` list, just the default: the early return used to
+        // drop this on the floor.
+        let raw = r#"{ "roots": ["/x"], "chat": { "defaultModel": "sonnet" } }"#;
+        let cfg = merge_with_defaults(raw, Path::new("/tmp/x.json")).unwrap();
+        let claude = cfg.chat.provider("claude").expect("claude provider");
+        assert_eq!(claude.default_model.as_deref(), Some("sonnet"));
+        assert!(!claude.models.is_empty(), "the built-in menu was lost");
+    }
+
+    #[test]
+    fn a_user_provider_list_still_receives_new_built_ins() {
+        let raw = r#"{
+            "roots": ["/x"],
+            "chat": { "providers": [
+              { "id": "claude", "label": "Mine", "command": "my-claude",
+                "driver": "claude-stream-json", "models": [] }
+            ] }
+        }"#;
+        let cfg = merge_with_defaults(raw, Path::new("/tmp/x.json")).unwrap();
+        // Their override wins…
+        assert_eq!(cfg.chat.provider("claude").unwrap().command, "my-claude");
+        // …and the agents they never mentioned are still offered.
+        assert!(cfg.chat.provider("codex").is_some(), "codex was dropped");
+        // Their entry stays first, so the default provider is unchanged.
+        assert_eq!(cfg.chat.providers[0].id, "claude");
+    }
+
+    #[test]
+    fn the_default_provider_falls_back_to_the_first_listed() {
+        let cfg = Config::default();
+        assert_eq!(
+            cfg.chat.default_provider().map(|p| p.id.as_str()),
+            Some("claude")
+        );
     }
 
     #[test]

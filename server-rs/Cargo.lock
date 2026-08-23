@@ -68,6 +68,7 @@ dependencies = [
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "workspace-manager",
 ]
 
@@ -2647,6 +2648,7 @@ dependencies = [
  "config-loader",
  "serde",
  "sqlx",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

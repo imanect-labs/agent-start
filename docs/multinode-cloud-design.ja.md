@@ -1,9 +1,11 @@
 # agent-start マルチノード / クラウド環境 設計・ロードマップ
 
-> Status: **Phase 0〜1 実装済み** / 2026-08
-> 実装状況は §5 のロードマップに反映（Phase 0 / Phase 1 = 完了）。
+> Status: **Phase 0〜2 実装済み（Phase 2 は一部が実環境未検証）** / 2026-08
+> 実装状況は §5 のロードマップに反映。「実装済み」「自動テスト済み」「実環境で確認済み」は
+> 別物として書き分けている。
 > 対象バージョン: v0.2.x の単機構成 → v0.3〜v0.5 のクラスタ構成
-> 関連: [ROADMAP.md](./ROADMAP.md)（単機の機能ロードマップ。本書はその上に乗る分散レイヤ）
+> 関連: [ROADMAP.md](./ROADMAP.md)（単機の機能ロードマップ。本書はその上に乗る分散レイヤ） /
+> [references.ja.md](./references.ja.md)（先行事例と、そこから採った判断）
 
 ## 0. 何を作るのか
 
@@ -289,7 +291,7 @@ POST /api/tasks
 1. `tasks` に `pending` で INSERT（即座に 202 を返す）
 2. スケジューラが lease してノードへ assign
 3. ノードが worktree を用意 → シークレット注入 → agent CLI を起動
-4. 完了検知（chat モードなら `result` イベント、PTY モードなら終了コード）
+4. 完了検知（PTY モードの終了コード。chat モードでのタスク実行は未実装 — §5 Phase 2 参照）
 5. `git-ops` で commit → push → PR 作成（既存 `git-ops/github.rs` を再利用）
 6. `tasks.result_pr_url` を埋めて `succeeded`
 
@@ -578,19 +580,47 @@ AI エージェント主体・数週間スケール。**各フェーズ単体で
 | `run()` 終了後もリンクの sender を保持 | ノードが再接続できない | 終了時に sender を解放 |
 | `Resources::default()` が「典型的な要求量」= 非ゼロ | 予約量が初期値ぶん水増しされる | `Default` はゼロ、要求量は `default_request()` |
 
-### Phase 2 — タスクキューと非同期→PR（1 週） ← 次
+### Phase 2 — タスクキューと非同期→PR（実装済み・一部未検証）
 
-- [ ] `tasks` テーブル + キューイング（`SKIP LOCKED`）+ lease 期限切れの再キュー
-- [ ] `POST /api/tasks` と一覧 / 詳細 / キャンセル / リトライ
-- [ ] 完了フック: commit → push → PR 作成（既存 `git-ops` 再利用）、`side_effects_committed`
-- [ ] chat モードでの完了検知（`result` イベント）と PTY モードの終了コード検知
-- [ ] ノード喪失時のセッション `lost` 化 + タスク再キュー
-- [ ] UI: 「タスクを投げる」導線、タスク一覧（進行中 / 完了 / PR リンク）
+- [x] `tasks` テーブル + キューイング + lease 期限切れの再キュー
+- [x] `POST /api/tasks` と一覧 / 詳細 / キャンセル / リトライ
+- [x] 完了フック: commit → push → PR 作成（既存 `git-ops` 再利用）、`side_effects_committed`
+- [x] PTY モードの終了コード検知（chat モードは下記のとおりスコープ外に変更）
+- [x] ノード喪失時のセッション `lost` 化 + タスク再キュー
+- [x] UI: 「タスクを投げる」導線、タスク一覧（進行中 / 完了 / PR リンク）
 
 **受入条件**: スマホから「このリポジトリに〜」を投げると、
 リソースの空いたノードで走り、数分後に PR リンクが出る。ノードを途中で落とすと別ノードで再実行される。
 
-### Phase 3 — 認証・マルチユーザ・シークレット（1 週）
+**検証状況** — 「動いた」と「動くはず」を混ぜない:
+
+| 範囲 | 状態 |
+| --- | --- |
+| キューの排他 / lease / 再試行 / 再起動復旧 | 自動テスト済み（`server-rs/crates/state/tests/task_queue.rs`） |
+| 投入 → ノード配置 → 実行 → commit → push | **実機で確認済み**（`server-rs/crates/cluster-control/tests/task_finalize.rs` + 実ホストでの手動確認） |
+| `gh pr create` による PR 作成 | **未検証**。開発環境に `gh` が無く、E2E は push までで止めている |
+| chat の `codex-proto` ドライバ | **未検証**。`codex` バイナリが無く一度も喋らせていない（`experimental` 表示） |
+
+#### 実装上の判断（設計から変えたところ）
+
+| 論点 | 当初案 | 実装 | 理由 |
+| --- | --- | --- | --- |
+| キューの排他 | `SELECT … FOR UPDATE SKIP LOCKED` | 「pending のままなら UPDATE」の条件付き更新（`rows_affected == 1` が獲得） | SQLite に `SKIP LOCKED` が無い。**所有権の判定だけが等価**で、候補選択・トランザクション境界・ロック待ち・順序保証は同じではない（競合した側は次の候補へ進まず `None` を返し、次の tick に回る）。Phase 4 では backend 非依存の抽象を挟んだうえで Postgres 実装に差し替える予定（現状の `Db` は SQLite 固定で、その抽象はまだ無い） |
+| タスクの実行形態 | chat / PTY の両方 | **PTY のヘッドレス実行のみ**（`claude -p '<prompt>'`） | chat セッションはトランスクリプト永続化と `--resume` がホストローカルで、ノードに配れない。ヘッドレス PTY なら既存の relay とスケジューラにそのまま乗る |
+| 完了処理の実行場所 | 中央 | **ノード側**（`Finalize` / `FinalizeResult` フレームを追加） | worktree はノードにしか無い。中央で git を叩くとローカルノード以外で必ず失敗する |
+| プロンプトの渡し方 | — | `CliConfig.promptArg`（claude: `-p` / codex: `exec`） | 対話起動と同じ組み立てだと REPL が入力を待ち続け、lease 切れまで固まる |
+
+**再実行の安全性**: `side_effects_committed` は **finalize を始める前に**保守的に立てる。
+push まで到達しなかった失敗でも立つが、これは意図的 — 「push したかどうか」を
+後から確実に知る方法が無い以上、立て忘れて 2 つ目の PR が生えるより安全側に倒す。
+以後そのタスクは自動再キューされない。手動 `retry` は attempts をリセットするが、
+このフラグは残すので、自動経路は二度と再実行しない。
+
+**未着手として残した点**:
+- chat モードのタスク実行（上記のとおり Phase 5 の relay 拡張とセット）
+- タスクからの `--attachment` / base ブランチの自動 refresh（単機ロードマップ Phase 3 と重複）
+
+### Phase 3 — 認証・マルチユーザ・シークレット（1 週） ← 次
 
 - [ ] `users` / ログイン / Cookie セッション / `api_tokens`
 - [ ] `auth.mode = none | local`（単機の既定は `none` で後方互換）
@@ -661,10 +691,11 @@ IDE がリモートノードのセッションに対して開く。
 
 ---
 
-### Phase 1 で意図的に残した範囲
+### Phase 1〜2 で意図的に残した範囲
 
 - **chat モードのセッションはホストローカル**。transcript 永続化と `--resume` が
-  ホスト側にあるため、ノード分散は Phase 2 と合わせて行う。
+  ホスト側にあるため、ノード分散は relay 拡張（Phase 5）と合わせて行う。
+  タスクキューはヘッドレス PTY 実行を使うので、この制約の影響を受けない。
 - **リモートセッションの git / ファイル / code-server API はホストローカルのまま**。
   ワークツリーが別マシンにあるため現状は失敗する。Phase 5 の relay 拡張で対応。
 - **リモートセッションの restart / 追加ウィンドウは 409 を返す**。再開はタスクキュー

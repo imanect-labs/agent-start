@@ -35,7 +35,12 @@ pub struct PtySpawnSpec {
 /// Fired exactly once when a child process exits — by user `exit`,
 /// signal, or `kill()`. The host uses it to mark the session/window
 /// dead in SQLite and drop the in-memory directory entry.
-pub type ExitHook = Arc<dyn Fn(&str, u32) + Send + Sync>;
+///
+/// The third argument is the child's exit code when we managed to reap
+/// it. A task launched as `claude -p '<prompt>'` succeeds or fails by
+/// that number, so it has to survive the trip up to the control plane
+/// rather than being flattened into "the session ended".
+pub type ExitHook = Arc<dyn Fn(&str, u32, Option<i32>) + Send + Sync>;
 
 #[derive(Default)]
 pub struct PtyManager {
@@ -203,12 +208,19 @@ impl PtyManager {
             // Reader EOF / error means the slave has been closed —
             // either the child exited or we were killed. Reap to
             // surface its status and trigger cleanup.
-            let _ = child_for_exit.lock().wait();
+            // `wait` is what turns the child into a status; a failure
+            // here means we never learned one, which is different from
+            // "it exited with 0" and must not be reported as success.
+            let code = child_for_exit
+                .lock()
+                .wait()
+                .ok()
+                .map(|status| status.exit_code() as i32);
             if let Some(mgr) = manager_weak.upgrade() {
                 mgr.sessions.lock().remove(&exit_key);
                 let hook = mgr.on_exit.lock().clone();
                 if let Some(hook) = hook {
-                    hook(&exit_key.0, exit_key.1);
+                    hook(&exit_key.0, exit_key.1, code);
                 }
             }
         });

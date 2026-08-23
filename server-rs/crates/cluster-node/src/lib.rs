@@ -12,8 +12,8 @@
 
 use anyhow::{anyhow, Result};
 use cluster_proto::{
-    AssignOk, AssignSpec, ControlFrame, Hello, IsolationProfile, NodeFrame, NodeLink, ProjectRef,
-    SessionEventKind, StreamTarget,
+    AssignOk, AssignSpec, ControlFrame, FinalizeOk, FinalizeSpec, Hello, IsolationProfile,
+    NodeFrame, NodeLink, ProjectRef, SessionEventKind, StreamTarget,
 };
 use executor::Executor;
 use metrics_probe::MetricsProbe;
@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
 mod client;
@@ -91,6 +92,26 @@ struct Channel {
     token: u64,
 }
 
+/// Where one session's files live on this node.
+#[derive(Debug, Clone)]
+struct SessionPaths {
+    /// Directory the agent ran in — the worktree when there is one.
+    cwd: PathBuf,
+    /// The repository the worktree was cut from, when it was cut at all.
+    repo_root: PathBuf,
+    worktree: Option<PathBuf>,
+    /// When the agent exited, if it has. `Finalize` arrives *after* the
+    /// exit, so the entry cannot be dropped the moment the process ends;
+    /// it is swept once no finalize can still be coming.
+    exited_at: Option<Instant>,
+}
+
+/// How long a finished session's paths are kept for a `Finalize` that
+/// may still arrive. Comfortably past the control plane's finalize
+/// timeout, so the sweep never removes an entry someone is about to ask
+/// for.
+const PATHS_RETENTION: Duration = Duration::from_secs(900);
+
 pub struct NodeRuntime {
     cfg: NodeConfig,
     pty: Arc<PtyManager>,
@@ -103,6 +124,10 @@ pub struct NodeRuntime {
     mirror_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// Sandbox handles per session, so `destroy` can undo what `create` did.
     handles: Mutex<HashMap<String, executor::Handle>>,
+    /// Where each session's files ended up. `Finalize` arrives after the
+    /// agent has exited — and therefore after the sandbox handle is
+    /// gone — so the paths are kept separately and outlive the process.
+    paths: Mutex<HashMap<String, SessionPaths>>,
     channels: Mutex<HashMap<u32, Channel>>,
     /// Set once the link is up; the PTY exit hook needs it to report
     /// session death without holding a reference to the link itself.
@@ -130,6 +155,7 @@ impl NodeRuntime {
             executor,
             mirror_locks: Mutex::new(HashMap::new()),
             handles: Mutex::new(HashMap::new()),
+            paths: Mutex::new(HashMap::new()),
             channels: Mutex::new(HashMap::new()),
             tx: Mutex::new(None),
             hb_seq: AtomicU64::new(0),
@@ -143,8 +169,8 @@ impl NodeRuntime {
     /// auxiliary windows just disappear.
     fn install_exit_hook(self: &Arc<Self>) {
         let weak: Weak<Self> = Arc::downgrade(self);
-        self.pty
-            .set_exit_hook(Arc::new(move |name: &str, window: u32| {
+        self.pty.set_exit_hook(Arc::new(
+            move |name: &str, window: u32, code: Option<i32>| {
                 if window != 0 {
                     return;
                 }
@@ -154,11 +180,12 @@ impl NodeRuntime {
                     me.release_session(&name).await;
                     me.send(NodeFrame::SessionEvent {
                         session: name,
-                        event: SessionEventKind::Exited { code: None },
+                        event: SessionEventKind::Exited { code },
                     })
                     .await;
                 });
-            }));
+            },
+        ));
     }
 
     async fn send(&self, frame: NodeFrame) {
@@ -238,6 +265,7 @@ impl NodeRuntime {
                     self.clone().on_control(frame).await;
                 }
                 _ = hb.tick() => {
+                    self.sweep_finished_paths();
                     let metrics = probe.sample();
                     // Scanning the cache directory is synchronous, and
                     // on a network filesystem it is not fast. Off the
@@ -255,6 +283,16 @@ impl NodeRuntime {
                 }
             }
         }
+    }
+
+    /// Drop the paths of sessions that ended long enough ago that no
+    /// finalize can still arrive. Without this a node that runs for
+    /// weeks accumulates one entry per session it ever ran.
+    fn sweep_finished_paths(&self) {
+        self.paths.lock().retain(|_, p| match p.exited_at {
+            Some(at) => at.elapsed() < PATHS_RETENTION,
+            None => true,
+        });
     }
 
     fn mirror_lock(&self, project_id: &str) -> Arc<tokio::sync::Mutex<()>> {
@@ -305,6 +343,26 @@ impl NodeRuntime {
             } => {
                 tokio::spawn(async move {
                     self.stop_session(&session, delete_worktree).await;
+                });
+            }
+            ControlFrame::Finalize {
+                request_id,
+                session,
+                spec,
+            } => {
+                // `git push` and `gh pr create` are network calls that
+                // can take a while; keep the frame loop (and therefore
+                // heartbeats) moving.
+                tokio::spawn(async move {
+                    let result = self.finalize_session(&session, &spec).await;
+                    if let Err(e) = &result {
+                        tracing::warn!(session = %session, error = %e, "finalize failed");
+                    }
+                    self.send(NodeFrame::FinalizeResult {
+                        request_id,
+                        result: result.map_err(|e| e.to_string()),
+                    })
+                    .await;
                 });
             }
             ControlFrame::StreamOpen {
@@ -407,6 +465,15 @@ impl NodeRuntime {
         // fails to start — and it looks the sandbox up here to tear it
         // down. Inserting afterwards leaks the sandbox in that race.
         self.handles.lock().insert(session.clone(), handle.clone());
+        self.paths.lock().insert(
+            session.clone(),
+            SessionPaths {
+                cwd: cwd.clone(),
+                repo_root: repo_root.clone(),
+                worktree: worktree_path.clone(),
+                exited_at: None,
+            },
+        );
 
         let pty = match self.pty.spawn(PtySpawnSpec {
             name: session.clone(),
@@ -421,6 +488,7 @@ impl NodeRuntime {
             Ok(p) => p,
             Err(e) => {
                 self.handles.lock().remove(&session);
+                self.paths.lock().remove(&session);
                 let _ = self.executor.destroy(&handle).await;
                 rollback(&worktree_path, &repo_root);
                 return Err(anyhow!("{e}"));
@@ -448,6 +516,12 @@ impl NodeRuntime {
     /// Forget a session's sandbox without touching its worktree. Called
     /// from the PTY exit hook, where the user has not asked for cleanup.
     async fn release_session(&self, session: &str) {
+        // The paths stay: a `Finalize` for this session may still be on
+        // its way. Stamping the exit is what lets the sweep below drop
+        // them once that can no longer be true.
+        if let Some(paths) = self.paths.lock().get_mut(session) {
+            paths.exited_at.get_or_insert_with(Instant::now);
+        }
         let handle = self.handles.lock().remove(session);
         if let Some(handle) = handle {
             if let Err(e) = self.executor.destroy(&handle).await {
@@ -456,9 +530,56 @@ impl NodeRuntime {
         }
     }
 
+    /// Commit / push / open a PR from a finished session's worktree.
+    ///
+    /// The paths come from the record made at assign time rather than
+    /// from the session name: a session started without `createWorktree`
+    /// runs directly in the project, and finalizing the wrong directory
+    /// would commit to the user's checkout.
+    async fn finalize_session(&self, session: &str, spec: &FinalizeSpec) -> Result<FinalizeOk> {
+        let paths = self.paths.lock().get(session).cloned();
+        let paths = paths.ok_or_else(|| {
+            anyhow!("session `{session}` is not known to this node; nothing to finalize")
+        })?;
+        // The worktree can be removed out from under us (an impatient
+        // delete, a crashed node reusing the directory). Say so rather
+        // than letting git report a confusing error about a missing repo.
+        if !paths.cwd.is_dir() {
+            return Err(anyhow!(
+                "the session's working directory is gone: {}",
+                paths.cwd.display()
+            ));
+        }
+
+        let req = git_ops::FinalizeRequest {
+            commit_message: spec.commit_message.clone(),
+            push: spec.push,
+            open_pr: spec.open_pr,
+            pr_title: spec.pr_title.clone(),
+            pr_body: spec.pr_body.clone(),
+            draft: spec.draft,
+            base_branch: spec.base_branch.clone(),
+        };
+        let cwd = paths.cwd.clone();
+        let report = tokio::task::spawn_blocking(move || git_ops::finalize(&cwd, &req))
+            .await
+            .map_err(|e| anyhow!("finalize panicked: {e}"))?
+            .map_err(|e| anyhow!("{e}"))?;
+
+        Ok(FinalizeOk {
+            committed: report.committed,
+            sha: report.sha,
+            branch: report.branch,
+            pushed: report.pushed,
+            pr_url: report.pr_url,
+            notes: report.notes,
+        })
+    }
+
     async fn stop_session(&self, session: &str, delete_worktree: bool) {
         // Capture the worktree before the PTYs go: once the session is
         // gone we have no record of where it lived.
+        let paths = self.paths.lock().remove(session);
         let windows = self.pty.remove_session(session);
         for w in &windows {
             w.kill();
@@ -466,6 +587,18 @@ impl NodeRuntime {
         self.release_session(session).await;
 
         if delete_worktree {
+            // Prefer the path recorded at assign time: a session that
+            // ran without a worktree has nothing to remove, and deleting
+            // the conventional path would target somebody else's files.
+            if let Some(paths) = paths {
+                let Some(wt) = paths.worktree else { return };
+                let repo = paths.repo_root;
+                let _ = tokio::task::spawn_blocking(move || {
+                    git_ops::remove_worktree(&wt, Some(&repo), true)
+                })
+                .await;
+                return;
+            }
             let wt = git_ops::worktree_path_for(session);
             if wt.is_dir() {
                 let path = wt.clone();

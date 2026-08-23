@@ -10,7 +10,14 @@ import {
   IconX,
 } from "@/components/icons";
 import { Terminal } from "@/components/Terminal";
-import { ChatView, type ChatModelInfo } from "@/components/ChatView";
+import { ChatView, type ChatConfig } from "@/components/ChatView";
+
+/** Used until `/api/config` lands: an empty picker beats a crash. */
+const EMPTY_CHAT_CONFIG: ChatConfig = {
+  providers: [],
+  defaultProvider: null,
+  defaultModel: null,
+};
 import { FilesView } from "@/components/FilesView";
 import { EditorTab as EditorView } from "@/components/EditorTab";
 import { DiffTabView } from "@/components/DiffTabView";
@@ -53,8 +60,7 @@ type Props = {
   /** Open a file (absolute path) in an editor tab — used by the tree view. */
   onOpenFile?: (absPath: string) => void;
   /** Chat model menu + default for chat-mode sessions (#34). */
-  chatModels?: ChatModelInfo[];
-  chatDefaultModel?: string | null;
+  chatConfig?: ChatConfig;
   /** Recently-used projects shown on the welcome screen — sorted by the
    *  most recent session's createdAt. Empty list hides the section. */
   recentProjects?: RecentProject[];
@@ -87,8 +93,7 @@ export function MainPane({
   onToggleSidebar,
   onOpenDiff,
   onOpenFile,
-  chatModels,
-  chatDefaultModel,
+  chatConfig,
   recentProjects,
   onLaunchProject,
   onOpenSession,
@@ -148,7 +153,7 @@ export function MainPane({
       if (tab) tab.close();
       toast({
         title: "VSCode を開けませんでした",
-        message: e instanceof Error ? e.message : String(e),
+        description: e instanceof Error ? e.message : String(e),
         color: "danger",
       });
     } finally {
@@ -322,8 +327,7 @@ export function MainPane({
               onUpdateTab={onUpdateTab}
               onOpenDiff={onOpenDiff}
               onOpenFile={onOpenFile}
-              chatModels={chatModels ?? []}
-              chatDefaultModel={chatDefaultModel ?? null}
+              chatConfig={chatConfig ?? EMPTY_CHAT_CONFIG}
             />
           </div>
         ))}
@@ -574,8 +578,7 @@ function TabContent({
   onUpdateTab,
   onOpenDiff,
   onOpenFile,
-  chatModels,
-  chatDefaultModel,
+  chatConfig,
 }: {
   tab: Tab;
   sessionName: string;
@@ -586,18 +589,11 @@ function TabContent({
   onUpdateTab: (id: string, patch: Partial<Tab>) => void;
   onOpenDiff?: (file: string, mode: DiffMode) => void;
   onOpenFile?: (absPath: string) => void;
-  chatModels: ChatModelInfo[];
-  chatDefaultModel: string | null;
+  chatConfig: ChatConfig;
 }) {
   if (tab.kind === "chat") {
     return (
-      <ChatView
-        key={sessionName}
-        sessionName={sessionName}
-        cwd={cwd}
-        models={chatModels}
-        defaultModel={chatDefaultModel}
-      />
+      <ChatView key={sessionName} sessionName={sessionName} cwd={cwd} chatConfig={chatConfig} />
     );
   }
   if (tab.kind === "terminal") {

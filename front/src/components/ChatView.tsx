@@ -8,6 +8,22 @@ import { prettyModel } from "@/lib/chat-types";
 
 export type ChatModelInfo = { id: string; label: string };
 
+/** One agent the composer can point this conversation at. */
+export type ChatProviderInfo = {
+  id: string;
+  label: string;
+  models: ChatModelInfo[];
+  defaultModel?: string | null;
+  experimental?: boolean;
+};
+
+/** The `chat` block of `GET /api/config`. */
+export type ChatConfig = {
+  providers: ChatProviderInfo[];
+  defaultProvider: string | null;
+  defaultModel: string | null;
+};
+
 /**
  * Headless-`claude` chat surface (#34). Thin header + auto-following message
  * list + bottom composer (U1). A dead conversation is revived transparently
@@ -16,16 +32,27 @@ export type ChatModelInfo = { id: string; label: string };
 export function ChatView({
   sessionName,
   cwd,
-  models,
-  defaultModel,
+  chatConfig,
 }: {
   sessionName: string;
   cwd: string;
-  models: ChatModelInfo[];
-  defaultModel: string | null;
+  chatConfig: ChatConfig;
 }) {
   const chat = useChatSocket(sessionName);
-  const currentModel = chat.model ?? defaultModel;
+  // Mirrors the backend's own fallback (`ChatConfig::default_provider`):
+  // the configured default, else the first listed. The API already
+  // resolves it, but a client that outlives a server change should not
+  // start labelling the agent "Chat".
+  const currentProvider =
+    chat.provider ?? chatConfig.defaultProvider ?? chatConfig.providers[0]?.id ?? null;
+  // Before the agent reports a model, fall back to *its* default — not
+  // the globally configured one, which belongs to whichever provider a
+  // conversation happened to start on.
+  const providerConfig = chatConfig.providers.find((p) => p.id === currentProvider);
+  const currentModel =
+    chat.model ??
+    providerConfig?.defaultModel ??
+    (currentProvider === chatConfig.defaultProvider ? chatConfig.defaultModel : null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
 
@@ -49,6 +76,7 @@ export function ChatView({
   return (
     <div className="flex flex-col h-full min-h-0 bg-app">
       <Header
+        provider={providerConfig?.label ?? currentProvider}
         model={currentModel}
         connection={chat.connection}
         lifecycle={chat.lifecycle}
@@ -88,6 +116,11 @@ export function ChatView({
         )}
       </div>
 
+      {chat.notice && !chat.error && (
+        <div className="mx-3 sm:mx-5 mb-2 rounded-lg border border-line-strong bg-surface-muted px-3 py-2 text-[12.5px] text-fg-muted">
+          {chat.notice}
+        </div>
+      )}
       {chat.error && (
         <div className="mx-3 sm:mx-5 mb-2 rounded-lg border border-danger/40 bg-danger-soft px-3 py-2 text-[13px] text-danger">
           {chat.error}
@@ -101,11 +134,13 @@ export function ChatView({
       )}
 
       <ChatComposer
-        models={models}
+        providers={chatConfig.providers}
+        currentProvider={currentProvider}
         currentModel={currentModel}
         onSend={chat.send}
         onInterrupt={chat.interrupt}
         onSetModel={chat.setModel}
+        onSetProvider={chat.setProvider}
         planMode={chat.permissionMode === "plan"}
         onSetPlanMode={(on) => chat.setPermissionMode(on ? "plan" : null)}
         generating={chat.generating}
@@ -117,11 +152,13 @@ export function ChatView({
 }
 
 function Header({
+  provider,
   model,
   connection,
   lifecycle,
   onReconnect,
 }: {
+  provider: string | null;
   model: string | null;
   connection: "connecting" | "open" | "closed";
   lifecycle: "running" | "dead" | "switching" | "unknown";
@@ -137,7 +174,7 @@ function Header({
         : "bg-danger";
   const statusText =
     lifecycle === "switching"
-      ? "モデル切替中…"
+      ? "切り替え中…"
       : connection === "open"
         ? lifecycle === "dead"
           ? "停止中"
@@ -149,7 +186,12 @@ function Header({
   return (
     <div className="flex items-center gap-2 px-3 sm:px-4 h-9 border-b border-line bg-surface/80 backdrop-blur-sm shrink-0">
       <span className={["inline-block w-1.5 h-1.5 rounded-full", dotClass].join(" ")} />
-      <span className="text-[12px] text-fg-muted font-mono">{prettyModel(model)}</span>
+      <span className="text-[12px] text-fg-muted font-mono truncate">
+        {/* Only name the model once the agent has reported one —
+            "Claude Code / Claude" is a stutter, not information. */}
+        {provider ?? "Chat"}
+        {model ? ` / ${prettyModel(model)}` : ""}
+      </span>
       <span className="text-[11px] text-fg-faint ml-1">{statusText}</span>
       {connection === "closed" && (
         <button

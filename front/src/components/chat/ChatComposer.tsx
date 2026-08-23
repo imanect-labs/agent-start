@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { useMediaQuery } from "@/lib/useMediaQuery";
-import type { ChatModelInfo } from "@/components/ChatView";
+import type { ChatProviderInfo } from "@/components/ChatView";
 import { prettyModel, type OutgoingImage } from "@/lib/chat-types";
 
 /** Per-device send-key preference (U4). Mirrored by SettingsPage. */
@@ -22,23 +22,27 @@ const THUMB_EDGE = 96;
 type Pending = OutgoingImage & { id: string };
 
 export function ChatComposer({
-  models,
+  providers,
+  currentProvider,
   currentModel,
   onSend,
   onInterrupt,
   onSetModel,
+  onSetProvider,
   planMode,
   onSetPlanMode,
   generating,
   disabled,
   dead,
 }: {
-  models: ChatModelInfo[];
+  providers: ChatProviderInfo[];
+  currentProvider: string | null;
   currentModel: string | null;
   /** Returns false if the transport wasn't ready (draft is then preserved). */
   onSend: (text: string, images: OutgoingImage[]) => boolean;
   onInterrupt: () => void;
   onSetModel: (model: string) => void;
+  onSetProvider: (provider: string, model?: string | null) => void;
   planMode: boolean;
   onSetPlanMode: (on: boolean) => void;
   generating: boolean;
@@ -220,10 +224,12 @@ export function ChatComposer({
           }}
         />
 
-        <ModelPicker
-          models={models}
-          current={currentModel}
-          onSelect={onSetModel}
+        <AgentPicker
+          providers={providers}
+          currentProvider={currentProvider}
+          currentModel={currentModel}
+          onSelectModel={onSetModel}
+          onSelectProvider={onSetProvider}
           disabled={disabled}
         />
 
@@ -288,15 +294,30 @@ function SendKeyHint({ sendKey, coarse }: { sendKey: SendKey; coarse: boolean })
   );
 }
 
-function ModelPicker({
-  models,
-  current,
-  onSelect,
+/**
+ * Bottom-left picker for *which agent and which model* this conversation
+ * talks to.
+ *
+ * One chat, many agents: the launcher no longer has an entry per
+ * provider, so this is where the choice is made — grouped by provider
+ * with its models under it, the way `claude/opus` reads as one address.
+ * Picking a model within the current provider continues the
+ * conversation; picking another provider starts a fresh one, which the
+ * menu says out loud rather than leaving the user to discover.
+ */
+function AgentPicker({
+  providers,
+  currentProvider,
+  currentModel,
+  onSelectModel,
+  onSelectProvider,
   disabled,
 }: {
-  models: ChatModelInfo[];
-  current: string | null;
-  onSelect: (model: string) => void;
+  providers: ChatProviderInfo[];
+  currentProvider: string | null;
+  currentModel: string | null;
+  onSelectModel: (model: string) => void;
+  onSelectProvider: (provider: string, model?: string | null) => void;
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -310,11 +331,29 @@ function ModelPicker({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  if (models.length === 0) return null;
-  // `current` is usually the resolved id from system:init (e.g.
-  // "claude-opus-4-7"); show a humanized name and match menu items by family.
-  const isActive = (id: string) => current != null && (current === id || current.includes(id));
-  const label = prettyModel(current);
+  if (providers.length === 0) return null;
+  const active = providers.find((p) => p.id === currentProvider) ?? providers[0];
+  // `currentModel` is usually the resolved id the agent reported (e.g.
+  // "claude-opus-4-7"), so the short alias the picker sends has to match
+  // by family. Only at a `-` boundary, though: a plain substring test
+  // makes `gpt-4o` light up `gpt-4`, and the entry then refuses to switch
+  // because it believes it is already selected.
+  const isActiveModel = (providerId: string, id: string) =>
+    providerId === active.id &&
+    currentModel != null &&
+    (currentModel === id ||
+      currentModel.startsWith(`${id}-`) ||
+      currentModel.endsWith(`-${id}`) ||
+      currentModel.includes(`-${id}-`));
+
+  const select = (providerId: string, modelId: string) => {
+    setOpen(false);
+    if (providerId !== active.id) {
+      onSelectProvider(providerId, modelId);
+      return;
+    }
+    if (!isActiveModel(providerId, modelId)) onSelectModel(modelId);
+  };
 
   return (
     <div ref={ref} className="relative">
@@ -322,35 +361,83 @@ function ModelPicker({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-surface-muted border border-line text-[12px] text-fg-muted hover:text-fg hover:border-line-strong disabled:opacity-40 transition-colors"
-        title="モデルを切り替え"
+        className="inline-flex items-center gap-1 h-7 px-2 rounded-md bg-surface-muted border border-line text-[12px] text-fg-muted hover:text-fg hover:border-line-strong disabled:opacity-40 transition-colors max-w-[60vw]"
+        title="エージェントとモデルを切り替え"
       >
-        <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-        {label}
+        <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+        <span className="truncate">
+          {active.label}
+          {/* Before the agent reports a model there is nothing to name,
+              and "Claude Code / Claude" reads like a stutter. */}
+          {currentModel && (
+            <>
+              <span className="text-fg-faint"> / </span>
+              {prettyModel(currentModel)}
+            </>
+          )}
+        </span>
       </button>
       {open && (
-        <div className="absolute bottom-full left-0 mb-1.5 z-30 min-w-[160px] bg-surface-elev border border-line rounded-lg shadow-lg py-1">
-          {models.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                if (!isActive(m.id)) onSelect(m.id);
-              }}
-              className={[
-                "w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2",
-                isActive(m.id) ? "text-fg" : "text-fg-muted hover:bg-surface-muted",
-              ].join(" ")}
-            >
-              <span
-                className={[
-                  "w-1.5 h-1.5 rounded-full",
-                  isActive(m.id) ? "bg-accent" : "bg-transparent",
-                ].join(" ")}
-              />
-              {m.label}
-            </button>
+        <div className="absolute bottom-full left-0 mb-1.5 z-30 w-[260px] max-h-[60vh] overflow-y-auto scroll-thin bg-surface-elev border border-line rounded-lg shadow-lg py-1">
+          {providers.map((p) => (
+            <div key={p.id} className="py-0.5">
+              <div className="px-3 pt-1.5 pb-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-medium text-fg-muted whitespace-nowrap">
+                    {p.label}
+                  </span>
+                  {p.experimental && (
+                    <span
+                      className="text-[10px] leading-none px-1 py-0.5 rounded border border-warn/40 text-warn whitespace-nowrap"
+                      title="このドライバは実機で未検証です"
+                    >
+                      実験的
+                    </span>
+                  )}
+                </div>
+                {/* Its own line: crammed beside the label it wrapped mid-word. */}
+                {p.id !== active.id && (
+                  <div className="mt-0.5 text-[10px] text-fg-faint">
+                    切り替えると新しい会話になります
+                  </div>
+                )}
+              </div>
+              {p.models.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    if (p.id !== active.id) onSelectProvider(p.id, null);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-[13px] text-fg-muted hover:bg-surface-muted"
+                >
+                  既定のモデル
+                </button>
+              ) : (
+                p.models.map((m) => {
+                  const on = isActiveModel(p.id, m.id);
+                  return (
+                    <button
+                      key={`${p.id}/${m.id}`}
+                      type="button"
+                      onClick={() => select(p.id, m.id)}
+                      className={[
+                        "w-full text-left pl-3 pr-3 py-1.5 text-[13px] flex items-center gap-2",
+                        on ? "text-fg" : "text-fg-muted hover:bg-surface-muted",
+                      ].join(" ")}
+                    >
+                      <span
+                        className={[
+                          "w-1.5 h-1.5 rounded-full shrink-0",
+                          on ? "bg-accent" : "bg-transparent",
+                        ].join(" ")}
+                      />
+                      {m.label}
+                    </button>
+                  );
+                })
+              )}
+            </div>
           ))}
         </div>
       )}

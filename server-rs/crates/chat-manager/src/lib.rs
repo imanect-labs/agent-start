@@ -5,10 +5,12 @@
 //! subscribed WebSockets. See `session::ChatSession` for the protocol and
 //! `docs/chat-ui-plan.md` for the design decisions behind it.
 
+mod driver;
 mod error;
 mod manager;
 mod session;
 
+pub use driver::Driver;
 pub use error::ChatError;
 pub use manager::{ChatExitHook, ChatManager};
 pub use session::{ChatImage, ChatSession, ChatSpawnSpec, CommitEvent};
