@@ -432,6 +432,14 @@ impl ChatSession {
             spec.driver = driver.as_str().to_string();
             spec.command = command.to_string();
             spec.model = model.map(str::to_string);
+            // Permission modes are Claude's. Carried across a switch they
+            // would keep showing on `chat_status` while the new command
+            // line never mentions them — and `set_permission_mode` refuses
+            // to touch a non-Claude session, so the toggle would be stuck
+            // on with no way back.
+            if driver != Driver::ClaudeStreamJson {
+                spec.permission_mode = None;
+            }
             // A session id belongs to the agent that issued it.
             spec.resume = None;
             spec.start_seq = self.seq.load(Ordering::SeqCst);
