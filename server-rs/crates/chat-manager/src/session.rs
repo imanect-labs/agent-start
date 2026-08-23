@@ -790,16 +790,19 @@ impl ChatSession {
         self: &Arc<Self>,
         mode: Option<&str>,
     ) -> Result<(), ChatError> {
+        if let Some(m) = mode {
+            validate_token(m)?;
+        }
+        let _guard = self.lifecycle.lock().await;
+        // Under the lock, not before it: `switch_provider` holds this
+        // same lock, so a check made outside could pass on Claude and
+        // then act on the codex process that replaced it.
         if self.driver() != Driver::ClaudeStreamJson {
             return Err(ChatError::Invalid(format!(
                 "`{}` は権限モードをサポートしていません",
                 self.current_provider()
             )));
         }
-        if let Some(m) = mode {
-            validate_token(m)?;
-        }
-        let _guard = self.lifecycle.lock().await;
         let sid = self.claude_session_id();
         {
             let mut spec = self.spec.lock();
