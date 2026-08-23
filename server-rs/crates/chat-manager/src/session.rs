@@ -290,6 +290,10 @@ impl ChatSession {
         text: &str,
         images: &[ChatImage],
     ) -> Result<(), ChatError> {
+        // Held until the line is written. The wire format is the current
+        // driver's, and a switch part-way through would hand a
+        // Claude-shaped line to the codex process that replaced it.
+        let _guard = self.lifecycle.lock().await;
         // Envelope the UI/persistence render (carries our own content shape).
         let mut content = Vec::new();
         if !text.is_empty() {
@@ -350,6 +354,9 @@ impl ChatSession {
 
     /// Best-effort interrupt of the in-flight turn (decision 12).
     pub async fn interrupt(&self) -> Result<(), ChatError> {
+        // As in `send_user_message`: pick the format and write it without
+        // letting a switch replace the process in between.
+        let _guard = self.lifecycle.lock().await;
         let line = match self.driver() {
             Driver::ClaudeStreamJson => serde_json::json!({
                 "type": "control_request",
@@ -385,10 +392,15 @@ impl ChatSession {
         validate_token(model)?;
         let _guard = self.lifecycle.lock().await;
         let sid = self.claude_session_id();
+        // Same reasoning as `revive`: only a driver that has a resume
+        // gets one. Without this the doc comment above would be a lie on
+        // codex — the respawn starts a conversation that has never heard
+        // of anything said so far.
+        let resumable = self.driver().supports_resume();
         {
             let mut spec = self.spec.lock();
             spec.model = Some(model.to_string());
-            if !sid.is_empty() {
+            if resumable && !sid.is_empty() {
                 spec.resume = Some(sid);
             }
         }
@@ -396,6 +408,18 @@ impl ChatSession {
         self.kill();
         self.inject_status("switching");
         self.restart_after_switch().await?;
+        if !resumable {
+            self.inject(
+                serde_json::json!({
+                    "type": "chat_notice",
+                    "message": format!(
+                        "{} はモデルを変えると新しい会話になります。ここまでの内容は引き継がれません。",
+                        self.current_provider()
+                    ),
+                }),
+                false,
+            );
+        }
         self.inject_status("running");
         Ok(())
     }
