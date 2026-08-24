@@ -30,10 +30,19 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Install Vite+ (vp)
-        run: curl -fsSL https://vite.plus | bash
-
-      - name: Add vp to PATH
-        run: echo "$HOME/.vite-plus/bin" >> "$GITHUB_PATH"
+        run: |
+          curl -fsSL https://vite.plus | bash
+          # The installer drops the binary somewhere under $HOME and has moved it
+          # before, so probe every known location and fail loudly when none has it
+          # rather than letting the next step die with "vp: command not found".
+          for dir in "$HOME/.local/share/vite-plus/bin" "$HOME/.vite-plus/bin" "$HOME/.local/bin"; do
+            if [ -x "$dir/vp" ]; then
+              echo "$dir" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          echo "::error::vp was not found in any known install location after running the installer"
+          exit 1
 
       - name: Install front deps
         working-directory: front
