@@ -552,6 +552,11 @@ impl ChatSession {
     pub async fn start(self: &Arc<Self>) -> Result<(), ChatError> {
         let spec = self.spec.lock().clone();
         let driver = Driver::parse(&spec.driver)?;
+        // Retire the previous generation *before* the shared driver changes
+        // under it. A reader still draining its own process must never see
+        // itself as current once the vocabulary has moved on, not even for
+        // the instant between these two lines.
+        let my_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         *self.driver.lock() = driver;
         let cmdline = build_cmdline(driver, &spec)?;
         tracing::info!(session = %self.name, cmd = %cmdline, "spawning chat process");
@@ -594,7 +599,6 @@ impl ChatSession {
         }
 
         self.saw_init.store(false, Ordering::SeqCst);
-        let my_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let weak: Weak<ChatSession> = Arc::downgrade(self);
         let name = self.name.clone();
         let reader = tokio::spawn(async move {
@@ -606,7 +610,7 @@ impl ChatSession {
                             continue;
                         }
                         if let Some(session) = weak.upgrade() {
-                            session.handle_stdout_line(&line).await;
+                            session.handle_stdout_line(&line, my_gen, driver).await;
                         } else {
                             break;
                         }
@@ -652,27 +656,44 @@ impl ChatSession {
     /// Providers other than Claude are translated into Claude's
     /// vocabulary first: that is the shape the browser renders, so the
     /// alternative would be a second renderer per agent.
-    async fn handle_stdout_line(&self, line: &str) {
+    ///
+    /// `my_gen` and `driver` are the reader's own, fixed when it was
+    /// spawned. Reading the session's current driver here instead would
+    /// mean parsing this process's output in whatever vocabulary happens
+    /// to be installed by the time the line is handled.
+    async fn handle_stdout_line(&self, line: &str, my_gen: u64, driver: Driver) {
+        if !self.is_current_generation(my_gen) {
+            tracing::trace!(target: "chat", session = %self.name, "stale stdout dropped: {line}");
+            return;
+        }
         let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
             tracing::debug!(target: "chat", session = %self.name, "non-JSON stdout: {line}");
             return;
         };
-        match self.driver() {
-            Driver::ClaudeStreamJson => self.handle_event(value).await,
+        match driver {
+            Driver::ClaudeStreamJson => self.handle_event(value, my_gen).await,
             Driver::CodexProto => {
                 let events = codex::translate(&value);
                 if events.is_empty() {
                     tracing::trace!(target: "chat", session = %self.name, "codex event dropped: {line}");
                 }
                 for event in events {
-                    self.handle_event(event).await;
+                    self.handle_event(event, my_gen).await;
                 }
             }
         }
     }
 
+    /// Whether the process a reader was spawned for is still the one this
+    /// session is running. `kill` aborts the reader, but an abort only
+    /// lands at the next await point, so output already buffered can
+    /// still arrive after a switch has replaced the process.
+    fn is_current_generation(&self, my_gen: u64) -> bool {
+        self.generation.load(Ordering::SeqCst) == my_gen
+    }
+
     /// Handle one event already in Claude's stream-json vocabulary.
-    async fn handle_event(&self, value: serde_json::Value) {
+    async fn handle_event(&self, value: serde_json::Value, my_gen: u64) {
         let ty = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
         match ty {
             // Housekeeping — dropped (decision 3).
@@ -687,7 +708,7 @@ impl ChatSession {
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
                 if subtype == "can_use_tool" {
-                    self.handle_can_use_tool(&value).await;
+                    self.handle_can_use_tool(&value, my_gen).await;
                 }
             }
             // Replies to our own control requests (initialize / allow). Internal
@@ -724,7 +745,7 @@ impl ChatSession {
 
     /// Classify a `can_use_tool` request: auto-allow ordinary tools inline,
     /// or forward AskUserQuestion / ExitPlanMode to the UI for a decision.
-    async fn handle_can_use_tool(&self, value: &serde_json::Value) {
+    async fn handle_can_use_tool(&self, value: &serde_json::Value, my_gen: u64) {
         let request_id = value
             .get("request_id")
             .and_then(|v| v.as_str())
@@ -768,6 +789,12 @@ impl ChatSession {
                     &request_id,
                     serde_json::json!({"behavior": "allow", "updatedInput": input}),
                 );
+                // Re-checked after the awaits above: an answer belongs to
+                // the process that asked, and writing it to a successor
+                // would answer a request it never made.
+                if !self.is_current_generation(my_gen) {
+                    return;
+                }
                 if let Err(e) = self.write_line(&line).await {
                     tracing::warn!(session = %self.name, error = %e, "failed to auto-allow tool");
                 }
@@ -881,6 +908,14 @@ impl ChatSession {
     /// Kill the underlying process (graceful stop is just dropping stdin,
     /// but an explicit kill is used for model switch / session delete).
     pub fn kill(&self) {
+        // Retire the reader here, not later in `start`. Between the two
+        // its process is dead but its generation is still current, and
+        // `abort` does not reach a line already buffered: that line would
+        // register a permission card just after `resolve_all_pending`
+        // below has cleared them, leaving the user a live-looking prompt
+        // whose answer `respond_permission` writes to whichever process
+        // has taken this one's place.
+        self.generation.fetch_add(1, Ordering::SeqCst);
         if let Some(mut proc) = self.proc.lock().take() {
             proc.reader.abort();
             let _ = proc.child.start_kill();
@@ -1025,6 +1060,87 @@ mod tests {
             resume: None,
             start_seq: 0,
         }
+    }
+
+    /// One codex event, and what it must become once translated.
+    const CODEX_LINE: &str = r#"{"id":"0","msg":{"type":"agent_message","message":"hi"}}"#;
+
+    fn codex_session() -> Arc<ChatSession> {
+        let mut spec = base_spec();
+        spec.provider = "codex".into();
+        spec.driver = "codex-proto".into();
+        ChatSession::create(spec, Weak::new())
+    }
+
+    /// `kill` aborts a reader, but the abort lands at its next await —
+    /// output already buffered can still arrive after a switch. It must
+    /// not land in the transcript of the conversation that replaced it.
+    #[tokio::test]
+    async fn output_from_a_replaced_process_is_dropped() {
+        let session = codex_session();
+        let (_, mut rx) = session.subscribe();
+
+        // Generation 0 is the session's own, so this reader is current.
+        session
+            .handle_stdout_line(CODEX_LINE, 0, Driver::CodexProto)
+            .await;
+        let first: serde_json::Value =
+            serde_json::from_str(&rx.try_recv().expect("current output was dropped")).unwrap();
+        assert_eq!(first["type"], "assistant");
+
+        // A respawn bumps the generation out from under the old reader.
+        session.generation.fetch_add(1, Ordering::SeqCst);
+        session
+            .handle_stdout_line(CODEX_LINE, 0, Driver::CodexProto)
+            .await;
+        assert!(
+            rx.try_recv().is_err(),
+            "a replaced process still reached subscribers"
+        );
+    }
+
+    /// The gap between `kill` and the respawn: the old process is dead but
+    /// nothing has started yet. A buffered `can_use_tool` arriving here
+    /// must not leave a card behind — `kill` has already retired the
+    /// pending ones, and answering this one would write a response to the
+    /// process that replaces it, for a request it never made.
+    #[tokio::test]
+    async fn a_killed_reader_cannot_leave_a_permission_card_behind() {
+        const ASK: &str = r#"{"type":"control_request","request_id":"req-9","request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","input":{}}}"#;
+        let session = ChatSession::create(base_spec(), Weak::new());
+        let (_, mut rx) = session.subscribe();
+
+        session.kill();
+        session
+            .handle_stdout_line(ASK, 0, Driver::ClaudeStreamJson)
+            .await;
+
+        assert!(
+            session.pending_perms.lock().is_empty(),
+            "a dead process left a permission card the user could answer"
+        );
+        assert!(rx.try_recv().is_err(), "the card reached the browser");
+    }
+
+    /// A line is read in the vocabulary of the process that wrote it, not
+    /// whichever one the session has since been pointed at.
+    #[tokio::test]
+    async fn a_reader_parses_with_its_own_vocabulary() {
+        let session = codex_session();
+        let (_, mut rx) = session.subscribe();
+        // As if a switch had already installed the next agent's driver.
+        *session.driver.lock() = Driver::ClaudeStreamJson;
+
+        session
+            .handle_stdout_line(CODEX_LINE, 0, Driver::CodexProto)
+            .await;
+
+        let got: serde_json::Value =
+            serde_json::from_str(&rx.try_recv().expect("output was dropped")).unwrap();
+        // Read as Claude this line has no `type`, so it would fall through
+        // to the catch-all and reach the browser as raw codex JSON.
+        assert_eq!(got["type"], "assistant");
+        assert_eq!(got["message"]["content"][0]["text"], "hi");
     }
 
     #[test]
