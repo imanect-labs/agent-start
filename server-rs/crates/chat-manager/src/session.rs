@@ -908,6 +908,14 @@ impl ChatSession {
     /// Kill the underlying process (graceful stop is just dropping stdin,
     /// but an explicit kill is used for model switch / session delete).
     pub fn kill(&self) {
+        // Retire the reader here, not later in `start`. Between the two
+        // its process is dead but its generation is still current, and
+        // `abort` does not reach a line already buffered: that line would
+        // register a permission card just after `resolve_all_pending`
+        // below has cleared them, leaving the user a live-looking prompt
+        // whose answer `respond_permission` writes to whichever process
+        // has taken this one's place.
+        self.generation.fetch_add(1, Ordering::SeqCst);
         if let Some(mut proc) = self.proc.lock().take() {
             proc.reader.abort();
             let _ = proc.child.start_kill();
@@ -1089,6 +1097,29 @@ mod tests {
             rx.try_recv().is_err(),
             "a replaced process still reached subscribers"
         );
+    }
+
+    /// The gap between `kill` and the respawn: the old process is dead but
+    /// nothing has started yet. A buffered `can_use_tool` arriving here
+    /// must not leave a card behind — `kill` has already retired the
+    /// pending ones, and answering this one would write a response to the
+    /// process that replaces it, for a request it never made.
+    #[tokio::test]
+    async fn a_killed_reader_cannot_leave_a_permission_card_behind() {
+        const ASK: &str = r#"{"type":"control_request","request_id":"req-9","request":{"subtype":"can_use_tool","tool_name":"AskUserQuestion","input":{}}}"#;
+        let session = ChatSession::create(base_spec(), Weak::new());
+        let (_, mut rx) = session.subscribe();
+
+        session.kill();
+        session
+            .handle_stdout_line(ASK, 0, Driver::ClaudeStreamJson)
+            .await;
+
+        assert!(
+            session.pending_perms.lock().is_empty(),
+            "a dead process left a permission card the user could answer"
+        );
+        assert!(rx.try_recv().is_err(), "the card reached the browser");
     }
 
     /// A line is read in the vocabulary of the process that wrote it, not
