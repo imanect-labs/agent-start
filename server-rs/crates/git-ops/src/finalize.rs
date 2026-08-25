@@ -289,6 +289,143 @@ mod tests {
         assert!(!report.pushed, "pushed an empty branch");
     }
 
+    /// A `gh` of our own, first on `PATH`.
+    ///
+    /// The real one is never invoked from a test: on a CI runner it is
+    /// installed *and* authenticated, so `gh pr create` would try to open
+    /// an actual pull request. This stub records the argv it was given and
+    /// decides what to do from the repository it was run in, which is how
+    /// two tests share one `PATH` — process-global, set once for the whole
+    /// binary.
+    fn stub_gh() {
+        static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+        DIR.get_or_init(|| {
+            let dir = tempfile::tempdir().expect("stub dir");
+            let gh = dir.path().join("gh");
+            fs::write(
+                &gh,
+                r#"#!/bin/sh
+for a in "$@"; do printf '%s\n' "$a"; done > .gh-argv
+if [ -f .gh-fail ]; then
+  echo "gh: To get started with GitHub CLI, please run: gh auth login" >&2
+  exit 4
+fi
+# The real one prints progress before the URL; the parser must skip it.
+echo "Creating pull request for the branch into main"
+echo "https://github.com/example/repo/pull/42"
+"#,
+            )
+            .unwrap();
+            let mut perm = fs::metadata(&gh).unwrap().permissions();
+            std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
+            fs::set_permissions(&gh, perm).unwrap();
+            let path = std::env::var("PATH").unwrap_or_default();
+            std::env::set_var("PATH", format!("{}:{path}", dir.path().display()));
+            dir
+        });
+    }
+
+    /// A repo with an `origin` to push to, ready for `finalize`.
+    fn repo_with_origin() -> (tempfile::TempDir, tempfile::TempDir) {
+        let bare = tempfile::tempdir().unwrap();
+        git(bare.path(), &["init", "--bare", "-q", "-b", "main"]);
+        let dir = tempfile::tempdir().unwrap();
+        init_repo(dir.path());
+        git(
+            dir.path(),
+            &["remote", "add", "origin", bare.path().to_str().unwrap()],
+        );
+        fs::write(dir.path().join("new.txt"), "work\n").unwrap();
+        (dir, bare)
+    }
+
+    fn gh_argv(repo: &Path) -> Vec<String> {
+        fs::read_to_string(repo.join(".gh-argv"))
+            .expect("gh was never invoked")
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn opens_a_pull_request_and_reports_its_url() {
+        stub_gh();
+        let (dir, _bare) = repo_with_origin();
+        git(dir.path(), &["checkout", "-q", "-b", "agent-start/cc-1"]);
+
+        let mut req = request();
+        req.push = true;
+        req.open_pr = true;
+        req.pr_title = "ログイン検証を直す".into();
+        req.pr_body = "本文".into();
+        req.draft = true;
+        req.base_branch = "main".into();
+        let report = finalize(dir.path(), &req).unwrap();
+
+        assert!(report.pushed);
+        assert_eq!(report.pr_url, "https://github.com/example/repo/pull/42");
+
+        // The branch is named explicitly: `gh` would otherwise infer it
+        // from the checkout, and a worktree's HEAD is not what we mean.
+        let argv = gh_argv(dir.path());
+        let pair = |flag: &str| {
+            argv.iter()
+                .position(|a| a == flag)
+                .map(|i| argv[i + 1].clone())
+        };
+        assert_eq!(argv[0], "pr");
+        assert_eq!(argv[1], "create");
+        assert_eq!(pair("--head").as_deref(), Some("agent-start/cc-1"));
+        assert_eq!(pair("--title").as_deref(), Some("ログイン検証を直す"));
+        assert_eq!(pair("--body").as_deref(), Some("本文"));
+        assert_eq!(pair("--base").as_deref(), Some("main"));
+        assert!(argv.iter().any(|a| a == "--draft"));
+    }
+
+    /// The branch is pushed either way; a `gh` that cannot authenticate
+    /// costs the user a PR, not their work.
+    #[test]
+    fn an_unauthenticated_gh_is_a_note_not_a_failure() {
+        stub_gh();
+        let (dir, _bare) = repo_with_origin();
+        fs::write(dir.path().join(".gh-fail"), "").unwrap();
+
+        let mut req = request();
+        req.push = true;
+        req.open_pr = true;
+        let report = finalize(dir.path(), &req).unwrap();
+
+        assert!(report.pushed, "the push was lost with the PR");
+        assert!(report.pr_url.is_empty());
+        let note = report.notes.join(" / ");
+        assert!(
+            note.contains("push 済み") && note.contains("gh auth login"),
+            "the note says neither what failed nor that the work survived: {note}"
+        );
+    }
+
+    /// An empty title would make `gh` read one from an editor it has no
+    /// terminal for. The branch name is a poor title but a real one.
+    #[test]
+    fn a_task_without_a_title_still_gets_one() {
+        stub_gh();
+        let (dir, _bare) = repo_with_origin();
+        git(dir.path(), &["checkout", "-q", "-b", "agent-start/cc-2"]);
+
+        let mut req = request();
+        req.push = true;
+        req.open_pr = true;
+        let report = finalize(dir.path(), &req).unwrap();
+
+        assert!(!report.pr_url.is_empty());
+        let argv = gh_argv(dir.path());
+        let title = argv
+            .iter()
+            .position(|a| a == "--title")
+            .map(|i| argv[i + 1].clone());
+        assert_eq!(title.as_deref(), Some("agent-start/cc-2"));
+    }
+
     #[test]
     fn a_detached_head_is_an_error_not_a_silent_skip() {
         let dir = tempfile::tempdir().unwrap();
