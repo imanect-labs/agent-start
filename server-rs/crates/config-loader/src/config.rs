@@ -237,7 +237,13 @@ impl Default for Config {
             "codex".to_string(),
             CliConfig {
                 command: "codex".to_string(),
-                skip_permissions_flag: Some("--full-auto".to_string()),
+                // `--full-auto` was removed from the codex CLI; passing it
+                // is an argument error, which broke both a codex task and
+                // a codex terminal whenever skip-permissions was on.
+                // Verified against codex-cli 0.149.1 (2026-08).
+                skip_permissions_flag: Some(
+                    "--dangerously-bypass-approvals-and-sandbox".to_string(),
+                ),
                 label: Some("Codex CLI".to_string()),
                 mode: None,
                 prompt_arg: Some("exec".to_string()),
