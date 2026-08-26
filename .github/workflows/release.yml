@@ -58,7 +58,7 @@ jobs:
           name: front-dist
           path: front/dist
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   build-host:
     name: Build host (${{ matrix.target }})
@@ -174,7 +174,7 @@ jobs:
           name: release-${{ matrix.target }}
           path: ${{ env.ASSET }}
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   release:
     name: Publish GitHub Release
