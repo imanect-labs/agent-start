@@ -920,7 +920,10 @@ mod tests {
     /// honest: an abstraction with exactly one implementation is only a
     /// guess about where the seams are.
     #[derive(Debug, Default)]
-    struct TestDriver;
+    struct TestDriver {
+        /// Whether this agent changes model without being restarted.
+        model_in_session: bool,
+    }
 
     /// What `TestDriver` reads. Claude would find no `type` here and pass
     /// it to the browser as raw JSON, which is how the two are told apart.
@@ -963,7 +966,14 @@ mod tests {
             false
         }
         fn model_switch(&self, _model: &str) -> ModelSwitch {
-            ModelSwitch::Respawn
+            if self.model_in_session {
+                // No lines: a driver with something to send would need a
+                // live process, and what this exercises is the branch, not
+                // the wire.
+                ModelSwitch::InSession(vec![])
+            } else {
+                ModelSwitch::Respawn
+            }
         }
     }
 
@@ -976,14 +986,18 @@ mod tests {
         let (_, mut rx) = session.subscribe();
 
         // Generation 0 is the session's own, so this reader is current.
-        session.handle_stdout_line(OTHER_LINE, 0, &TestDriver).await;
+        session
+            .handle_stdout_line(OTHER_LINE, 0, &TestDriver::default())
+            .await;
         let first: serde_json::Value =
             serde_json::from_str(&rx.try_recv().expect("current output was dropped")).unwrap();
         assert_eq!(first["type"], "assistant");
 
         // A respawn bumps the generation out from under the old reader.
         session.generation.fetch_add(1, Ordering::SeqCst);
-        session.handle_stdout_line(OTHER_LINE, 0, &TestDriver).await;
+        session
+            .handle_stdout_line(OTHER_LINE, 0, &TestDriver::default())
+            .await;
         assert!(
             rx.try_recv().is_err(),
             "a replaced process still reached subscribers"
@@ -1021,7 +1035,9 @@ mod tests {
         // The session already speaks Claude; the reader does not.
         assert_eq!(session.driver().name(), "claude-stream-json");
 
-        session.handle_stdout_line(OTHER_LINE, 0, &TestDriver).await;
+        session
+            .handle_stdout_line(OTHER_LINE, 0, &TestDriver::default())
+            .await;
 
         let got: serde_json::Value =
             serde_json::from_str(&rx.try_recv().expect("output was dropped")).unwrap();
@@ -1046,6 +1062,30 @@ mod tests {
         assert!(session.pending_perms.lock().contains_key("req-3"));
         let card: serde_json::Value = serde_json::from_str(&rx.try_recv().unwrap()).unwrap();
         assert_eq!(card["type"], "chat_permission");
+    }
+
+    /// `InSession` keeps the process. Claude respawns for `--model`, so
+    /// nothing exercises this branch until a second driver arrives — and
+    /// by then a mistake here would look like a lost conversation.
+    #[tokio::test]
+    async fn a_model_switch_in_session_does_not_replace_the_process() {
+        let session = ChatSession::create(base_spec(), Weak::new());
+        *session.driver.lock() = Arc::new(TestDriver {
+            model_in_session: true,
+        });
+        let before = session.generation.load(Ordering::SeqCst);
+
+        session.switch_model("gpt-5").await.unwrap();
+
+        assert_eq!(session.current_model().as_deref(), Some("gpt-5"));
+        assert_eq!(session.spec.lock().model.as_deref(), Some("gpt-5"));
+        // `kill` retires the generation, so an unchanged one is the proof
+        // that no respawn happened.
+        assert_eq!(
+            session.generation.load(Ordering::SeqCst),
+            before,
+            "the process was replaced for an in-session switch"
+        );
     }
 
     #[test]

@@ -74,12 +74,24 @@ agent-start の `codex-proto` ドライバが動かないと分かった時点�
 
 規模の目安: `codex-app-server-agent.ts` 単体で 7,230 行。
 
-**agent-start への含意** — 現行の `Driver` 抽象は
+**agent-start への含意** — この調査の時点の `Driver` 抽象（**現在は削除済み**）は
 `translate(event: &Value) -> Vec<Value>`、つまり「1 行入れたら N 個の Claude 形式エンベロープが出る」
-ステートレスな変換で、これは *片方向の行ストリーム* を前提にしている。app-server は
-リクエスト ID の対応付け・サーバ発の要求への応答・スレッドのライフサイクル操作を要するので、
-この抽象のままでは表現できない。codex のチャット対応をやるなら、ドライバ抽象そのものの
-再設計から入ることになる。
+ステートレスな変換で、*片方向の行ストリーム* しか前提にしていなかった。
+これが `AgentDriver` トレイトに置き換わった経緯は [chat-ui-plan.md](./chat-ui-plan.md) §4 にある。
+
+現行の `AgentDriver` で**すでに表現できるもの**:
+
+- サーバ発の要求への応答 — `DriverOutput.writes` と `permission_reply`。
+  Claude の `can_use_tool` が同じ形なので、`item/*/requestApproval` はここに乗る
+- ドライバ内部の状態 — メソッドはすべて `&self` で、必要な状態はドライバが自分で持つ
+- セッション内でのモデル変更 — `ModelSwitch::InSession`（`session/setModel` 相当）
+
+**まだ無いもの**（app-server ドライバを書くときに足すことになる部分）:
+
+- 送ったリクエスト ID と、後から返るレスポンスの対応付け
+- スレッドのライフサイクル操作（`thread/start` / `thread/resume` / `thread/fork` …）を
+  セッション側の概念に接続する経路。現状の `spec.resume` は「起動時のコマンドライン引数」
+  という Claude の形しか想定していない
 
 ---
 

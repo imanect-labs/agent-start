@@ -297,6 +297,14 @@ mod tests {
     /// decides what to do from the repository it was run in, which is how
     /// two tests share one `PATH` — process-global, set once for the whole
     /// binary.
+    ///
+    /// Unix only, along with the three tests that use it: the stub is a
+    /// `/bin/sh` script marked executable through the Unix permission
+    /// bits. The release build targets `x86_64-pc-windows-msvc` too, so
+    /// this is gated rather than left to fail compilation there. What it
+    /// covers — our argv and our reading of `gh`'s output — is not
+    /// platform-specific, so nothing Windows-only goes untested.
+    #[cfg(unix)]
     fn stub_gh() {
         static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
         DIR.get_or_init(|| {
@@ -326,6 +334,7 @@ echo "https://github.com/example/repo/pull/42"
     }
 
     /// A repo with an `origin` to push to, ready for `finalize`.
+    #[cfg(unix)]
     fn repo_with_origin() -> (tempfile::TempDir, tempfile::TempDir) {
         let bare = tempfile::tempdir().unwrap();
         git(bare.path(), &["init", "--bare", "-q", "-b", "main"]);
@@ -339,6 +348,7 @@ echo "https://github.com/example/repo/pull/42"
         (dir, bare)
     }
 
+    #[cfg(unix)]
     fn gh_argv(repo: &Path) -> Vec<String> {
         fs::read_to_string(repo.join(".gh-argv"))
             .expect("gh was never invoked")
@@ -347,6 +357,7 @@ echo "https://github.com/example/repo/pull/42"
             .collect()
     }
 
+    #[cfg(unix)]
     #[test]
     fn opens_a_pull_request_and_reports_its_url() {
         stub_gh();
@@ -384,6 +395,7 @@ echo "https://github.com/example/repo/pull/42"
 
     /// The branch is pushed either way; a `gh` that cannot authenticate
     /// costs the user a PR, not their work.
+    #[cfg(unix)]
     #[test]
     fn an_unauthenticated_gh_is_a_note_not_a_failure() {
         stub_gh();
@@ -406,6 +418,7 @@ echo "https://github.com/example/repo/pull/42"
 
     /// An empty title would make `gh` read one from an editor it has no
     /// terminal for. The branch name is a poor title but a real one.
+    #[cfg(unix)]
     #[test]
     fn a_task_without_a_title_still_gets_one() {
         stub_gh();

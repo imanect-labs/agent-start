@@ -230,6 +230,17 @@ impl Default for Config {
                 // is an argument error, which broke both a codex task and
                 // a codex terminal whenever skip-permissions was on.
                 // Verified against codex-cli 0.149.1 (2026-08).
+                //
+                // This is the *skip permissions* flag: it is only ever
+                // added when the user asks for that at launch, and it is
+                // the counterpart of claude's
+                // `--dangerously-skip-permissions` above — both hand the
+                // agent the machine. It is broader than the `--full-auto`
+                // it replaces (which kept a workspace-write sandbox);
+                // chosen deliberately for symmetry between the two
+                // agents. `-a never -s workspace-write` is the
+                // sandbox-preserving alternative for anyone who wants it,
+                // and it is a `config.json` edit away.
                 skip_permissions_flag: Some(
                     "--dangerously-bypass-approvals-and-sandbox".to_string(),
                 ),
