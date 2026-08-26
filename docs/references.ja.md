@@ -50,6 +50,49 @@ agent-start と目的がかなり近い。**複数のコーディングエージ
 - エージェントごとのアダプタ実装（`codex` のイベント正規化は agent-start 側も
   `crates/chat-manager/src/driver/` で同じ問題に当たっている）
 
+### codex をどう繋いでいるか（2026-08 に実物を確認）
+
+agent-start の `codex-proto` ドライバが動かないと分かった時点で、paseo の実装を読んだ。
+
+**paseo は `codex app-server` を使う。** JSON-RPC を stdio に流す双方向プロトコルで、
+`packages/server/src/server/agent/providers/codex/app-server-transport.ts` がトランスポート、
+`codex-app-server-agent.ts` がその上のエージェント実装。起動は
+`const args = [...launchPrefix.args, "app-server"]`。
+
+観測したメソッド / 通知:
+
+| 向き | 名前 |
+| --- | --- |
+| client → server（要求） | `session/new` `session/prompt` `session/setModel` `session/setMode` `session/setConfigOption` |
+| 同（スレッド操作） | `thread/start` `thread/resume` `thread/fork` `thread/rollback` `thread/archive` `thread/compact/start` `thread/list` `thread/read` |
+| server → client（通知） | `thread/started` `thread/compacted` `thread/tokenUsage/updated` `item/started` `item/completed` `item/agentMessage/delta` `item/reasoning/summaryTextDelta` `item/fileChange/outputDelta` `turn/completed` |
+| **server → client（要求）** | `item/commandExecution/requestApproval` `item/fileChange/requestApproval` `item/tool/requestUserInput` `item/commandExecution/terminalInteraction` |
+
+最後の行が要点で、**サーバ側から要求が飛んできて、こちらが応答を返す**。paseo は
+`client.setRequestHandler(...)` で受けている。承認フロー自体は agent-start の
+`can_use_tool` → `chat_permission` カードとほぼ同じ概念なので、**概念は合うがトランスポートが合わない**。
+
+規模の目安: `codex-app-server-agent.ts` 単体で 7,230 行。
+
+**agent-start への含意** — この調査の時点の `Driver` 抽象（**現在は削除済み**）は
+`translate(event: &Value) -> Vec<Value>`、つまり「1 行入れたら N 個の Claude 形式エンベロープが出る」
+ステートレスな変換で、*片方向の行ストリーム* しか前提にしていなかった。
+これが `AgentDriver` トレイトに置き換わった経緯は [chat-ui-plan.md](./chat-ui-plan.md) §4 にある。
+
+現行の `AgentDriver` で**すでに表現できるもの**:
+
+- サーバ発の要求への応答 — `DriverOutput.writes` と `permission_reply`。
+  Claude の `can_use_tool` が同じ形なので、`item/*/requestApproval` はここに乗る
+- ドライバ内部の状態 — メソッドはすべて `&self` で、必要な状態はドライバが自分で持つ
+- セッション内でのモデル変更 — `ModelSwitch::InSession`（`session/setModel` 相当）
+
+**まだ無いもの**（app-server ドライバを書くときに足すことになる部分）:
+
+- 送ったリクエスト ID と、後から返るレスポンスの対応付け
+- スレッドのライフサイクル操作（`thread/start` / `thread/resume` / `thread/fork` …）を
+  セッション側の概念に接続する経路。現状の `spec.resume` は「起動時のコマンドライン引数」
+  という Claude の形しか想定していない
+
 ---
 
 ## その他

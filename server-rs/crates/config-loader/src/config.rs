@@ -63,9 +63,10 @@ pub struct ChatProvider {
     /// Program to run (resolved through the login shell's PATH).
     pub command: String,
     /// Which stdio protocol the command speaks. See
-    /// `chat_manager::Driver` for the implemented set; an unknown value
-    /// is refused at spawn time with the name in the message rather than
-    /// silently falling back to a protocol the CLI does not speak.
+    /// `chat_manager::AgentDriver` and `chat_manager::driver::resolve`
+    /// for the implemented set; an unknown value is refused at spawn time
+    /// with the name in the message rather than silently falling back to
+    /// a protocol the CLI does not speak.
     pub driver: String,
     pub models: Vec<ChatModel>,
     #[serde(rename = "defaultModel", skip_serializing_if = "Option::is_none")]
@@ -123,24 +124,12 @@ impl Default for ChatConfig {
                     default_model: None,
                     experimental: false,
                 },
-                ChatProvider {
-                    id: "codex".into(),
-                    label: "Codex CLI".into(),
-                    command: "codex".into(),
-                    driver: "codex-proto".into(),
-                    models: vec![
-                        ChatModel {
-                            id: "gpt-5".into(),
-                            label: "GPT-5".into(),
-                        },
-                        ChatModel {
-                            id: "o3".into(),
-                            label: "o3".into(),
-                        },
-                    ],
-                    default_model: None,
-                    experimental: true,
-                },
+                // Codex is deliberately absent. It shipped here against
+                // `codex proto`, a subcommand the CLI no longer has, so
+                // picking it produced a process that could never speak.
+                // The protocol it actually wants (`codex app-server`,
+                // JSON-RPC) is recorded in `docs/references.ja.md`; a
+                // provider comes back when there is a driver for it.
             ],
             models: Vec::new(),
             default_provider: None,
@@ -237,7 +226,24 @@ impl Default for Config {
             "codex".to_string(),
             CliConfig {
                 command: "codex".to_string(),
-                skip_permissions_flag: Some("--full-auto".to_string()),
+                // `--full-auto` was removed from the codex CLI; passing it
+                // is an argument error, which broke both a codex task and
+                // a codex terminal whenever skip-permissions was on.
+                // Verified against codex-cli 0.149.1 (2026-08).
+                //
+                // This is the *skip permissions* flag: it is only ever
+                // added when the user asks for that at launch, and it is
+                // the counterpart of claude's
+                // `--dangerously-skip-permissions` above — both hand the
+                // agent the machine. It is broader than the `--full-auto`
+                // it replaces (which kept a workspace-write sandbox);
+                // chosen deliberately for symmetry between the two
+                // agents. `-a never -s workspace-write` is the
+                // sandbox-preserving alternative for anyone who wants it,
+                // and it is a `config.json` edit away.
+                skip_permissions_flag: Some(
+                    "--dangerously-bypass-approvals-and-sandbox".to_string(),
+                ),
                 label: Some("Codex CLI".to_string()),
                 mode: None,
                 prompt_arg: Some("exec".to_string()),
@@ -358,10 +364,18 @@ fn merge_with_defaults(raw: &str, path: &Path) -> Result<Config, ConfigError> {
 /// Matching is by `id`, so overriding one built-in does not cost you the
 /// others — and a provider the user invented is never disturbed.
 fn merge_default_providers(chat: &mut ChatConfig) {
+    merge_providers_from(chat, ChatConfig::default().providers)
+}
+
+/// Split out so the merge can be exercised against a built-in set the
+/// test controls. Asserting it through `ChatConfig::default()` only works
+/// while there happens to be more than one built-in agent, which is not
+/// something this behaviour depends on.
+fn merge_providers_from(chat: &mut ChatConfig, built_ins: Vec<ChatProvider>) {
     if chat.providers.is_empty() {
         return; // `backfill_providers` installs the whole default set.
     }
-    for built_in in ChatConfig::default().providers {
+    for built_in in built_ins {
         if !chat.providers.iter().any(|p| p.id == built_in.id) {
             chat.providers.push(built_in);
         }
@@ -452,8 +466,11 @@ mod merge_tests {
         let claude = cfg.chat.provider("claude").expect("claude provider");
         assert_eq!(claude.models.len(), 1, "the user's model list was dropped");
         assert_eq!(claude.default_model.as_deref(), Some("opus"));
-        // …and the picker still offers the other agents.
-        assert!(cfg.chat.providers.len() > 1);
+        // …and every built-in agent is still on offer.
+        assert_eq!(
+            cfg.chat.providers.len(),
+            ChatConfig::default().providers.len()
+        );
     }
 
     #[test]
@@ -479,10 +496,30 @@ mod merge_tests {
         let cfg = merge_with_defaults(raw, Path::new("/tmp/x.json")).unwrap();
         // Their override wins…
         assert_eq!(cfg.chat.provider("claude").unwrap().command, "my-claude");
-        // …and the agents they never mentioned are still offered.
-        assert!(cfg.chat.provider("codex").is_some(), "codex was dropped");
         // Their entry stays first, so the default provider is unchanged.
         assert_eq!(cfg.chat.providers[0].id, "claude");
+
+        // …and an agent added to the built-ins later reaches them, rather
+        // than being shadowed by the list they happened to write once.
+        let mut chat = cfg.chat.clone();
+        let newcomer = ChatProvider {
+            id: "newcomer".into(),
+            label: "Newcomer".into(),
+            command: "newcomer".into(),
+            driver: "claude-stream-json".into(),
+            models: vec![],
+            default_model: None,
+            experimental: false,
+        };
+        merge_providers_from(&mut chat, vec![newcomer]);
+        assert!(
+            chat.provider("newcomer").is_some(),
+            "a new built-in was dropped"
+        );
+        assert_eq!(
+            chat.providers[0].id, "claude",
+            "the newcomer stole first place"
+        );
     }
 
     #[test]

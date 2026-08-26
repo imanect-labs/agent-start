@@ -27,9 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider starts a fresh one and says so, because the new agent has
   never seen the old conversation. Agents are declared in
   `chat.providers[]`; a config predating this keeps its model list.
-  Ships a `codex-proto` driver marked experimental — it is written
-  against the published protocol but has not been run against a real
-  `codex` binary. See [docs/chat-ui-plan.md](docs/chat-ui-plan.md) §4.
+  Claude is the only agent that ships with a driver; the seam a second
+  one plugs into is `chat_manager::AgentDriver`.
+  See [docs/chat-ui-plan.md](docs/chat-ui-plan.md) §4.
 - **Multi-node scheduling.** `agent-start-host` now splits into a control
   plane (API, UI, scheduler, relay) and node agents that run the agents
   themselves, and places each session on whichever node has room.
@@ -50,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Screenshots / demo GIF in `docs/screenshots/` (TODO).
 
 ### Fixed
+- **`codex` launches again.** Its CLI dropped `--full-auto`, which
+  agent-start still passed whenever skip-permissions was on — so a codex
+  task and a codex terminal both died on the argument. Now
+  `--dangerously-bypass-approvals-and-sandbox`.
 - **The "VSCode を開けませんでした" toast now shows why.** It passed the
   error under a key the toast does not read, so the reason was dropped.
 - **Session names no longer collide within the same second.** Two

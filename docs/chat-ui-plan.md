@@ -150,7 +150,7 @@ UI キットは既存 `front/src/components/ui`（Badge/Button/Input/Spinner）+
 | P1 | `clis.claude-chat` が「Claude Code (Chat)」。別プロバイダを足すなら CLI エントリを増やす | `clis` のチャットエントリは **1 つ**（label = `Chat`）。エージェントは `chat.providers[]` |
 | P2 | コンポーザ左下はモデルピッカー | **プロバイダ + モデル**のピッカー。プロバイダごとにグループ化し、現在値は `Claude Code / Opus` のように出す |
 | P3 | 切替は `set_model` のみ | `set_provider { provider, model }` を追加 |
-| P4 | ドライバは Claude の stream-json 決め打ち | `chat.providers[].driver` で選択（`claude-stream-json` / `codex-proto`） |
+| P4 | ドライバは Claude の stream-json 決め打ち | `chat.providers[].driver` で選択。実装は `AgentDriver` トレイト |
 
 ### 決定
 
@@ -159,22 +159,32 @@ UI キットは既存 `front/src/components/ui`（Badge/Button/Input/Spinner）+
   **引き継がれない旨をその場で通知**する（`chat_notice` エンベロープ）。
   モデルだけの切替は従来どおり `--resume` で継続。
 - **正規化先は Claude の語彙。** フロントは stream-json の形をそのまま描画しているので、
-  2 つ目以降のドライバは自分のイベントを **その形へ翻訳**する（`driver/codex.rs`）。
+  2 つ目以降のドライバは自分のイベントを **その形へ翻訳**する。
   ドライバごとにレンダラを増やさないための線引き。
 - **未知の driver 名は起動時エラー。** 既定へフォールバックすると、喋れないプロトコルで
   プロセスが立ち上がり「無言でハングした」ようにしか見えない。
 
-### `codex-proto` ドライバの状態
+### ドライバ抽象（2026-08 に作り直し）
 
-**実機未検証。** `codex proto` の submission/event 語彙に対して書いてあるが、
-開発環境に `codex` バイナリが無いため一度も実際に喋らせていない。
-そのため config 上は `experimental: true` で、ピッカーにも「実験的」バッジが出る。
-プロトコルがずれていた場合に直す場所は `crates/chat-manager/src/driver/codex.rs` だけで、
-その上流はすべて Claude の語彙で動いている。特に怪しいのは:
+初版は `Driver` enum + `match` で、プロトコルの知識が `session.rs` に散っていた
+（コマンドライン組み立て、送信、stdout 解釈がそれぞれ別の場所）。`codex proto` という
+**存在しないサブコマンド**に対して書かれていたことに加え、enum の形が
+「Claude ではこうだから」という前提を隠していた。`AgentDriver` トレイトはその 2 つを外すために在る。
 
-- `codex proto` に対するモデル指定のフラグ位置（現状は `codex proto --model <m>`）
-- 画像添付。proto 側の item 語彙が確定していないので**送らず**、
-  プロンプト末尾に「送信されません」と明記する
+| 前提 | どう外したか |
+| --- | --- |
+| エージェントへの応答は、イベント処理の中から直接 stdin に書ける | 1 行読んだ結果は `DriverOutput { events, writes }` という**データ**。書くのはセッションが 1 箇所で、しかも「そのプロセスがまだ現役か」を確認してから。これは #128 / #129 で潰したバグの発生源そのものだった |
+| モデル変更は再起動 | `ModelSwitch::{Respawn, InSession}`。Claude はコマンドラインに `--model` を持つので `Respawn`、セッション内で設定するエージェントは `InSession` |
+| 権限モードは全ドライバにある | `supports_permission_mode()`。無いドライバに設定を持ち越すと、コマンドラインが知らないモードを `chat_status` が報告し続ける |
+
+**実装は Claude 1 つだけ。** 実装が 1 つしかない抽象は「継ぎ目の位置についての推測」でしかないが、
+継ぎ目の位置は推測していない — codex app-server の実プロトコルと paseo の実装を読んで決めた
+（[references.ja.md](./references.ja.md)）。テストには 2 つ目の実装として `TestDriver` を置き、
+「リーダーのプロトコル」と「セッションのプロトコル」が別物であることを検証している。
+
+**意図的に作っていないもの**: JSON-RPC のリクエスト ID 対応付け。
+app-server はこれを要するが、使う実装が無い状態で書けば、また実物に当たらないコードが増える。
+必要になったドライバが、実際に動かせる環境で持つ。
 
 ### 設定例
 

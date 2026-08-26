@@ -598,8 +598,42 @@ AI エージェント主体・数週間スケール。**各フェーズ単体で
 | --- | --- |
 | キューの排他 / lease / 再試行 / 再起動復旧 | 自動テスト済み（`server-rs/crates/state/tests/task_queue.rs`） |
 | 投入 → ノード配置 → 実行 → commit → push | **実機で確認済み**（`server-rs/crates/cluster-control/tests/task_finalize.rs` + 実ホストでの手動確認） |
-| `gh pr create` による PR 作成 | **未検証**。開発環境に `gh` が無く、E2E は push までで止めている |
-| chat の `codex-proto` ドライバ | **未検証**。`codex` バイナリが無く一度も喋らせていない（`experimental` 表示） |
+| `gh pr create` による PR 作成 | **自動テスト済み（引数と出力の解釈）** + 実バイナリで一部確認。詳細は下記 |
+| chat の `codex-proto` ドライバ | **検証の結果、動作しないことが判明し撤去**。下記「codex CLI との齟齬」を参照 |
+
+**`gh pr create` の検証範囲**（gh 2.45.0 で確認、2026-08）
+
+`server-rs/crates/git-ops/src/finalize.rs` のテストは PATH 先頭に置いたスタブ `gh` を使う。
+CI ランナーには本物の `gh` が認証済みで入っており、テストが本当に PR を立ててしまうため。
+
+| 確認できたこと | 方法 |
+| --- | --- |
+| 渡す引数（`--head` / `--title` / `--body` / `--draft` / `--base`）の形 | スタブが argv を記録し照合 |
+| 進捗行に続く URL を最後の `https://` 行として拾えること | スタブが実物同様に前置き行を出す |
+| `gh` が非 0 で終わってもブランチは push 済みで、note に理由が残ること | スタブを失敗させて確認 |
+| タイトル未指定でもブランチ名が入り、`gh` がエディタを開きにいかないこと | スタブの argv で確認 |
+| 上記 5 フラグが実物に存在すること | 本物の `gh pr create --help` |
+| **stdin を閉じれば認証できない `gh` でも即座に終了する**（`Stdio::null()` の理由） | 本物の `gh` を実行し、0 秒で非 0 終了することを確認 |
+
+**未確認**: GitHub が実際にこの引数で PR を受理するところ。開発環境に有効なトークンが無く、
+本物のリポジトリに試験用 PR を立てるわけにもいかないため。ここだけは実運用で最初に確かめること。
+
+**codex CLI との齟齬**（codex-cli 0.149.1 で確認、2026-08）
+
+`codex` を入れて確かめたところ、Phase 2 で書いた codex 対応は 2 か所とも実物と食い違っていた。
+
+| 書いたもの | 実物 | 影響 |
+| --- | --- | --- |
+| `codex proto`（chat ドライバ） | **`proto` サブコマンドは存在しない**。`codex proto` は "proto" をプロンプトとして解釈する。イベント語彙（`agent_message_delta` / `exec_command_begin` / `task_complete` …）も現行スキーマに 1 つも無い | チャットで codex を選ぶと、喋れないプロセスが立つだけだった。プロバイダごと撤去 |
+| `codex exec --full-auto`（タスク実行 / PTY 起動） | **`--full-auto` は削除済み**で引数エラー | skip-permissions を有効にした codex タスクと codex ターミナルが起動時に死んでいた。`--dangerously-bypass-approvals-and-sandbox` に置換 |
+
+現行の実プロトコルは `codex app-server`（JSON-RPC over stdio、双方向）。
+メソッド一覧と paseo の実装は [references.ja.md](./references.ja.md) に記録した。
+チャット側の受け口は `AgentDriver` トレイトとして残してあるので、
+codex を戻すときはドライバを 1 つ足す作業になる（[chat-ui-plan.md](./chat-ui-plan.md) §4）。
+
+**教訓**: 「公開されている仕様に対して書いた」は「動く」ではない。
+実バイナリに一度も当てていないものは、この表で未検証と明記して出荷するか、出荷しない。
 
 #### 実装上の判断（設計から変えたところ）
 
