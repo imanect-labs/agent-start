@@ -10,7 +10,7 @@ mod error;
 mod manager;
 mod session;
 
-pub use driver::Driver;
+pub use driver::{AgentDriver, DriverOutput, ModelSwitch};
 pub use error::ChatError;
 pub use manager::{ChatExitHook, ChatManager};
 pub use session::{ChatImage, ChatSession, ChatSpawnSpec, CommitEvent};
